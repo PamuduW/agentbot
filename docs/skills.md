@@ -51,6 +51,38 @@ MCP changes disabled, and writes the declared policy from
 can shadow global configuration; Doctor reports registered workspaces that
 violate policy.
 
+### Feature-flag policy
+
+`BOOST_FEATURE_POLICY` names every feature flag Boost v0.13.11 ships, because
+an unpinned flag is not neutral -- its effective value is a remote default
+JFrog can change without warning. `boost feature-flags` prints the resolved
+state and the remote default of each.
+
+| Flag | Policy | Why |
+|---|---|---|
+| `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees |
+| `boost-auto-update` | off | Dotfiles owns the binary and its version stamp |
+| `boost-claude-status-line` | off | Agentbot owns the Claude status line |
+| `boost-cli-filtering` | on | The compression itself |
+| `boost-english-abbreviation` | off | Lossy prose abbreviation, no gain here |
+| `boost-files-optimization` | on | Document and image reads, source untouched |
+| `boost-graph-integration` | off | BoostGraph rewrites files Agentbot owns |
+| `boost-html-article` | off | Discards markup the agent is reading |
+| `boost-mcp-toon-format` | on | Lossless reformat of MCP responses |
+| `boost-pr-usage-comments` | off | Outward-facing writes to GitHub PRs |
+| `boost-share-cli-outputs` | off | Sends command output to JFrog |
+| `boost-target-version` | off | Remote-chosen update target |
+
+Each entry carries its full reasoning in `src/boost.py`; change the map there
+rather than toggling in Boost's report UI, which the next setup run reverts.
+
+Everything else in `~/.boost/config.toml` is left to Boost and to you. Setup
+pins `[tracing] upload` and `[update] auto_update` to `false` and writes the
+`user` key of each policy flag; it does not touch `[hooks] exclude_commands`,
+`[tracing] report`, `[tracking] database_path`, `[report]`, `[filters]`
+(`disabled`, `retrieve_disable_threshold`, `show_loaders`), or `[mcp]
+toon_format`.
+
 **Setup accepts Boost's preview terms on your behalf.** `boost init` is passed
 `--accept-terms`, which accepts the JFrog Online Preview Agreement and Privacy
 Notice without prompting. This is a deliberate choice recorded here rather than

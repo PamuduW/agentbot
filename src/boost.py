@@ -69,6 +69,23 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     # the local database. Enforces the global "never expose secrets in command
     # output" rule mechanically rather than by trusting the agent.
     "boost-agent-facing-redaction": True,
+    # Boost's background self-updater. Dotfiles owns this binary: it installs a
+    # digest-verified release asset and records the tag in
+    # `~/.local/share/dotfiles/boost-cli.version`. A background update replaces
+    # the binary without touching that stamp, so ownership state starts lying.
+    # `[update] auto_update = false` below already opts out; the flag is pinned
+    # too because a remote default of true is the thing that turns the updater
+    # back on.
+    "boost-auto-update": False,
+    # Adds a Boost tokens-saved segment to the Claude Code status line.
+    # Agentbot owns `global/claude/statusline-command.sh` and writes the
+    # `statusLine` block wholesale, so two owners would overwrite each other --
+    # the same collision that keeps BoostGraph off.
+    "boost-claude-status-line": False,
+    # The product: rewrite supported CLI commands and filter their output. On
+    # by remote default, pinned because the whole integration is pointless
+    # without it and a remote flip would disable it silently.
+    "boost-cli-filtering": True,
     # Aimed at article and paper prose. This is a code workspace: negligible
     # gain, and it makes what the agent reads a lossy abbreviation of what the
     # tool printed.
@@ -82,9 +99,30 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     # two would overwrite each other silently. Agentbot passes --no-boostgraph
     # on every call; pinning the flag stops the two contradicting each other.
     "boost-graph-integration": False,
+    # Runs HTML through Readability and hands the agent article Markdown for
+    # `curl`/`wget` and HTML file reads. Prose pages survive that; the HTML
+    # this workspace actually reads is fixtures, coverage output and rendered
+    # reports, where the markup is the thing being inspected and Readability
+    # discards it. Same objection as english-abbreviation: the agent stops
+    # seeing what the tool printed. Flip to True if doc-page fetching ever
+    # outweighs that.
+    "boost-html-article": False,
     # Re-encodes MCP JSON responses as TOON with values copied across untouched
     # -- a lossless reformat that costs nothing when no MCP tool is called.
     "boost-mcp-toon-format": True,
+    # Posts and updates a GitHub PR comment with per-model token usage, driven
+    # by an authenticated `gh`. An outward-facing write to someone else's
+    # repository is never an incidental side effect of a local savings tool.
+    "boost-pr-usage-comments": False,
+    # Offers a Settings opt-in to send scrubbed CLI outputs to JFrog so they
+    # can improve their filters. Redaction is best-effort and the outputs come
+    # from private repositories; `[tracing] upload = false` already refuses the
+    # trace upload, and this is the same decision for command text.
+    "boost-share-cli-outputs": False,
+    # Lets the remote flag payload name the version the auto-updater should
+    # move to -- today it names v0.13.5, older than what Dotfiles installed.
+    # Pointless with the updater off, and actively wrong if it is ever on.
+    "boost-target-version": False,
 }
 GRAPH_FEATURE_FLAG = "boost-graph-integration"
 # Scanned in the dry-run plan as defence in depth. It is NOT the BoostGraph

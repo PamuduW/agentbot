@@ -1032,10 +1032,17 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
         self.assertEqual(
             {
                 "boost-agent-facing-redaction": True,
+                "boost-auto-update": False,
+                "boost-claude-status-line": False,
+                "boost-cli-filtering": True,
                 "boost-english-abbreviation": False,
                 "boost-files-optimization": True,
                 "boost-graph-integration": False,
+                "boost-html-article": False,
                 "boost-mcp-toon-format": True,
+                "boost-pr-usage-comments": False,
+                "boost-share-cli-outputs": False,
+                "boost-target-version": False,
             },
             dict(BOOST_FEATURE_POLICY),
         )
@@ -1050,18 +1057,28 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
         self.assertIs(False, flags["boost-english-abbreviation"]["user"])
         self.assertIs(True, flags["boost-files-optimization"]["user"])
         self.assertIs(True, flags["boost-mcp-toon-format"]["user"])
+        self.assertIs(False, flags["boost-auto-update"]["user"])
+        self.assertIs(False, flags["boost-claude-status-line"]["user"])
+        self.assertIs(True, flags["boost-cli-filtering"]["user"])
+        self.assertIs(False, flags["boost-html-article"]["user"])
+        self.assertIs(False, flags["boost-pr-usage-comments"]["user"])
+        self.assertIs(False, flags["boost-share-cli-outputs"]["user"])
+        self.assertIs(False, flags["boost-target-version"]["user"])
         # The remote value is JFrog's to set; only `user` is ours.
         self.assertIs(False, flags["boost-graph-integration"]["remote"])
 
     def test_safe_config_preserves_flags_outside_the_declared_set(self) -> None:
+        # The policy covers every flag Boost v0.13.11 ships. Upstream adds
+        # flags every release or two, and one Agentbot has not ruled on yet is
+        # the user's to set until the policy names it.
         self._config(
-            '[feature_flags."boost-share-cli-outputs"]\nuser = true\nremote = false\n\n'
+            '[feature_flags."boost-future-experiment"]\nuser = true\nremote = false\n\n'
             '[feature_flags._metadata]\nlast_updated_at = "2026-08-25T00:00:00Z"\n'
         )
         self._integration_type()(self._paths()).ensure_safe_config()
 
         flags = self._parsed()["feature_flags"]
-        self.assertIs(True, flags["boost-share-cli-outputs"]["user"])
+        self.assertIs(True, flags["boost-future-experiment"]["user"])
         self.assertEqual("2026-08-25T00:00:00Z", flags["_metadata"]["last_updated_at"])
         self.assertFalse(self._parsed()["tracing"]["upload"])
 
@@ -1105,10 +1122,17 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
         self.assertEqual(
             (
                 "boost-agent-facing-redaction",
+                "boost-auto-update",
+                "boost-claude-status-line",
+                "boost-cli-filtering",
                 "boost-english-abbreviation",
                 "boost-files-optimization",
                 "boost-graph-integration",
+                "boost-html-article",
                 "boost-mcp-toon-format",
+                "boost-pr-usage-comments",
+                "boost-share-cli-outputs",
+                "boost-target-version",
             ),
             self._status().diverged_flags,
         )
