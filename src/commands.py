@@ -214,6 +214,21 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("boost status", "boost setup", "boost off"),
     ),
     CommandSpec(
+        "cli-config",
+        "agentbot cli-config status|apply",
+        "mutating",
+        "Merge the declared Claude, Codex, and Cursor CLI configuration keys.",
+        (
+            option("status", "Preview what a run would change. Writes nothing.", "default"),
+            option("apply", "Merge the declared keys, rolling back if any target fails.", "explicit"),
+        ),
+        "Status is read-only; apply merges owned keys into each CLI config after backing it up.",
+        ("agentbot cli-config status", "agentbot cli-config apply"),
+        ("doctor", "status"),
+        "public",
+        ("cli-config status", "cli-config apply"),
+    ),
+    CommandSpec(
         "cursor",
         "agentbot cursor status|statusline",
         "mutating",

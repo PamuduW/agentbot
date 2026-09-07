@@ -12,6 +12,7 @@ from .claude_statusline import (
     doctor_claude_statusline,
     inspect_claude_statusline,
 )
+from .cli_config import doctor_cli_configs
 from .cursor_statusline import doctor_cursor_statusline
 from .graphify import GraphifyIntegration, GraphifyStatus
 from .models import DiagnosticsSnapshot, DoctorIssue
@@ -103,6 +104,13 @@ class Diagnostics:
 
         issues.extend(doctor_claude_statusline(self.paths, state=facts.statusline))
         issues.extend(doctor_cursor_statusline(self.paths))
+        for component, detail, result in doctor_cli_configs(self.paths):
+            # Drift and unreadable configs are worth reporting; "nothing
+            # declared" and "current" are not.
+            if result == "check":
+                issues.append(
+                    DoctorIssue(level="warning", scope="cli-config", message=f"{component}: {detail}")
+                )
         managed_names = set(facts.managed_names)
         managed_dirs = {skill_dir.name: skill_dir for skill_dir in installed_skill_dirs(self.paths)}
         codex_skills = self.paths.codex_home / "skills"

@@ -135,6 +135,35 @@ def _handle_graphify(context: CommandContext) -> int:
     return 0 if status.state in {"ready", "conflict", "stale"} else 1
 
 
+def _handle_cli_config(context: CommandContext) -> int:
+    from . import cli_config as cli_config_module
+
+    command = getattr(context.args, "cli_config_command", None) or "status"
+    report = (
+        cli_config_module.apply(context.paths)
+        if command == "apply"
+        else cli_config_module.preview(context.paths)
+    )
+    print_header("CLI config", "Agentbot \u203a CLI config")
+    rows = []
+    for name, plan in sorted(report.plans.items()):
+        if plan.error:
+            rows.append((name, plan.error, "check"))
+        elif plan.skipped:
+            rows.append((name, plan.skipped, "skipped"))
+        elif plan.is_noop:
+            rows.append((name, "current", "ok"))
+        else:
+            summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
+            rows.append((name, f"{summary} in {plan.path}", "check"))
+    print_table(rows)
+    if report.rolled_back:
+        print()
+        print(f"  Rolled back: {', '.join(report.rolled_back)}")
+    print()
+    return 1 if report.failures else 0
+
+
 def _handle_cursor(context: CommandContext) -> int:
     from .cursor_statusline import inspect_cursor_statusline, install_cursor_statusline
 
@@ -339,6 +368,7 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "doctor": _handle_doctor,
     "graphify": _handle_graphify,
     "boost": _handle_boost,
+    "cli-config": _handle_cli_config,
     "cursor": _handle_cursor,
     "vscode": _handle_vscode,
     "update": _handle_update,
@@ -392,6 +422,10 @@ def build_parser() -> argparse.ArgumentParser:
     boost_sub.add_parser("status", help="Show Boost CLI, safety, and integration state")
     boost_sub.add_parser("setup", help="Set up Boost for installed Claude, Codex, and Cursor CLIs")
     boost_sub.add_parser("off", help="Remove Boost integration from Claude, Codex, and Cursor")
+    cli_config = subparsers.add_parser("cli-config", help="Manage agent CLI configuration")
+    cli_config_sub = cli_config.add_subparsers(dest="cli_config_command")
+    cli_config_sub.add_parser("status", help="Preview CLI config changes without writing")
+    cli_config_sub.add_parser("apply", help="Merge declared keys into each CLI config")
     cursor = subparsers.add_parser("cursor", help="Inspect or install the Cursor statusline")
     cursor_sub = cursor.add_subparsers(dest="cursor_command")
     cursor_sub.add_parser("status", help="Report the Cursor statusline state")
