@@ -272,13 +272,47 @@ def merge_settings_text(text: str, desired: dict[str, object]) -> str:
     working = text if text.strip() else "{}"
     for key, value in desired.items():
         span = _top_level_value_span(working, key)
-        rendered = json.dumps(value, indent=2)
         if span is None:
-            working = _append_key(working, key, rendered)
-        else:
-            start, end = span
-            working = working[:start] + rendered + working[end:]
+            working = _append_key(working, key, json.dumps(value, indent=2))
+            continue
+        start, end = span
+        if _value_already_matches(working[start:end], value):
+            continue
+        working = working[:start] + _render_value(working, start, value) + working[end:]
     return working
+
+
+def _value_already_matches(current: str, value: object) -> bool:
+    """Whether the file already says what the manifest declares.
+
+    Re-rendering a value that has not changed is not free: an object value is
+    replaced whole, so re-rendering deletes any comment written inside it and
+    reflows its indentation. Before this check, changing one scalar key rewrote
+    every other declared key too, which silently stripped comments from blocks
+    the operator never touched.
+    """
+    try:
+        return json.loads(strip_jsonc(current)) == value
+    except ValueError:
+        return False
+
+
+def _render_value(text: str, start: int, value: object) -> str:
+    """Serialise a value for the position it is being spliced into.
+
+    json.dumps indents from column zero. A nested value spliced in unchanged
+    leaves its body and closing brace hanging at the wrong depth, so continuation
+    lines are shifted to the indentation of the key's own line and the file's own
+    line ending is kept.
+    """
+    rendered = json.dumps(value, indent=2)
+    if "\n" not in rendered:
+        return rendered
+    line_start = text.rfind("\n", 0, start) + 1
+    indent = text[line_start : len(text[line_start:]) - len(text[line_start:].lstrip()) + line_start]
+    newline = "\r\n" if "\r\n" in text else "\n"
+    head, *rest = rendered.split("\n")
+    return newline.join([head] + [indent + line for line in rest])
 
 
 def _top_level_value_span(text: str, key: str) -> tuple[int, int] | None:
@@ -340,6 +374,13 @@ def _skip_whitespace_and_comments(text: str, index: int) -> int:
 
 
 def _end_of_value(text: str, start: int) -> int:
+    """Byte after the last character of the value itself.
+
+    The span deliberately excludes the whitespace and any trailing comment that
+    follow the value. Including them meant replacing a value also deleted the
+    operator's end-of-line note and the newline before the closing brace, so a
+    file lost a comment and gained a joined line on every apply.
+    """
     if start >= len(text):
         return start
     if text[start] == '"':
@@ -352,18 +393,36 @@ def _end_of_value(text: str, start: int) -> int:
         if character == '"':
             index = _end_of_string(text, index)
             continue
+        if text.startswith("//", index):
+            if depth == 0:
+                return _trim_trailing_space(text, start, index)
+            newline = text.find("\n", index)
+            index = length if newline == -1 else newline
+            continue
+        if text.startswith("/*", index):
+            if depth == 0:
+                return _trim_trailing_space(text, start, index)
+            close = text.find("*/", index + 2)
+            index = length if close == -1 else close + 2
+            continue
         if character in "{[":
             depth += 1
         elif character in "}]":
             if depth == 0:
-                return index
+                return _trim_trailing_space(text, start, index)
             depth -= 1
             if depth == 0:
                 return index + 1
         elif character == "," and depth == 0:
-            return index
+            return _trim_trailing_space(text, start, index)
         index += 1
-    return length
+    return _trim_trailing_space(text, start, length)
+
+
+def _trim_trailing_space(text: str, start: int, end: int) -> int:
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    return end
 
 
 def _append_key(text: str, key: str, rendered: str) -> str:

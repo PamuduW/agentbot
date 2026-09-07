@@ -213,6 +213,39 @@ class SettingsMergeTests(unittest.TestCase):
         self.assertEqual(parsed["nested"], {"only": 3})
         self.assertIs(parsed["after"], True)
 
+    def test_an_unchanged_object_value_is_not_rewritten(self) -> None:
+        """Declaring a value the file already has must cost nothing.
+
+        An object value is replaced whole, so re-rendering one deletes any
+        comment inside it. Changing a single unrelated scalar used to re-render
+        every declared key, which stripped comments from blocks the operator
+        never touched.
+        """
+        original = '{\n  "[python]": {\n    // ruff owns this\n    "editor.tabSize": 4\n  },\n  "editor.fontSize": 13\n}\n'
+
+        merged = merge_settings_text(
+            original, {"[python]": {"editor.tabSize": 4}, "editor.fontSize": 15}
+        )
+
+        self.assertIn("// ruff owns this", merged)
+        self.assertIn('{\n    // ruff owns this\n    "editor.tabSize": 4\n  }', merged)
+        self.assertEqual(json.loads(strip_jsonc(merged))["editor.fontSize"], 15)
+
+    def test_a_replaced_object_is_indented_for_its_position(self) -> None:
+        """json.dumps indents from column zero; the value sits one level in."""
+        original = '{\n  "nested": {"a": 1}\n}\n'
+
+        merged = merge_settings_text(original, {"nested": {"b": 2}})
+
+        self.assertIn('  "nested": {\n    "b": 2\n  }\n', merged)
+
+    def test_replacing_a_value_keeps_its_trailing_comment_and_newline(self) -> None:
+        """The value's span ends at the value, not at the next structural
+        character: everything between was the operator's, not ours."""
+        merged = merge_settings_text('{\n  "a": 1 // keep this note\n}\n', {"a": 2})
+
+        self.assertEqual(merged, '{\n  "a": 2 // keep this note\n}\n')
+
     def test_a_nested_key_of_the_same_name_is_left_alone(self) -> None:
         """Depth matters: replacing the inner "a" would corrupt an unrelated
         block and leave the top-level setting untouched."""
