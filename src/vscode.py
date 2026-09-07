@@ -656,6 +656,37 @@ def preview(home: Path, root: Path, mount_root: Path = WINDOWS_MOUNT_ROOT) -> VS
     return report
 
 
+def doctor_vscode(home: Path, root: Path) -> list[tuple[str, str, str]]:
+    """Doctor rows: one per host, plus one for an unusable manifest.
+
+    VS Code was the only one of the three platform features with no Doctor
+    coverage at all, so drift in it was invisible to every lifecycle command.
+    """
+    report = preview(home, root)
+    if report.manifest_error:
+        return [("vscode manifest", report.manifest_error, "check")]
+    rows: list[tuple[str, str, str]] = []
+    for host in sorted(set(report.extensions) | set(report.settings)):
+        extensions = report.extensions.get(host)
+        settings = report.settings.get(host)
+        if extensions is not None and extensions.skipped:
+            rows.append((f"vscode {host}", extensions.skipped, "skipped"))
+            continue
+        if settings is not None and settings.unreadable:
+            rows.append((f"vscode {host}", settings.unreadable, "check"))
+            continue
+        pending = []
+        if extensions is not None and not extensions.is_noop:
+            pending.append(f"{len(extensions.missing)} extension(s) to install")
+        if settings is not None and not settings.is_noop:
+            pending.append(f"{len(settings.additions)} to add, {len(settings.changes)} to change")
+        if pending:
+            rows.append((f"vscode {host}", "; ".join(pending), "check"))
+        else:
+            rows.append((f"vscode {host}", "current", "ok"))
+    return rows
+
+
 def apply(
     home: Path,
     root: Path,

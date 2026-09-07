@@ -21,6 +21,7 @@ from .render import installed_skill_dirs, managed_skill_names
 from .skill_prune import PruneCandidate, plan_prune
 from .skills_installer import doctor_skills, list_installed_skills
 from .skills_sources import load_skills_sources
+from .vscode import doctor_vscode
 
 
 def _github_token_is_valid(value: str) -> bool:
@@ -110,6 +111,11 @@ class Diagnostics:
             if result == "check":
                 issues.append(
                     DoctorIssue(level="warning", scope="cli-config", message=f"{component}: {detail}")
+                )
+        for component, detail, result in doctor_vscode(Path.home(), self.paths.root):
+            if result == "check":
+                issues.append(
+                    DoctorIssue(level="warning", scope="vscode", message=f"{component}: {detail}")
                 )
         managed_names = set(facts.managed_names)
         managed_dirs = {skill_dir.name: skill_dir for skill_dir in installed_skill_dirs(self.paths)}

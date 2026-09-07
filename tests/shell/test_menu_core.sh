@@ -18,9 +18,9 @@ test_main_menu_snapshot() {
 	_agentbot_menu_setup
 	output="$(AGENTBOT_TUI=1 tui_menu_draw 0 80 | strip_ansi_stream)"
 	[[ "$output" == *$'=== Agentbot ===\n  Agentbot'* ]] || return 1
-	[[ "$output" == *'1. Check Status'* && "$output" == *'8. Quit'* ]] || return 1
+	[[ "$output" == *'1. Check Status'* && "$output" == *'9. Quit'* ]] || return 1
 	[[ "$output" == *'Prune Skills'* && "$output" == *'GitHub Token Config'* ]] || return 1
-	[[ "$output" == *'Libraries'* ]] || return 1
+	[[ "$output" == *'Platform'* && "$output" == *'Libraries'* ]] || return 1
 	[[ "$output" == *'Check the installed Agentbot components and baseline.'* ]]
 }
 
@@ -260,7 +260,40 @@ test_command_details_fit_narrow_terminals() (
 	while IFS= read -r line; do ((${#line} <= 48)) || return 1; done <<<"$output"
 )
 
+test_menu_arrays_stay_aligned() {
+	# Three parallel arrays describe one menu. A key added without its label or
+	# description shifts every entry below it onto the wrong action.
+	_agentbot_menu_setup
+	((${#MENU_SIMPLE_LABELS[@]} == ${#MENU_SIMPLE_KEYS[@]})) || return 1
+	((${#MENU_SIMPLE_LABELS[@]} == ${#MENU_SIMPLE_DESCS[@]}))
+}
+
+test_every_platform_action_reaches_its_backend_command() (
+	# The three platform features existed only as CLI commands with nothing that
+	# could reach them. Each menu key must dispatch, and each mutating one must
+	# not run when the confirmation is declined.
+	local calls=""
+	agentbot_run_backend() { calls+="$* | "; }
+	tui_confirm() { return 0; }
+	local key
+	_agentbot_platform_menu
+	for key in "${MENU_SIMPLE_KEYS[@]}"; do
+		[[ "$key" == back ]] && continue
+		agentbot_menu_platform_dispatch "$key" >/dev/null || return 1
+	done
+	[[ "$calls" == 'vscode status | vscode seed | vscode apply | cursor status | cursor statusline | cli-config status | cli-config apply | ' ]] || return 1
+
+	calls=""
+	tui_confirm() { return 1; }
+	for key in vscode-apply cursor-install cli-config-apply; do
+		agentbot_menu_platform_dispatch "$key" >/dev/null || return 1
+	done
+	[[ -z "$calls" ]]
+)
+
 check 'main menu snapshot uses the unified labels and breadcrumb' test_main_menu_snapshot
+check 'menu label, key, and description arrays stay aligned' test_menu_arrays_stay_aligned
+check 'every platform action reaches its backend command' test_every_platform_action_reaches_its_backend_command
 check 'TUI frames fit 48, 80, and 120 columns with the shared palette' test_width_and_palette_snapshots
 check 'menu redraw frames clear stale tails and preserve height' test_draw_clears_line_tails_and_matches_frame_height
 check 'shortcut tokens use the shared cyan treatment' test_shortcuts_use_cyan_tokens

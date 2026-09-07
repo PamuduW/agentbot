@@ -22,6 +22,8 @@ source "$_AGENTBOT_MENU_DIR/menus/workspaces.sh"
 source "$_AGENTBOT_MENU_DIR/menus/command_lib.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/graphify.sh"
+# shellcheck source=scripts/menus/platform.sh
+source "$_AGENTBOT_MENU_DIR/menus/platform.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/libraries.sh"
 
@@ -36,10 +38,11 @@ _agentbot_menu_setup() {
 		'Prune Skills'
 		'GitHub Token Config'
 		'Workspaces'
+		'Platform'
 		'Libraries'
 		'Quit'
 	)
-	MENU_SIMPLE_KEYS=(status install update prune-skills token workspaces libraries quit)
+	MENU_SIMPLE_KEYS=(status install update prune-skills token workspaces platform libraries quit)
 	MENU_SIMPLE_DESCS=(
 		$'Check the installed Agentbot components and baseline.\nRead-only status; no updates or writes are performed.'
 		$'Install skills, refresh rendered outputs, run Doctor, and link agentbot.\nUse the explicit install action when changes are intended.'
@@ -47,6 +50,7 @@ _agentbot_menu_setup() {
 		$'Select and permanently remove manual, orphaned, excluded, or stale skills.\nEach candidate shows its classification and source detail before confirmation.'
 		$'Configure the optional shared GitHub API token.\nThe token is stored outside this repository.'
 		$'List, preview, and resync locally registered workspaces.\nApply actions require explicit confirmation.'
+		$'Manage VS Code extensions and settings, the Cursor statusline, and the agent CLI configs.\nPreviews are read-only; every apply confirms first.'
 		$'Open the Agentbot and Graphify command reference libraries.\nRead-only command and safety information.'
 		$'Exit the Agentbot menu.\nReturn to the calling process.'
 	)
@@ -61,6 +65,7 @@ agentbot_menu_dispatch() {
 	prune-skills) agentbot_menu_prune_skills || rc=$? ;;
 	token) agentbot_menu_token || rc=$? ;;
 	workspaces) agentbot_menu_workspaces || rc=$? ;;
+	platform) agentbot_menu_platform || rc=$? ;;
 	libraries) agentbot_menu_libraries || rc=$? ;;
 	*)
 		printf 'Unknown Agentbot menu action: %s\n' "$choice" >&2
