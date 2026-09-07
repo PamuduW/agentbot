@@ -199,6 +199,13 @@ class SettingsMergeTests(unittest.TestCase):
 
         self.assertEqual(json.loads(strip_jsonc(merged)), {"a": 1, "b": "two"})
 
+    def test_an_appended_object_is_indented_under_its_key(self) -> None:
+        """Appending has the same column-zero problem replacing had: a nested
+        body rendered from the margin leaves braces hanging in the file."""
+        merged = merge_settings_text('{\n  "a": 1\n}\n', {"nested": {"b": 2}})
+
+        self.assertEqual(merged, '{\n  "a": 1,\n  "nested": {\n    "b": 2\n  }\n}\n')
+
     def test_merging_into_an_empty_object_stays_valid(self) -> None:
         merged = merge_settings_text("{}", {"a": 1})
 

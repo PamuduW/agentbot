@@ -438,7 +438,11 @@ def _append_key(text: str, key: str, rendered: str) -> str:
     # hand-written settings. A second one is legal nowhere, and appending it
     # broke every real file that had one.
     separator = "" if head.endswith(("{", ",")) else ","
-    body = rendered.replace("\n", newline)
+    # Continuation lines carry the appended key's own indentation, for the same
+    # reason a replaced value does: json.dumps indents from column zero, which
+    # would leave every nested body and closing brace hanging at the margin.
+    first, *rest = rendered.split("\n")
+    body = newline.join([first] + ["  " + line for line in rest])
     entry = f"{separator}{newline}  {json.dumps(key)}: {body}{newline}"
     return head + entry + text[close:]
 
