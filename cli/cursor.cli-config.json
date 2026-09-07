@@ -1,0 +1,21 @@
+{
+  "approvalMode": "allowlist",
+  "hints": true,
+  "notifications": true,
+  "modelSlashCommands": true,
+  "rewind": true,
+  "maxMode": false,
+  "editor": {
+    "vimMode": false
+  },
+  "display": {
+    "showLineNumbers": false,
+    "showThinkingBlocks": false,
+    "showStatusIndicators": true,
+    "showStatusLineRunningTime": false
+  },
+  "attribution": {
+    "attributeCommitsToAgent": true,
+    "attributePRsToAgent": true
+  }
+}

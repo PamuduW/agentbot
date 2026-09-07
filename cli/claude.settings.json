@@ -1,0 +1,10 @@
+{
+  "theme": "dark",
+  "model": "opus",
+  "effortLevel": "medium",
+  "autoUpdatesChannel": "stable",
+  "enableWorkflows": true,
+  "switchModelsOnFlag": false,
+  "agentPushNotifEnabled": true,
+  "inputNeededNotifEnabled": true
+}

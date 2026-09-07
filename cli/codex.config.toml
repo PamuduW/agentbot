@@ -1,0 +1,6 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+plan_mode_reasoning_effort = "high"
+personality = "friendly"
+service_tier = "default"
+approvals_reviewer = "auto_review"
