@@ -305,11 +305,48 @@ test_one_backend_and_complete_help() {
 	[[ "$workspaces_help" == *'--paths0'* && "$workspaces_help" == *'--remove PATH'* ]]
 }
 
+test_every_public_command_reaches_a_route() (
+	# The launcher and install.sh dispatch by hand while `agentbot help` prints
+	# the command index from src/commands.py. Three public commands (cli-config,
+	# cursor, vscode) were advertised there while both shell layers answered
+	# "unknown command". Derive the expectation from the same table the help
+	# text uses so the next added command fails here instead of shipping
+	# unreachable.
+	local names unrouted=""
+	names="$(cd "$ROOT" && python3 -c "
+from src.commands import commands_for_surface
+print(' '.join(c.name for c in commands_for_surface('public')))
+")"
+	[[ -n "$names" ]] || return 1
+
+	AGENTBOT_SOURCE_ONLY=1 source "$AGENTBOT"
+	agentbot_run_backend() { :; }
+	agentbot_run_token() { :; }
+	agentbot_run_menu() { :; }
+	agentbot_usage() { :; }
+
+	local name rc output
+	for name in $names; do
+		set +e
+		output="$(agentbot_main "$name" 2>&1)"
+		rc=$?
+		set -e
+		if [[ $rc -ne 0 || "$output" == *'unknown command'* ]]; then
+			unrouted+=" $name"
+		fi
+	done
+	[[ -z "$unrouted" ]] || {
+		printf 'launcher has no route for:%s\n' "$unrouted" >&2
+		return 1
+	}
+)
+
 check 'launcher exists and headless invocation gives guidance' test_launcher_and_headless_guidance
 check 'menu repository changes propagate to the public launcher' test_menu_repository_change_propagates_to_launcher
 check 'shell TTY access stays in the adapter' test_shell_tty_access_stays_in_the_adapter
 check 'symlink invocation resolves the owning repository' test_symlink_resolves_repository_root
 check 'public dispatcher preserves commands and exit statuses' test_dispatch_matrix
+check 'every public command in the help index has a launcher route' test_every_public_command_reaches_a_route
 check 'token command opens the existing token menu' test_token_route_loads_existing_menu
 check 'install.sh forwards public commands unchanged' test_install_forwards_public_commands
 check 'boot selectors render safely and invalid input is atomic' test_boot_selectors_and_atomic_validation

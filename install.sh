@@ -398,6 +398,9 @@ Usage: ./install.sh <command> [args]
   workspace|workspaces|resync Manage registered workspace outputs
   graphify status|setup      Inspect or repair generic Graphify Agent Skills
   boost status|setup|off     Inspect or manage Boost Claude/Codex/Cursor integration
+  cli-config status|apply    Merge the declared agent CLI configuration keys
+  cursor status|statusline   Inspect or install the managed Cursor statusline
+  vscode status|seed|apply   Reconcile VS Code extensions and owned settings
   help                       Show this rescue summary
 
 For the complete command and option reference, run: agentbot help
@@ -466,6 +469,10 @@ main() {
 		run_cli boot "${@:2}"
 		;;
 	graphify | boost)
+		check_python_deps
+		run_cli "$cmd" "${@:2}"
+		;;
+	cli-config | cursor | vscode)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;

@@ -62,6 +62,7 @@ agentbot_main() {
 	boot) agentbot_run_backend "$command" "$@" ;;
 	workspace | workspaces | resync) agentbot_run_backend "$command" "$@" ;;
 	graphify | boost) agentbot_run_backend "$command" "$@" ;;
+	cli-config | cursor | vscode) agentbot_run_backend "$command" "$@" ;;
 	token) agentbot_run_token "$@" ;;
 	update | upgrade) agentbot_run_backend "$command" "$@" ;;
 	help | -h | --help) agentbot_usage "$@" ;;
