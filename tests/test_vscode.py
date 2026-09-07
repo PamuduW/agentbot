@@ -9,6 +9,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from src import vscode as vscode_module
 from src.vscode import (
     VSCodeManifestError,
     apply_settings,
@@ -327,6 +328,41 @@ class SettingsMergeTests(unittest.TestCase):
         self.assertTrue(apply_settings(self.settings, {"a": 2}).is_noop)
         self.assertEqual(self.settings.read_text(encoding="utf-8"), after_first)
         self.assertIn("// hi", after_first)
+
+
+class DoctorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
+    def test_nothing_declared_costs_no_host_resolution(self) -> None:
+        """Doctor runs up to three times in one full-update, and resolving the
+        Windows host probes /mnt/c, which is slow. A check that cannot report
+        anything must not pay for the mount.
+
+        Asserted through the call, not a stopwatch: timing assertions are flaky,
+        and what matters is that the expensive path is not entered.
+        """
+        calls = []
+        original = vscode_module.resolve_hosts
+        vscode_module.resolve_hosts = lambda *args, **kwargs: calls.append(1) or original(
+            *args, **kwargs
+        )
+        self.addCleanup(setattr, vscode_module, "resolve_hosts", original)
+
+        self.assertEqual(vscode_module.doctor_vscode(Path.home(), self.root), [])
+        self.assertEqual(calls, [])
+
+    def test_a_declared_manifest_is_still_checked(self) -> None:
+        """The short-circuit must not silence a checkout that declares state."""
+        manifest_path(self.root).write_text(
+            "version: 1\nextensions:\n  wsl:\n  - some.thing\n", encoding="utf-8"
+        )
+
+        rows = vscode_module.doctor_vscode(Path.home(), self.root)
+
+        self.assertTrue(rows)
 
 
 class ManifestTests(unittest.TestCase):

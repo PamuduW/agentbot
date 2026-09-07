@@ -656,12 +656,28 @@ def preview(home: Path, root: Path, mount_root: Path = WINDOWS_MOUNT_ROOT) -> VS
     return report
 
 
+def _anything_declared(root: Path) -> bool:
+    """Whether this checkout declares any VS Code state at all."""
+    if manifest_path(root).is_file():
+        return True
+    return any(
+        settings_source(root, scope).is_file() for scope in (UNIVERSAL_SCOPE, "windows", "wsl")
+    )
+
+
 def doctor_vscode(home: Path, root: Path) -> list[tuple[str, str, str]]:
     """Doctor rows: one per host, plus one for an unusable manifest.
 
     VS Code was the only one of the three platform features with no Doctor
     coverage at all, so drift in it was invisible to every lifecycle command.
+
+    Nothing declared means no drift is possible, and that case returns before
+    resolving hosts: `preview` probes /mnt/c first, and the Windows mount costs
+    ~78 ms on this machine. Doctor runs up to three times in one `full-update`,
+    so a check that cannot report anything should not pay for the mount.
     """
+    if not _anything_declared(root):
+        return []
     report = preview(home, root)
     if report.manifest_error:
         return [("vscode manifest", report.manifest_error, "check")]
