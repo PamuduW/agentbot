@@ -1,0 +1,222 @@
+{
+  "[css]": {
+    "editor.defaultFormatter": "vscode.css-language-features"
+  },
+  "[dockercompose]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "editor.autoIndent": "advanced",
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true
+    },
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "[github-actions-workflow]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "[go]": {
+    "editor.defaultFormatter": "golang.go"
+  },
+  "[html]": {
+    "editor.defaultFormatter": "vscode.html-language-features"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.formatOnSave": false
+  },
+  "[powershell]": {
+    "editor.defaultFormatter": "ms-vscode.powershell"
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "[shellscript]": {
+    "editor.defaultFormatter": "mkhl.shfmt",
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "redhat.vscode-xml"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "accessibility.openChatEditedFiles": true,
+  "accessibility.signalOptions.volume": 0,
+  "azureResourceGroups.enableChatStandIn": true,
+  "chat.agent.maxRequests": 100,
+  "chat.checkpoints.showFileChanges": true,
+  "chat.editor.fontFamily": "'Monaspace Argon'",
+  "chat.edits2.enabled": true,
+  "chat.emptyState.history.enabled": true,
+  "chat.extensionUnification.enabled": true,
+  "chat.fontFamily": "'Monaspace Krypton'",
+  "chat.mcp.discovery.enabled": {
+    "cursor-workspace": true,
+    "cursor-global": true,
+    "windsurf": true,
+    "claude-desktop": true
+  },
+  "chat.mcp.gallery.enabled": true,
+  "chat.renderRelatedFiles": true,
+  "chat.restoreLastPanelSession": true,
+  "chat.useAgentSkills": true,
+  "chat.viewSessions.enabled": false,
+  "debug.console.fontFamily": "'Monaspace Argon'",
+  "diffEditor.experimental.showMoves": true,
+  "diffEditor.hideUnchangedRegions.enabled": true,
+  "editor.accessibilitySupport": "off",
+  "editor.aiStats.enabled": true,
+  "editor.autoIndentOnPaste": true,
+  "editor.codeLensFontFamily": "'Monaspace Radon'",
+  "editor.cursorBlinking": "expand",
+  "editor.cursorSmoothCaretAnimation": "on",
+  "editor.experimentalGpuAcceleration": "on",
+  "editor.fontFamily": "'Monaspace Argon'",
+  "editor.fontLigatures": "'calt', 'liga', 'ss01', 'ss02', 'ss03', 'ss04'",
+  "editor.fontSize": 20,
+  "editor.fontVariations": true,
+  "editor.fontWeight": "normal",
+  "editor.formatOnSave": true,
+  "editor.inlayHints.fontFamily": "'Monaspace Radon'",
+  "editor.inlineSuggest.edits.showCollapsed": true,
+  "editor.inlineSuggest.fontFamily": "'Monaspace Radon'",
+  "editor.linkedEditing": true,
+  "editor.mouseWheelZoom": true,
+  "editor.smoothScrolling": true,
+  "editor.wordWrap": "on",
+  "files.autoSave": "afterDelay",
+  "git.autoRepositoryDetection": true,
+  "git.autofetch": true,
+  "git.autofetchPeriod": 3600,
+  "git.replaceTagsWhenPull": true,
+  "git.repositoryScanMaxDepth": 2,
+  "gitblame.inlineMessageEnabled": true,
+  "github.copilot.chat.agent.thinkingTool": true,
+  "github.copilot.chat.anthropic.tools.websearch.enabled": true,
+  "github.copilot.chat.scopeSelection": true,
+  "github.copilot.chat.tools.memory.enabled": true,
+  "github.copilot.enable": {
+    "*": true,
+    "plaintext": false,
+    "markdown": true,
+    "scminput": false
+  },
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "gitlab.duoCodeSuggestions.enabledSupportedLanguages": {
+    "c": true,
+    "cpp": true,
+    "csharp": true,
+    "go": true,
+    "haml": true,
+    "handlebars": true,
+    "java": true,
+    "javascript": true,
+    "javascriptreact": true,
+    "kotlin": true,
+    "python": true,
+    "php": true,
+    "ruby": true,
+    "rust": true,
+    "scala": true,
+    "sql": true,
+    "swift": true,
+    "typescript": true,
+    "typescriptreact": true,
+    "svelte": true,
+    "terraform": true,
+    "terragrunt": true,
+    "vue": true
+  },
+  "go.toolsManagement.autoUpdate": true,
+  "inlineChat.enableV2": true,
+  "inlineChat.notebookAgent": true,
+  "makefile.configureOnOpen": false,
+  "markdown-mermaid.controls.show": "always",
+  "markdown-mermaid.mouseNavigation.enabled": "always",
+  "markdown-mermaid.resizable": true,
+  "markdown.extension.theming.decoration.renderHardLineBreak": true,
+  "markdown.extension.theming.decoration.renderLink": true,
+  "markdown.extension.theming.decoration.renderParagraph": true,
+  "markdown.preview.doubleClickToSwitchToEditor": false,
+  "markdown.preview.fontSize": 16,
+  "markdown.preview.frontMatter": "hide",
+  "markdown.preview.lineHeight": 1.7,
+  "markdown.preview.markEditorSelection": false,
+  "markdownlint.config": {
+    "MD040": false,
+    "MD060": false
+  },
+  "notebook.markup.fontFamily": "'Monaspace Argon'",
+  "notebook.output.fontFamily": "'Monaspace Argon'",
+  "python.analysis.autoImportCompletions": true,
+  "redhat.telemetry.enabled": true,
+  "remote.autoForwardPortsSource": "hybrid",
+  "rest-client.fontFamily": "'Monaspace Argon'",
+  "scm.alwaysShowRepositories": true,
+  "scm.inputFontFamily": "'Monaspace Argon'",
+  "scm.repositories.selectionMode": "multiple",
+  "security.workspace.trust.untrustedFiles": "prompt",
+  "shellcheck.run": "onSave",
+  "terminal.integrated.fontFamily": "'Monaspace Argon'",
+  "terminal.integrated.fontLigatures.enabled": true,
+  "terminal.integrated.fontLigatures.featureSettings": "'calt' on",
+  "terminal.integrated.fontSize": 17,
+  "terminal.integrated.mouseWheelZoom": true,
+  "terminal.integrated.smoothScrolling": true,
+  "terminal.integrated.suggest.enableExtensionCompletions": true,
+  "workbench.colorTheme": "Dark 2026",
+  "workbench.diffEditorAssociations": {
+    "*.md": "default"
+  },
+  "workbench.editorAssociations": {
+    "*.copilotmd": "vscode.markdown.preview.editor",
+    "*.md": "vscode.markdown.preview.editor"
+  },
+  "workbench.iconTheme": "material-icon-theme",
+  "workbench.list.smoothScrolling": true,
+  "workbench.productIconTheme": "material-product-icons",
+  "workbench.secondarySideBar.defaultVisibility": "hidden",
+  "workbench.startupEditor": "none",
+  "yaml.disableSchemaDetection": [
+    "**/.github/workflows/*.yml",
+    "**/.github/workflows/*.yaml",
+    "**/.gitea/workflows/*.yml",
+    "**/.gitea/workflows/*.yaml",
+    "**/.forgejo/workflows/*.yml",
+    "**/.forgejo/workflows/*.yaml",
+    "**/docker-compose.yml",
+    "**/docker-compose.yaml",
+    "**/docker-compose.*.yml",
+    "**/docker-compose.*.yaml",
+    "**/compose.yml",
+    "**/compose.yaml",
+    "**/compose.*.yml",
+    "**/compose.*.yaml"
+  ]
+}
