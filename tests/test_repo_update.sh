@@ -321,6 +321,39 @@ declare -F repo_update_run >/dev/null || repo_update_run() {
 	return 1
 }
 
+test_binding_overrides_are_declared_not_accidental() {
+	# scripts/lib/shared/repo_update.sh is byte-identical in both repositories
+	# and the drift check enforces that. Identical text is not identical
+	# behaviour: this binding sources the shared machine and then redefines four
+	# of its functions, so in Agentbot the shared versions never run. The
+	# signatures differ too --
+	#
+	#   shared:   repo_update_run <repo_dir> <repo_label> <confirm_fn> <result_name> [slug]
+	#   binding:  repo_update_run <repo> <decision_fn> <outcome_var> <reason_var> [repository]
+	#
+	# -- so a reader who looks the name up in the shared file reads the wrong
+	# contract, and a fix applied there silently reaches Dotfiles only.
+	#
+	# The overrides are deliberate. This test pins the set so a fifth one cannot
+	# appear unnoticed, and so removing one is a decision rather than an
+	# accident.
+	local shared="$ROOT/scripts/lib/shared/repo_update.sh"
+	local binding="$ROOT/scripts/lib/repo_update.sh"
+	local expected='repo_update_is_declined repo_update_print_changed repo_update_print_recovery repo_update_run'
+	local actual
+
+	actual="$(comm -12 \
+		<(grep -oE '^[a-z_]+\(\)' "$shared" | tr -d '()' | sort -u) \
+		<(grep -oE '^[a-z_]+\(\)' "$binding" | tr -d '()' | sort -u) | tr '\n' ' ')"
+	actual="${actual% }"
+
+	if [[ "$actual" != "$expected" ]]; then
+		printf 'shared functions the binding overrides changed\n  expected: %s\n  actual:   %s\n' \
+			"$expected" "$actual" >&2
+		return 1
+	fi
+}
+
 expect 'current returns current without decision or pull' test_current
 expect 'dirty stops without pull' test_dirty
 expect 'approved dirty replacement stashes and verifies before reset' test_dirty_approved_replacement
@@ -347,6 +380,7 @@ expect 'only clean confirmed behind state pulls across full table' test_pull_onl
 expect 'successful pull returns at adapter boundary without relaunch or extra commands' test_success_returns_at_pull_boundary
 expect 'repository update uses one exit contract for continue, stop, and changed states' test_exit_contract
 expect 'harness prevents exec network skills home and repository mutation' test_safety_and_scope
+expect 'the binding overrides exactly the four shared functions it declares' test_binding_overrides_are_declared_not_accidental
 
 test_harness_verify_safety || failed=$((failed + 1))
 printf '\nRan %d repo-update test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
