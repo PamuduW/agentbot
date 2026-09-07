@@ -45,6 +45,36 @@ class CursorStatuslineTests(unittest.TestCase):
 
         self.assertEqual(state.state, "missing")
 
+    def test_status_exit_codes_report_wrong_not_pending(self) -> None:
+        """A read-only status command exits non-zero when something is wrong,
+        not when something is pending.
+
+        `missing` is the expected state before `agentbot cursor statusline`
+        runs. Reporting it as process failure made the command unusable in an
+        && chain and disagreed with `vscode status` and `cli-config status`,
+        which both exit 0 in the same un-configured state. It also disagreed
+        with doctor_cursor_statusline, which rates only `broken` an error.
+        """
+        from src.cli import _handle_cursor
+
+        class _Args:
+            cursor_command = "status"
+
+        class _Context:
+            args = _Args()
+
+        context = _Context()
+        context.paths = self.paths
+
+        for payload, expected_state, expected_code in (
+            ({}, "missing", 0),
+            ({"statusLine": {"type": "command", "command": "/somewhere/else.sh"}}, "unowned", 0),
+        ):
+            with self.subTest(state=expected_state):
+                self._write_config(payload)
+                self.assertEqual(inspect_cursor_statusline(self.paths).state, expected_state)
+                self.assertEqual(_handle_cursor(context), expected_code)
+
     def test_installing_writes_the_script_and_the_block(self) -> None:
         state = install_cursor_statusline(self.paths)
 

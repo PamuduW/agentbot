@@ -176,7 +176,13 @@ def _handle_cursor(context: CommandContext) -> int:
     print_header("Cursor", "Agentbot \u203a Cursor")
     print_table([("Statusline", f"{state.state}: {state.detail}", state.result)])
     print()
-    return 0 if state.state in {"ready", "unowned"} else 1
+    # Non-zero means something is wrong, not something is pending -- the same
+    # rule _handle_boost and _handle_vscode follow, and the one
+    # doctor_cursor_statusline already encodes by rating only "broken" an error.
+    # "missing" is the expected state before `agentbot cursor statusline` runs;
+    # reporting it as process failure made the command unusable in any && chain
+    # or CI gate, and disagreed with its two siblings on the same menu.
+    return 1 if state.state == "broken" else 0
 
 
 def _handle_vscode(context: CommandContext) -> int:
