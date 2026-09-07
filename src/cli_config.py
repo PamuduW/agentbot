@@ -183,16 +183,49 @@ def merge_toml_text(text: str, desired: dict[str, object]) -> str:
 
     head = lines[:first_table]
     tail = lines[first_table:]
+    try:
+        current = tomllib.loads("".join(head))
+    except tomllib.TOMLDecodeError:
+        current = {}
     for key, value in desired.items():
-        rendered = f"{key} = {_render_toml_scalar(value)}\n"
         pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
         for index, line in enumerate(head):
-            if pattern.match(line):
-                head[index] = rendered
+            if not pattern.match(line):
+                continue
+            # A key already holding the declared value is left alone: rewriting
+            # it would drop the operator's note for no change in meaning.
+            if key in current and current[key] == value:
                 break
+            head[index] = f"{key} = {_render_toml_scalar(value)}{_trailing_comment(line)}\n"
+            break
         else:
-            head.append(rendered)
+            # Appending to a file whose last line has no newline produced
+            # `model = "gpt-5"effort = "low"`, which is not TOML at all. The
+            # merge was rejected by the verify step, so apply failed outright on
+            # any config that did not end in a newline.
+            if head and not head[-1].endswith("\n"):
+                head[-1] += "\n"
+            head.append(f"{key} = {_render_toml_scalar(value)}\n")
     return "".join(head) + "".join(tail)
+
+
+def _trailing_comment(line: str) -> str:
+    """The ` # ...` a key line ends with, or an empty string.
+
+    Replacing a value used to truncate the line at the value, so a note the
+    operator wrote beside a setting disappeared the first time its value moved.
+    """
+    quote = ""
+    for index, character in enumerate(line):
+        if quote:
+            if character == quote:
+                quote = ""
+            continue
+        if character in "\"'":
+            quote = character
+        elif character == "#":
+            return " " + line[index:].strip()
+    return ""
 
 
 def _merged_text(cli: ManagedCli, original: str, desired: dict[str, object]) -> str:

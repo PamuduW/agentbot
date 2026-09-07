@@ -105,6 +105,43 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(config["model"], "new")
         self.assertEqual(config["tui"], {"theme": "dark"})
 
+    def test_a_note_beside_a_key_survives_its_value_changing(self) -> None:
+        """The existing coverage put the comment on its own line, which the
+        merge never touched. A note written beside the value did not survive."""
+        self._write_config("codex", 'model = "old" # chosen deliberately\n')
+        self._declare("codex", 'model = "new"\n')
+
+        apply(self.paths)
+
+        text = self.clis["codex"].config_path.read_text(encoding="utf-8")
+        self.assertEqual(text, 'model = "new" # chosen deliberately\n')
+
+    def test_a_key_already_holding_its_declared_value_is_not_rewritten(self) -> None:
+        """Rewriting an unchanged key drops its note for no change in meaning,
+        and one other declared key moving was enough to trigger it."""
+        self._write_config("codex", 'model = "same" # keep me\neffort = "high"\n')
+        self._declare("codex", 'model = "same"\neffort = "low"\n')
+
+        apply(self.paths)
+
+        text = self.clis["codex"].config_path.read_text(encoding="utf-8")
+        self.assertEqual(text, 'model = "same" # keep me\neffort = "low"\n')
+
+    def test_a_config_without_a_trailing_newline_is_still_valid_toml(self) -> None:
+        """Appending to an unterminated last line produced `a = "1"b = "2"`,
+        which the verify step then rejected -- so apply failed outright.
+
+        The undeclared last key matters: a declared one was rewritten with a
+        newline of its own, which hid the defect."""
+        self._write_config("codex", 'model = "old"')
+        self._declare("codex", 'effort = "low"\n')
+
+        apply(self.paths)
+
+        config = self._read_config("codex")
+        self.assertEqual(config["model"], "old")
+        self.assertEqual(config["effort"], "low")
+
     def test_a_top_level_key_is_not_confused_with_a_table_key(self) -> None:
         """A bare `key = value` after a table header belongs to that table.
         Rewriting it there would move the setting into somebody's [tui] block."""
