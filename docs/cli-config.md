@@ -63,6 +63,39 @@ model_reasoning_effort = "high"
 - **Originals are backed up** to `<name>.agentbot-backup` immediately before
   the replace, and the write itself is atomic.
 
+## What happens when a CLI updates
+
+Fields are merged, never files. A CLI that ships new settings in an update
+keeps them: only the keys you declared are touched, and everything else in the
+file is left byte-identical.
+
+```
+keys before : anotherNewOne, brandNewSettingFromV3, model, theme
+keys after  : anotherNewOne, brandNewSettingFromV3, model, theme
+we changed  : model: "sonnet" -> "opus"
+we destroyed: nothing
+```
+
+If an update leaves a config Agentbot cannot parse, it is reported and never
+written.
+
+**The risk worth knowing about is a renamed setting.** If a CLI renames a key
+you declare — `model` becoming `defaultModel`, say — Agentbot keeps writing the
+old key. The CLI ignores it and falls back to its default, and `status` still
+reports "current", because the declared state does match the file. That failure
+is silent, and detecting it would require knowing each CLI's schema, which
+Agentbot does not.
+
+The same applies to a value that stops being valid.
+
+Two things keep this manageable:
+
+- **Declare only what you care about.** The blast radius is exactly the set of
+  keys in `cli/`. A short list is a small risk.
+- **Suspect the declaration after an upgrade.** If an agent starts ignoring a
+  setting you thought you controlled, check `cli/*` against that CLI's current
+  documentation. The previous file is always at `<name>.agentbot-backup`.
+
 ## What it refuses
 
 - **Credential-shaped keys.** A key matching `token`, `secret`, `password`,
