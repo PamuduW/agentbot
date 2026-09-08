@@ -67,6 +67,30 @@ def _fit_line(text: str, width: int) -> str:
     return f"{text[: width - 1]}…"
 
 
+def shorten_path(text: str, max_len: int) -> str:
+    """Mirror of _rt_shorten_path in scripts/lib/shared/tui/report_table.sh.
+
+    Paths get a middle ellipsis because their end identifies them: truncating
+    "~/.cursor/statusline-command.sh" from the right leaves every path under
+    ~/.cursor looking the same. Ordinary text keeps a trailing ellipsis.
+
+    One design, two renderers, so the two must agree byte for byte. A
+    differential test renders the same rows through both.
+    """
+    home = os.path.expanduser("~").rstrip("/")
+    if text == home:
+        text = "~"
+    elif home and text.startswith(home + "/"):
+        text = "~" + text[len(home) :]
+    if max_len > 0 and len(text) > max_len:
+        if max_len <= 8:
+            return text[: max_len - 1] + "…"
+        head = max_len // 2 - 1
+        tail = max_len - head - 1
+        return text[:head] + "…" + text[-tail:]
+    return text
+
+
 def _table_widths() -> tuple[int, int, int]:
     """One formula at every width, in both languages.
 
@@ -154,7 +178,7 @@ def print_table_columns(*, headers: tuple[str, str, str] = ("component", "detail
     h0 = _fit_line(h0, label_width)
     h1 = _fit_line(h1, detail_width)
     h2 = _fit_line(h2, result_width)
-    print(f"  {_c(f'{h0:<{label_width}} | {h1:<{detail_width}} | {h2}', BOLD)}")
+    print(f"  {_c(f'{h0:<{label_width}} | {h1:<{detail_width}} | {h2:<{result_width}}', BOLD)}")
     print(
         f"  {'-' * label_width}-+-{'-' * detail_width}-+-{'-' * result_width}"
     )
@@ -185,6 +209,8 @@ def print_table(
                     )
                     or [""]
                 )
+        elif detail.startswith(("/", "~")):
+            detail_lines = [shorten_path(detail, detail_width)]
         else:
             detail_lines = [_fit_line(detail, detail_width)]
 
@@ -195,7 +221,11 @@ def print_table(
             if line_number == 0:
                 label_fit = _fit_line(label, label_width)
                 print(f"  {label_fit:<{label_width}} | {detail_padded} | ", end="")
-                print(color_result(_fit_line(result, _result_width)))
+                # Padded, not bare: the Bash renderer pads this cell too, and a
+                # test there requires every table line to be exactly as wide as
+                # the terminal.
+                result_fit = _fit_line(result, _result_width)
+                print(color_result(result_fit) + " " * (_result_width - len(result_fit)))
             else:
                 print(f"  {'':<{label_width}} | {detail_padded} |")
         key = result.strip().lower()
