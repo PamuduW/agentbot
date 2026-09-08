@@ -130,7 +130,13 @@ def color_result(result: str) -> str:
         return _c(result, GREEN)
     if key in {"missing", "failed", "error", "conflict"}:
         return _c(result, RED)
-    if key.startswith("skipped") or key in {
+    # Dim, not yellow: a skip is a deliberate non-event -- "nothing declared",
+    # "host unavailable" -- and should recede rather than demand attention the
+    # way a warning does. The Bash renderer has always dimmed it; this side
+    # diverged, and only uncoloured rows were being compared so nothing said so.
+    if key.startswith("skipped"):
+        return _c(result, DIM)
+    if key in {
         "check",
         "warn",
         "warning",
