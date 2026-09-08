@@ -18,13 +18,11 @@ _agentbot_platform_menu() {
 		'Cursor statusline install'
 		'CLI config status'
 		'CLI config apply'
-		'Back'
 	)
 	MENU_SIMPLE_KEYS=(
 		vscode-status vscode-seed vscode-apply
 		cursor-status cursor-install
 		cli-config-status cli-config-apply
-		back
 	)
 	MENU_SIMPLE_DESCS=(
 		$'Preview the selected extensions and owned settings for each host.\nRead-only; writes nothing.'
@@ -34,7 +32,6 @@ _agentbot_platform_menu() {
 		$'Install the managed statusline and point the Cursor CLI at it.\nWrites ~/.cursor and the statusLine block. Requires confirmation.'
 		$'Preview the declared Claude, Codex, and Cursor CLI configuration keys.\nRead-only; writes nothing.'
 		$'Merge the declared keys into each CLI config, rolling back on failure.\nBacks each config up first. Requires confirmation.'
-		$'Return to the Agentbot menu.\nNo action is taken.'
 	)
 }
 
@@ -79,7 +76,9 @@ agentbot_menu_platform() {
 			return 0
 		fi
 		choice="${MENU_SIMPLE_RESULT:-}"
-		[[ "$choice" == back || -z "$choice" ]] && return 0
+		# `q` leaves the menu through menu_simple_run returning non-zero above,
+		# the same way every other submenu exits.
+		[[ -z "$choice" ]] && return 0
 		rc=0
 		agentbot_menu_platform_dispatch "$choice" || rc=$?
 		if ((rc != 0)); then

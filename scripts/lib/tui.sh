@@ -37,6 +37,13 @@ source "$_AGENTBOT_TUI_DIR/menu_paging.sh"
 source "$_AGENTBOT_TUI_DIR/menu_checkbox.sh"
 source "$_AGENTBOT_TUI_DIR/menu_runner.sh"
 
+# Submenus accept `q` to go back and never said so, while the sibling
+# repository's submenus have always advertised it. Same shared runner, two
+# different levels of discoverability -- roadmap 4.1 asks for navigation
+# consistency, and this is the whole of the gap.
+: "${MENU_SUBMENU_HINT:=Up/Down navigate   Enter confirm   q back}"
+export MENU_SUBMENU_HINT
+
 # Re-resolve the TTY seam after a caller changes AGENTBOT_TUI_INPUT/OUTPUT
 # mid-process (the token and workspace menus do this to capture output).
 tui_refresh_tty_seam() {
