@@ -819,10 +819,12 @@ def run_agentbot_install(
         if skipped:
             print(f"  Skipping: {', '.join(skipped)}")
         print()
-    # Only when someone is watching: piped and logged runs keep the report-only
-    # output they had.
+    # Emitted whether or not anyone is watching live. These are plain [STEP]
+    # and [OK] lines with no cursor control, so a pipe degrades cleanly rather
+    # than losing them -- and the piped case is `dotfiles full-update`, which is
+    # where the silence this progress exists to fix was longest.
     outcome = lifecycle.install(
-        progress=_install_stage if sys.stdout.isatty() else None,
+        progress=_install_stage,
         components=components,
     )
     skills_rc = print_skills_report(list(outcome.skills), title="Skills install")

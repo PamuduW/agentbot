@@ -925,6 +925,31 @@ class CliTests(unittest.TestCase):
         self.assertIn("4 outside managed sources", rendered)
         self.assertNotIn("outside global lock", rendered)
 
+    def test_install_progress_survives_a_pipe(self) -> None:
+        """The stage lines exist because an install was minutes of silence.
+
+        They were emitted only when stdout was a terminal, which switched them
+        off for `dotfiles full-update` -- the piped run where the silence was
+        longest and the reason the progress was added.
+
+        They carry no cursor control, so a pipe degrades cleanly.
+        """
+        import io
+        from unittest.mock import patch
+
+        from src.cli import _install_stage
+
+        captured = io.StringIO()
+        with patch("sys.stdout", captured):
+            _install_stage("Installing skill sources", 0.0)
+            _install_stage("Refreshing managed outputs", 63.0)
+        rendered = captured.getvalue()
+
+        self.assertIn("[STEP] Installing skill sources", rendered)
+        self.assertIn("[OK] took 1m 03s", rendered)
+        self.assertNotIn("\033", rendered)
+        self.assertNotIn("\r", rendered)
+
     def test_install_can_be_narrowed_to_selected_components(self) -> None:
         """Roadmap 4.1: skills, Graphify and Boost were all-or-nothing.
 
