@@ -26,6 +26,14 @@ src/lifecycle.py
 - `src/lifecycle.py` coordinates install, update, workspace, and resync flows.
 - `src/diagnostics.py` produces the shared Status and Doctor snapshot.
 - `scripts/lib/tui.sh` and `scripts/menus/` are presentation adapters.
+- `src/ui/menu.py` draws menu frames. ADR-0001 in the workspace repository moves
+  presentation to Python; the Dotfiles menu stack cannot follow, because it
+  draws before that machine has an interpreter, but this repository is not
+  installed until `python3` and PyYAML exist, so its menus can. Frames are in
+  Python; reading keys and looping is still
+  `scripts/lib/shared/tui/menu_simple.sh`. `tests/test_menu_parity.sh` compares
+  the two byte for byte at every cursor position, width and palette, which is
+  the same oracle that made the table migration verifiable.
 
 ## Authored and generated data
 
