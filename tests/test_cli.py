@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -988,7 +989,14 @@ class CliTests(unittest.TestCase):
         rc, stdout, _ = run_cli_main(["agentbot", "update", "--dry-run"])
 
         self.assertEqual(0, rc)
-        self.assertEqual(1, stdout.count("  component              | detail"))
+        # Counting a padded literal pinned one column split; the guarantee is
+        # that the report carries exactly one table header, at any width.
+        header_lines = [
+            line
+            for line in stdout.splitlines()
+            if re.match(r"^\s*component\s+\|\s*detail\s+\|\s*result\s*$", line)
+        ]
+        self.assertEqual(1, len(header_lines))
 
     def test_reconciliation_report_shows_every_skill_in_each_delta(self) -> None:
         from src.skill_reconcile import ReconcileResult
@@ -1058,12 +1066,21 @@ class CliTests(unittest.TestCase):
         with patch("sys.stdout", output):
             print_doctor_summary([DoctorIssue("warning", "reproducibility", message)])
 
+        from src.ui.table import strip_ansi
+
         rendered = output.getvalue()
-        self.assertIn("Manual skill 'brainstorming' is", rendered)
-        self.assertIn("available but outside managed sources;", rendered)
-        self.assertIn("add a manifest source to make it", rendered)
-        self.assertIn("reproducible", rendered)
-        self.assertNotIn("...", output.getvalue())
+        # The guarantee is that the whole message survives, wrapped across as
+        # many rows as it needs. Asserting on individual wrapped fragments
+        # pinned one column split instead, so a width change broke a test about
+        # truncation. Reassemble the detail column and compare the whole thing.
+        detail = " ".join(
+            strip_ansi(line).split("|")[1].strip()
+            for line in rendered.splitlines()
+            if line.count("|") >= 1 and "component" not in line and "---" not in line
+        )
+        self.assertEqual(message, " ".join(detail.split()))
+        self.assertNotIn("...", rendered)
+        self.assertNotIn("…", rendered)
 
     def test_python_reports_fit_tui_widths(self) -> None:
         import os
@@ -1117,10 +1134,19 @@ class CliTests(unittest.TestCase):
         highlighted_line = next(
             line for line in rendered.splitlines() if "writing-clearly-and-concisely" in line
         )
+        # The point is that highlighting does not move the columns, so compare
+        # against the table's own header rather than hardcoding positions that
+        # only describe one column split.
+        header_line = next(
+            line for line in rendered.splitlines() if "component" in line and "|" in line
+        )
         separators = [
             index for index, char in enumerate(strip_ansi(highlighted_line)) if char == "|"
         ]
-        self.assertEqual([25, 68], separators)
+        header_separators = [
+            index for index, char in enumerate(strip_ansi(header_line)) if char == "|"
+        ]
+        self.assertEqual(header_separators, separators)
 
         plain_output = io.StringIO()
         with patch.dict(os.environ, {"NO_COLOR": "1"}, clear=False):

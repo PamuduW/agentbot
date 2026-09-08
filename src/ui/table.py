@@ -68,8 +68,19 @@ def _fit_line(text: str, width: int) -> str:
 
 
 def _table_widths() -> tuple[int, int, int]:
-    if not os.environ.get("AGENTBOT_TUI") and not os.environ.get("AGENTBOT_MENU_COLS"):
-        return LABEL_W, DETAIL_W, RESULT_W
+    """One formula at every width, in both languages.
+
+    The non-interactive case used to return fixed constants instead, which put
+    the column boundary one place left of the Bash renderer in
+    scripts/lib/shared/tui/report_table.sh: 22/40/10 against 21/41/10. Both are
+    80 columns wide, so nothing overflowed -- the two tools just did not line up
+    when a `dotfiles full-update` printed them one after the other.
+
+    Every other case already agreed. Measured across 48, 80 and 120 columns,
+    both implementations return 12/21/7, 21/41/10 and 33/64/15 whenever a width
+    is known, so deriving the default from the same formula at the same 80
+    column fallback removes the only divergence.
+    """
     available = max(24, terminal_columns() - 8)
     label_width = max(10, available * 30 // 100)
     result_width = max(7, available * 14 // 100)
@@ -77,7 +88,9 @@ def _table_widths() -> tuple[int, int, int]:
     return label_width, detail_width, result_width
 
 
-def shorten_detail(text: str, *, max_len: int = DETAIL_W) -> str:
+def shorten_detail(text: str, *, max_len: int | None = None) -> str:
+    if max_len is None:
+        max_len = _table_widths()[1]
     cleaned = strip_ansi(text).replace("\r", "")
     for line in cleaned.splitlines():
         line = line.strip()
