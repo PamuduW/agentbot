@@ -952,7 +952,11 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(1, rc)
         diagnostics.collect.assert_called_once_with()
-        self.assertIn("Skills & baseline", stdout)
+        # The status table carries no section rule of its own: the L10 contract
+        # gives a rule to a surface with two or more groups, and this one is a
+        # single table under a header that already names it. Assert the rows are
+        # there rather than a label that the contract deliberately removed.
+        self.assertIn("Installed skills", stdout)
         self.assertIn("Doctor issues", stdout)
         self.assertIn("baseline is missing", stdout)
 

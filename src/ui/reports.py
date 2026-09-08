@@ -125,7 +125,11 @@ def print_status_summary(
         breadcrumb="Agentbot › Check Status",
         sections=(
             TableSection(
-                label="── Skills & baseline ──",
+                # No section rule: the L10 contract gives a rule to a surface
+                # with two or more groups, because a rule earns its place by
+                # separating things. This surface has one table, and the header
+                # above it already says "Check Status".
+                label="",
                 rows=(
                     (
                         "Installed skills",
@@ -232,8 +236,9 @@ def print_graphify_status(status) -> None:
         ("Codex", status.codex_state, "ok" if status.codex_state == "linked" else "check"),
         ("Claude", status.claude_state, "ok" if status.claude_state == "linked" else "check"),
     ]
-    print_table(rows)
-    print()
+    ok, check, miss = print_table(rows)
+    # print_rollup already closes with a blank line.
+    print_rollup(ok=ok, check=check, miss=miss)
     print(f"  {status.message}")
 
 
@@ -295,8 +300,9 @@ def print_boost_status(status) -> None:
                 "error",
             )
         )
-    print_table(rows)
-    print()
+    ok, check, miss = print_table(rows)
+    # print_rollup already closes with a blank line.
+    print_rollup(ok=ok, check=check, miss=miss)
     print(f"  {status.message}")
 
 
@@ -621,17 +627,26 @@ def print_vscode_report(report) -> None:
         print()
         return
 
-    print_table(
-        [
-            (
-                f"{name} host",
-                host.detail if host.available else f"unavailable - {host.detail}",
-                "ok" if host.available else "skipped",
-            )
-            for name, host in sorted(report.hosts.items())
-        ]
+    # One rollup for the whole surface, not one per table: the operator asks
+    # "does VS Code need me?", and three separate answers do not add up to that.
+    totals = [0, 0, 0]
+
+    def _tally(counts: tuple[int, int, int]) -> None:
+        for index, value in enumerate(counts):
+            totals[index] += value
+
+    _tally(
+        print_table(
+            [
+                (
+                    f"{name} host",
+                    host.detail if host.available else f"unavailable - {host.detail}",
+                    "ok" if host.available else "skipped",
+                )
+                for name, host in sorted(report.hosts.items())
+            ]
+        )
     )
-    print()
 
     extension_rows: list[tuple[str, str, str]] = []
     for name, plan in sorted(report.extensions.items()):
@@ -651,9 +666,9 @@ def print_vscode_report(report) -> None:
         else:
             extension_rows.append((name, f"{len(plan.missing)} to install", "check"))
     if extension_rows:
-        print_section("\u2500\u2500 Extensions \u2500\u2500")
-        print_table(extension_rows)
         print()
+        print_section("\u2500\u2500 Extensions \u2500\u2500")
+        _tally(print_table(extension_rows))
 
     settings_rows: list[tuple[str, str, str]] = []
     for scope, plan in sorted(report.settings.items()):
@@ -665,6 +680,8 @@ def print_vscode_report(report) -> None:
             summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
             settings_rows.append((scope, f"{summary} in {plan.path}", "check"))
     if settings_rows:
-        print_section("\u2500\u2500 Settings \u2500\u2500")
-        print_table(settings_rows)
         print()
+        print_section("\u2500\u2500 Settings \u2500\u2500")
+        _tally(print_table(settings_rows))
+
+    print_rollup(ok=totals[0], check=totals[1], miss=totals[2])

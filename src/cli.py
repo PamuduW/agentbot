@@ -25,6 +25,7 @@ from .ui import (
     print_manual_skill_removal_report,
     print_output_refresh_report,
     print_reconciliation_report,
+    print_rollup,
     print_skill_prune_report,
     print_skills_report,
     print_skills_update_report,
@@ -156,11 +157,11 @@ def _handle_cli_config(context: CommandContext) -> int:
         else:
             summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
             rows.append((name, f"{summary} in {plan.path}", "check"))
-    print_table(rows)
+    ok, check, miss = print_table(rows)
+    print_rollup(ok=ok, check=check, miss=miss)
     if report.rolled_back:
         print()
         print(f"  Rolled back: {', '.join(report.rolled_back)}")
-    print()
     return 1 if report.failures else 0
 
 
@@ -174,8 +175,10 @@ def _handle_cursor(context: CommandContext) -> int:
         else inspect_cursor_statusline(context.paths)
     )
     print_header("Cursor", "Agentbot \u203a Cursor")
-    print_table([("Statusline", f"{state.state}: {state.detail}", state.result)])
-    print()
+    ok, check, miss = print_table(
+        [("Statusline", f"{state.state}: {state.detail}", state.result)]
+    )
+    print_rollup(ok=ok, check=check, miss=miss)
     # Non-zero means something is wrong, not something is pending -- the same
     # rule _handle_boost and _handle_vscode follow, and the one
     # doctor_cursor_statusline already encodes by rating only "broken" an error.

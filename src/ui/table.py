@@ -265,8 +265,14 @@ def print_table_model(table: Table) -> tuple[int, int, int]:
     print_header(table.title, table.breadcrumb)
     total_ok = total_check = total_miss = 0
     for section in table.sections:
-        print_section_block(section.label)
-        ok, check, miss = print_table(list(section.rows), show_header=False)
+        # An unlabelled section draws no rule. The L10 contract gives a rule to
+        # a surface with two or more groups; a single group is its own section
+        # and a rule above it separates nothing.
+        if section.label:
+            print_section_block(section.label)
+        ok, check, miss = print_table(
+            list(section.rows), show_header=not section.label
+        )
         total_ok += ok
         total_check += check
         total_miss += miss
