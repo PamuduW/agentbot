@@ -31,7 +31,10 @@ test_main_dispatch_and_pause_ownership() (
 	tui_clear() { :; }
 	tui_pause() { printf 'pause\n' >>"$calls"; }
 	agentbot_menu_status() { printf 'status\n' >>"$calls"; }
-	agentbot_menu_install() { printf 'install\n' >>"$calls"; }
+	# `install` now opens the component selector rather than installing
+	# outright, but it stays a direct action: it does not declare pause
+	# ownership, so the parent still pauses once for it.
+	agentbot_menu_components() { printf 'install\n' >>"$calls"; }
 	agentbot_menu_update() { printf 'update\n' >>"$calls"; }
 	agentbot_menu_prune_skills() { printf 'prune-skills\n' >>"$calls"; }
 	# Submenus own their action pauses and say so; the parent must not add a

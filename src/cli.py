@@ -349,7 +349,20 @@ def _handle_resync(context: CommandContext) -> int:
 
 
 def _handle_install(context: CommandContext) -> int:
-    return run_agentbot_install(context.lifecycle, context.paths)
+    selected = getattr(context.args, "components", None)
+    components: tuple[str, ...] | None = None
+    if selected:
+        wanted = tuple(part.strip() for part in selected.split(",") if part.strip())
+        # The class attribute, not the instance: which components exist is a
+        # fact about Lifecycle, and reading it off the object would make
+        # validation depend on having built one.
+        known_components = Lifecycle.SELECTABLE_COMPONENTS
+        unknown = [c for c in wanted if c not in known_components]
+        if unknown:
+            known = ", ".join(known_components)
+            raise SystemExit(f"unknown component(s): {', '.join(unknown)} (known: {known})")
+        components = wanted
+    return run_agentbot_install(context.lifecycle, context.paths, components=components)
 
 
 def _handle_skills(context: CommandContext) -> int:
@@ -410,7 +423,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
 
-    subparsers.add_parser("install", help="Install Agentbot into this machine's agent homes")
+    install_parser = subparsers.add_parser(
+        "install", help="Install Agentbot into this machine's agent homes"
+    )
+    install_parser.add_argument(
+        "--components",
+        default="",
+        help="Comma-separated subset to set up: skills, graphify, boost. "
+        "Omit for all of them.",
+    )
     status_parser = subparsers.add_parser("status", help="Show skills and global render status")
     status_output = status_parser.add_mutually_exclusive_group()
     status_output.add_argument("--json", action="store_true", dest="status_json")
@@ -788,12 +809,21 @@ def _install_stage(message: str, elapsed: float) -> None:
         print(f"  [STEP] {message}", flush=True)
 
 
-def run_agentbot_install(lifecycle: Lifecycle, paths: AgentbotPaths) -> int:
+def run_agentbot_install(
+    lifecycle: Lifecycle, paths: AgentbotPaths, *, components: tuple[str, ...] | None = None
+) -> int:
     print_header("Install Agentbot", "Agentbot › Install Agentbot")
+    if components is not None:
+        skipped = [c for c in lifecycle.SELECTABLE_COMPONENTS if c not in components]
+        print(f"  Selected: {', '.join(components) or 'nothing'}")
+        if skipped:
+            print(f"  Skipping: {', '.join(skipped)}")
+        print()
     # Only when someone is watching: piped and logged runs keep the report-only
     # output they had.
     outcome = lifecycle.install(
-        progress=_install_stage if sys.stdout.isatty() else None
+        progress=_install_stage if sys.stdout.isatty() else None,
+        components=components,
     )
     skills_rc = print_skills_report(list(outcome.skills), title="Skills install")
     print_output_refresh_report(

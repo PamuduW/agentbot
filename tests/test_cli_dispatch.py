@@ -103,7 +103,23 @@ class HandlerTests(unittest.TestCase):
         context = _context()
         with mock.patch.object(cli, "run_agentbot_install", return_value=7) as run:
             self.assertEqual(cli._handle_install(context), 7)
-        run.assert_called_once_with(context.lifecycle, context.paths)
+        # No selection means every component, which the install call expresses
+        # as None rather than as the full list.
+        run.assert_called_once_with(context.lifecycle, context.paths, components=None)
+
+    def test_install_passes_a_component_selection_through(self):
+        context = _context(components="skills,boost")
+        with mock.patch.object(cli, "run_agentbot_install", return_value=0) as run:
+            self.assertEqual(cli._handle_install(context), 0)
+        run.assert_called_once_with(
+            context.lifecycle, context.paths, components=("skills", "boost")
+        )
+
+    def test_install_refuses_an_unknown_component(self):
+        context = _context(components="skils")
+        with self.assertRaises(SystemExit) as raised:
+            cli._handle_install(context)
+        self.assertIn("skils", str(raised.exception))
 
     def test_skills_delegates_with_the_parsed_subcommand(self):
         context = _context(skills_command="list")

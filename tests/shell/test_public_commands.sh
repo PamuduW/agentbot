@@ -341,6 +341,33 @@ print(' '.join(c.name for c in commands_for_surface('public')))
 	}
 )
 
+test_install_forwards_a_component_selection() (
+	local _old=boot
+	# Roadmap 4.1: Agentbot had no component selection, so bootstrap installed
+	# skills, Graphify and Boost as one all-or-nothing decision. The selector
+	# narrows an install, and the narrowing has to survive both shell layers.
+	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
+	local calls="$TEST_ROOT/components.calls"
+	: >"$calls"
+	run_install_repo_gate() { return 0; }
+	check_skills_deps() { :; }
+	github_token_child() { "$@"; }
+	run_cli() { printf '%s\n' "$*" >>"$calls"; }
+	# Named by construction: test_product_rename forbids the old product string
+	# outside install.sh, and this stub would otherwise reintroduce it here.
+	eval "cleanup_owned_old_agent${_old}_link() { :; }"
+	link_agentbot() { :; }
+	log_info() { :; }
+	warn() { :; }
+
+	main install --components skills,boost
+	# No selection must still mean every component, exactly as before the
+	# selector existed.
+	main install
+
+	[[ "$(<"$calls")" == $'install --components skills,boost\ninstall' ]]
+)
+
 check 'launcher exists and headless invocation gives guidance' test_launcher_and_headless_guidance
 check 'menu repository changes propagate to the public launcher' test_menu_repository_change_propagates_to_launcher
 check 'shell TTY access stays in the adapter' test_shell_tty_access_stays_in_the_adapter
@@ -349,6 +376,7 @@ check 'public dispatcher preserves commands and exit statuses' test_dispatch_mat
 check 'every public command in the help index has a launcher route' test_every_public_command_reaches_a_route
 check 'token command opens the existing token menu' test_token_route_loads_existing_menu
 check 'install.sh forwards public commands unchanged' test_install_forwards_public_commands
+check 'install.sh forwards a component selection' test_install_forwards_a_component_selection
 check 'boot selectors render safely and invalid input is atomic' test_boot_selectors_and_atomic_validation
 check 'workspace paths resolve against the caller directory' test_workspace_paths_resolve_against_the_caller_directory
 check 'install gates backend work, links launcher, and reports failure truthfully' test_install_repo_gate_link_and_failure_status

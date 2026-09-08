@@ -925,6 +925,26 @@ class CliTests(unittest.TestCase):
         self.assertIn("4 outside managed sources", rendered)
         self.assertNotIn("outside global lock", rendered)
 
+    def test_install_can_be_narrowed_to_selected_components(self) -> None:
+        """Roadmap 4.1: skills, Graphify and Boost were all-or-nothing.
+
+        A deselected integration is still inspected rather than ignored --
+        declining to configure Boost is not a reason to stop reporting what
+        Boost is currently doing.
+        """
+        from src.cli import build_parser
+        from src.lifecycle import Lifecycle
+
+        self.assertEqual(("skills", "graphify", "boost"), Lifecycle.SELECTABLE_COMPONENTS)
+
+        args = build_parser().parse_args(["install", "--components", "skills,boost"])
+        self.assertEqual("skills,boost", args.components)
+
+        # Omitting the flag must stay indistinguishable from the behaviour
+        # before selection existed.
+        args = build_parser().parse_args(["install"])
+        self.assertEqual("", args.components)
+
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")
     @patch("src.cli.Diagnostics")

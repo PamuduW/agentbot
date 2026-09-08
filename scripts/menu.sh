@@ -24,6 +24,8 @@ source "$_AGENTBOT_MENU_DIR/menus/command_lib.sh"
 source "$_AGENTBOT_MENU_DIR/menus/graphify.sh"
 # shellcheck source=scripts/menus/platform.sh
 source "$_AGENTBOT_MENU_DIR/menus/platform.sh"
+# shellcheck source=scripts/menus/components.sh
+source "$_AGENTBOT_MENU_DIR/menus/components.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/libraries.sh"
 
@@ -45,7 +47,7 @@ _agentbot_menu_setup() {
 	MENU_SIMPLE_KEYS=(status install update prune-skills token workspaces platform libraries quit)
 	MENU_SIMPLE_DESCS=(
 		$'Check the installed Agentbot components and baseline.\nRead-only status; no updates or writes are performed.'
-		$'Install skills, refresh rendered outputs, run Doctor, and link agentbot.\nUse the explicit install action when changes are intended.'
+		$'Choose what to set up, then install: skills, Graphify, Boost.\nManaged outputs, Doctor and the launcher link always run.'
 		$'Update the repository, reconcile skills, and refresh workspaces plus global outputs.\nA preview and explicit confirmation are required before mutation.'
 		$'Select and permanently remove manual, orphaned, excluded, or stale skills.\nEach candidate shows its classification and source detail before confirmation.'
 		$'Configure the optional shared GitHub API token.\nThe token is stored outside this repository.'
@@ -60,7 +62,7 @@ agentbot_menu_dispatch() {
 	local choice="$1" rc=0
 	case "$choice" in
 	status) agentbot_menu_status || rc=$? ;;
-	install) agentbot_menu_install || rc=$? ;;
+	install) agentbot_menu_components || rc=$? ;;
 	update) agentbot_menu_update || rc=$? ;;
 	prune-skills) agentbot_menu_prune_skills || rc=$? ;;
 	token) agentbot_menu_token || rc=$? ;;

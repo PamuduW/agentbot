@@ -113,8 +113,17 @@ class Lifecycle:
             )
         )
 
+    #: What an install may be narrowed to. Managed outputs and diagnostics are
+    #: not here on purpose: they are the baseline every install leaves behind,
+    #: and an install that skipped them would report on a state it had not
+    #: established.
+    SELECTABLE_COMPONENTS = ("skills", "graphify", "boost")
+
     def install(
-        self, *, progress: Callable[[str, float], None] | None = None
+        self,
+        *,
+        progress: Callable[[str, float], None] | None = None,
+        components: tuple[str, ...] | None = None,
     ) -> InstallOutcome:
         # Every stage reports only after all of them finish, so without this an
         # install is minutes of silence with no way to tell work from a hang.
@@ -137,12 +146,35 @@ class Lifecycle:
         # prune candidates rather than as an error.
         migrate_renamed_lock_sources(self.paths.global_skill_lock)
         started = stage_start
-        stage("Installing skill sources")
-        skills = tuple(self._install_skills(self.paths))
-        stage("Refreshing Graphify integration")
-        graphify = self.graphify.refresh_if_enabled()
-        stage("Configuring Boost integration")
-        boost = self.boost.setup_if_cli_available()
+
+        # None means every component, so an install that was never narrowed
+        # behaves exactly as it did before selection existed.
+        selected = set(components if components is not None else self.SELECTABLE_COMPONENTS)
+
+        if "skills" in selected:
+            stage("Installing skill sources")
+            skills = tuple(self._install_skills(self.paths))
+        else:
+            stage("Skipping skill sources")
+            skills = ()
+
+        # A deselected integration is still *inspected*, never configured: the
+        # operator declining to set Boost up is not a reason to stop reporting
+        # what Boost is currently doing.
+        if "graphify" in selected:
+            stage("Refreshing Graphify integration")
+            graphify = self.graphify.refresh_if_enabled()
+        else:
+            stage("Skipping Graphify integration")
+            graphify = self.graphify.status()
+
+        if "boost" in selected:
+            stage("Configuring Boost integration")
+            boost = self.boost.setup_if_cli_available()
+        else:
+            stage("Skipping Boost integration")
+            boost = self.boost.status()
+
         stage("Refreshing managed outputs")
         outputs = self.refresh_outputs()
         stage("Running diagnostics")

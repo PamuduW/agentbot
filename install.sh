@@ -155,7 +155,7 @@ run_agentbot_install_backend() {
 	log_info "installing Agentbot from ${REPO_ROOT}"
 
 	local rc=0
-	github_token_child run_cli install || rc=$?
+	github_token_child run_cli install "$@" || rc=$?
 
 	return "$rc"
 }
@@ -164,7 +164,9 @@ run_install() {
 	run_install_repo_gate || return $?
 	[[ "${AGENTBOT_REPOSITORY_UPDATE_DECLINED:-false}" == true ]] && return 0
 	local rc=0
-	run_agentbot_install_backend || rc=$?
+	# Forwarded so the component selector can narrow an install; no arguments
+	# still means every component, exactly as before selection existed.
+	run_agentbot_install_backend "$@" || rc=$?
 	cleanup_owned_old_agentboot_link
 	link_agentbot
 	if ((rc == 0)); then
@@ -388,7 +390,8 @@ usage() {
 Usage: ./install.sh <command> [args]
 
   Commands:
-  install                    Install Agentbot and link its launcher
+  install [--components L]   Install Agentbot and link its launcher;
+                             L narrows it to skills, graphify, boost
   full                       Run install, then update, in one command
   update [--dry-run|--yes]   Run the repository-first update flow
   status [--json]            Show current Agentbot state
@@ -432,7 +435,7 @@ main() {
 		"$AGENTBOT_HOME/bin/agentbot"
 		;;
 	install)
-		run_install
+		run_install "${@:2}"
 		;;
 	full)
 		check_skills_deps
