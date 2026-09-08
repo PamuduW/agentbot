@@ -312,7 +312,42 @@ test_undeclared_submenu_still_gets_a_parent_pause() (
 	[[ "$(<"$calls")" == $'libraries\npause' ]]
 )
 check 'Status uses one diagnostics snapshot' test_status_uses_one_diagnostics_snapshot
+test_component_selector_keeps_the_install_contracts() (
+	# The selector was written calling agentbot_run_backend directly, which went
+	# around the two things agentbot_menu_install owns: the TUI output seam and
+	# the exit-3 repository-change contract. A repository change then surfaced
+	# as a failed action instead of a clean restart.
+	local calls="$TEST_ROOT/selector.calls" rc=0
+	: >"$calls"
+	agentbot_run_backend() {
+		printf '%s\n' "$*" >>"$calls"
+		return 3
+	}
+	menu_checkbox_run() {
+		MENU_CB_CHECKED=(1 0 1)
+		return 0
+	}
+	agentbot_menu_components >/dev/null 2>&1 || rc=$?
+
+	[[ "$(<"$calls")" == 'install --components skills,boost' ]] || return 1
+	[[ "$rc" -eq 0 ]]
+)
+
+test_component_selector_cancels_when_nothing_is_checked() (
+	local calls="$TEST_ROOT/selector-none.calls" rc=0
+	: >"$calls"
+	agentbot_run_backend() { printf '%s\n' "$*" >>"$calls"; }
+	menu_checkbox_run() {
+		MENU_CB_CHECKED=(0 0 0)
+		return 0
+	}
+	agentbot_menu_components >/dev/null 2>&1 || rc=$?
+	[[ ! -s "$calls" && "$rc" -eq 0 ]]
+)
+
 check 'main dispatch gives direct actions exactly one pause' test_main_dispatch_and_pause_ownership
+check 'component selector keeps the install contracts' test_component_selector_keeps_the_install_contracts
+check 'component selector cancels when nothing is checked' test_component_selector_cancels_when_nothing_is_checked
 check 'prune skill menu removes only checked names and refreshes agents' test_prune_skill_menu_removes_only_checked_names_and_refreshes_agents
 check 'prune skill menu leaves state unchanged when nothing is checked' test_prune_skill_menu_does_nothing_when_no_skill_is_checked
 check 'prune skill menu propagates candidate discovery failures' test_prune_skill_menu_propagates_discovery_failure

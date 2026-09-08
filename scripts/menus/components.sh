@@ -61,6 +61,9 @@ agentbot_menu_components() {
 		return 0
 	fi
 
-	agentbot_run_backend install --components "$selection" || rc=$?
+	# Through agentbot_menu_install, not around it: that function owns the TUI
+	# output seam and the exit-3 repository-change contract, and calling the
+	# backend directly from here silently dropped both.
+	agentbot_menu_install --components "$selection" || rc=$?
 	return "$rc"
 }
