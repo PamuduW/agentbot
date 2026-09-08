@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # MENU_SIMPLE_* globals are consumed by menu_simple_run
+# shellcheck disable=SC2034  # MENU_SIMPLE_* globals are consumed by the menu runner
 
 # The three platform features shipped as CLI commands with nothing that could
 # reach them: not the menu, not install, not update. Read-only actions run
@@ -72,11 +72,11 @@ agentbot_menu_platform() {
 	local choice rc
 	while true; do
 		_agentbot_platform_menu
-		if ! menu_simple_run; then
+		if ! agentbot_menu_run; then
 			return 0
 		fi
 		choice="${MENU_SIMPLE_RESULT:-}"
-		# `q` leaves the menu through menu_simple_run returning non-zero above,
+		# `q` leaves the menu through the runner returning non-zero above,
 		# the same way every other submenu exits.
 		[[ -z "$choice" ]] && return 0
 		rc=0

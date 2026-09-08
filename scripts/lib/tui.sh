@@ -197,6 +197,73 @@ tui_table_row() {
 # menu_simple_run comes from the shared stack and reports its choice in
 # MENU_SIMPLE_RESULT. These remain for the Agentbot suites that assert on
 # geometry directly.
+
+# agentbot_menu_run: the interactive selection, in Python.
+#
+# ADR-0001. The Dotfiles menus cannot move -- they draw before that machine has
+# an interpreter -- but this repository is not installed until python3 and
+# PyYAML exist, so its menus can. One process per menu display, not one per
+# keystroke: Python owns the loop and returns the chosen key, and dispatch stays
+# here.
+#
+# The shared Bash loop remains the fallback and is not modified: scripts/lib/
+# shared/tui is byte-identical with Dotfiles, and a Python path in there would
+# put Python back on the pre-install path the boundary keeps clear.
+#
+# Reports its choice in MENU_SIMPLE_RESULT and returns non-zero when the
+# operator cancelled, which is menu_simple_run's contract exactly.
+# Shared code that runs a menu takes the loop from here rather than naming one,
+# so menu_runner.sh stays language-neutral and Dotfiles keeps the Bash default.
+MENU_SIMPLE_RUNNER=agentbot_menu_run
+
+agentbot_menu_run() {
+	local choice rc=0
+
+	if ! command -v python3 >/dev/null 2>&1 || [[ ! -d "${AGENTBOT_HOME:-}/src/ui" ]]; then
+		menu_simple_run
+		return $?
+	fi
+
+	choice="$(_agentbot_menu_spec | (cd "$AGENTBOT_HOME" && PYTHONDONTWRITEBYTECODE=1 python3 -m src.ui.menu_select))" || rc=$?
+
+	# 3 is "this did not work", and only that falls back -- a cancelled menu
+	# must stay cancelled rather than being re-drawn by the other loop.
+	if ((rc == 3)); then
+		menu_simple_run
+		return $?
+	fi
+	if ((rc != 0)); then
+		MENU_SIMPLE_RESULT=''
+		return 1
+	fi
+	MENU_SIMPLE_RESULT="$choice"
+}
+
+# The menu as `name<FS>value` lines. No quoting to get wrong, and a description
+# with newlines travels as \x1e -- the same transport the probe classifier uses.
+_agentbot_menu_spec() {
+	local fs=$'\x1f' nl=$'\x1e' item
+	local color=0
+
+	[[ -n "${C_RESET:-}" ]] && color=1
+	printf 'title%s%s\n' "$fs" "${MENU_SIMPLE_TITLE:-}"
+	printf 'breadcrumb%s%s\n' "$fs" "${MENU_SIMPLE_BREADCRUMB:-}"
+	printf 'hint%s%s\n' "$fs" "${MENU_SIMPLE_HINT:-}"
+	printf 'cols%s%s\n' "$fs" "$(tui_cols)"
+	printf 'color%s%s\n' "$fs" "$color"
+	for item in "${MENU_SIMPLE_LABELS[@]}"; do
+		printf 'label%s%s\n' "$fs" "${item//$'\n'/$nl}"
+	done
+	for item in "${MENU_SIMPLE_KEYS[@]}"; do
+		printf 'key%s%s\n' "$fs" "$item"
+	done
+	for item in ${MENU_SIMPLE_TYPES[@]+"${MENU_SIMPLE_TYPES[@]}"}; do
+		printf 'type%s%s\n' "$fs" "$item"
+	done
+	for item in ${MENU_SIMPLE_DESCS[@]+"${MENU_SIMPLE_DESCS[@]}"}; do
+		printf 'desc%s%s\n' "$fs" "${item//$'\n'/$nl}"
+	done
+}
 tui_menu_desc_lines() { menu_desc_footer_rows MENU_SIMPLE; }
 tui_menu_lines() { _menu_simple_menu_lines "${#MENU_SIMPLE_LABELS[@]}"; }
 tui_menu_draw() { _menu_simple_draw "$1" "${2:-$(tui_cols)}"; }

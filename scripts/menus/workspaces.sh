@@ -50,7 +50,7 @@ agentbot_menu_workspaces_remove_recorded() {
 		MENU_SIMPLE_KEYS=("${keys[@]}")
 		MENU_SIMPLE_DESCS=("${descriptions[@]}")
 
-		if ! menu_simple_run; then
+		if ! agentbot_menu_run; then
 			return 0
 		fi
 		choice="${MENU_SIMPLE_RESULT:-}"
@@ -112,7 +112,7 @@ agentbot_menu_workspaces() {
 	)
 
 	while true; do
-		if ! menu_simple_run; then
+		if ! agentbot_menu_run; then
 			MENU_SIMPLE_TITLE='Agentbot'
 			MENU_SIMPLE_BREADCRUMB='Agentbot'
 			return 0

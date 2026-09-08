@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # MENU_SIMPLE globals are consumed by menu_simple_run
+# shellcheck disable=SC2034  # MENU_SIMPLE globals are consumed by the menu runner
 
 _agentbot_command_rows() {
 	(cd "$AGENTBOT_HOME" && python3 -m src.cli --root "$AGENTBOT_HOME" help --format menu)
@@ -44,12 +44,12 @@ agentbot_menu_command_lib() {
 	local choice
 	while true; do
 		_agentbot_command_lib_public_menu
-		menu_simple_run || return 0
+		agentbot_menu_run || return 0
 		choice="${MENU_SIMPLE_RESULT:-}"
 		if [[ "$choice" == __bootstrap__ ]]; then
 			while true; do
 				_agentbot_command_lib_backend_menu
-				menu_simple_run || break
+				agentbot_menu_run || break
 				choice="${MENU_SIMPLE_RESULT:-}"
 				tui_clear
 				_agentbot_command_lib_detail "$choice"

@@ -86,7 +86,7 @@ agentbot_menu_loop() {
 	AGENTBOT_MENU_QUIT=false
 	while true; do
 		_agentbot_menu_setup
-		if ! menu_simple_run; then
+		if ! agentbot_menu_run; then
 			return 0
 		fi
 		choice="${MENU_SIMPLE_RESULT:-}"

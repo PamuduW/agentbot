@@ -34,6 +34,8 @@ source "$REPO_DIR/scripts/lib/shared/tui/ui.sh"
 # shellcheck source=/dev/null
 source "$REPO_DIR/scripts/lib/shared/tui/menu_descriptions.sh"
 # shellcheck source=/dev/null
+source "$REPO_DIR/scripts/lib/shared/tui/menu_keys.sh"
+# shellcheck source=/dev/null
 source "$REPO_DIR/scripts/lib/shared/tui/menu_simple.sh"
 
 passed=0
@@ -162,6 +164,71 @@ compare_menu 'a menu that overflows its width' '{
  "labels": ["A label long enough that forty columns cannot hold it", "Quit"],
  "descs": ["A description line long enough that it must be cut short at the narrow width and not at the wide one.\nSecond line.",
            "Short."]}'
+
+# The key decoder moved too, and it must agree with menu_read_key on every
+# sequence the Bash names -- an arrow read as `ignore` is a menu that will not
+# move, and a `q` read as anything but cancel is one that will not leave.
+#
+# One key per file, which is the convention the Bash's own key tests use: after
+# an ESC the reader peeks for the rest of a sequence, and a file always reports
+# ready, so a second key in the same file is swallowed by the first one's peek.
+#
+# And through DOTFILES_TTY_IN_FD, not the path: reading by path reopens the file
+# for every character, so `\e[A` is read as ESC three times over and decodes as
+# `ignore`. The Python reader holds one handle open and has no such mode, so
+# feeding it the path is correct there -- the two seams are compared, not the
+# two spellings of one.
+key_dir="$(mktemp -d)"
+trap 'rm -rf -- "$key_dir"' EXIT
+key_case=0
+while IFS='|' read -r label bytes; do
+	key_case=$((key_case + 1))
+	key_file="$key_dir/key-$key_case"
+	printf '%b' "$bytes" >"$key_file"
+	exec {DOTFILES_TTY_IN_FD}<"$key_file"
+	export DOTFILES_TTY_IN_FD
+	want="$(menu_read_key)"
+	exec {DOTFILES_TTY_IN_FD}<&-
+	unset DOTFILES_TTY_IN_FD
+	got="$(python3 -c "
+import sys
+sys.path.insert(0, '$REPO_DIR')
+from src.ui.menu_select import KeyReader
+reader = KeyReader('$key_file')
+print(reader.read_action())
+reader.close()
+")"
+	if [[ "$want" == "$got" ]]; then
+		passed=$((passed + 1))
+	else
+		failed=$((failed + 1))
+		printf 'not ok - key %s: bash %s, python %s\n' "$label" "$want" "$got"
+	fi
+done <<'KEYS'
+up arrow|\e[A
+down arrow|\e[B
+right arrow|\e[C
+left arrow|\e[D
+application up|\eOA
+application down|\eOB
+shift tab|\e[Z
+page up|\e[5~
+page down|\e[6~
+space|\040
+enter|\n
+a|a
+A|A
+n|n
+N|N
+q|q
+Q|Q
+ctrl-c|\003
+tab|\t
+unbound|z
+bare escape|\e
+nothing at all|
+KEYS
+printf 'ok - the key decoder agrees with menu_read_key on every sequence\n'
 
 # The redraw height must match too: it is how far up the next frame starts, and
 # an off-by-one draws every frame after the first in the wrong place.

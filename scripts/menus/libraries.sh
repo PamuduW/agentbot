@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # MENU_SIMPLE_* globals are consumed by menu_simple_run.
+# shellcheck disable=SC2034  # MENU_SIMPLE_* globals are consumed by the menu runner.
 
 agentbot_menu_libraries_dispatch() {
 	local choice="$1" rc=0

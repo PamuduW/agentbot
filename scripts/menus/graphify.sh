@@ -113,7 +113,7 @@ agentbot_menu_graphify_lib() {
 	local section command
 	while true; do
 		_agentbot_graphify_section_menu
-		menu_simple_run || return 0
+		agentbot_menu_run || return 0
 		section="${MENU_SIMPLE_RESULT:-}"
 		if [[ "$section" == boundary ]]; then
 			tui_clear
@@ -123,7 +123,7 @@ agentbot_menu_graphify_lib() {
 		fi
 		while true; do
 			_agentbot_graphify_command_menu "$section"
-			menu_simple_run || break
+			agentbot_menu_run || break
 			command="${MENU_SIMPLE_RESULT:-}"
 			tui_clear
 			_agentbot_graphify_render_detail "$command" "$section"

@@ -26,14 +26,27 @@ src/lifecycle.py
 - `src/lifecycle.py` coordinates install, update, workspace, and resync flows.
 - `src/diagnostics.py` produces the shared Status and Doctor snapshot.
 - `scripts/lib/tui.sh` and `scripts/menus/` are presentation adapters.
-- `src/ui/menu.py` draws menu frames. ADR-0001 in the workspace repository moves
-  presentation to Python; the Dotfiles menu stack cannot follow, because it
-  draws before that machine has an interpreter, but this repository is not
-  installed until `python3` and PyYAML exist, so its menus can. Frames are in
-  Python; reading keys and looping is still
-  `scripts/lib/shared/tui/menu_simple.sh`. `tests/test_menu_parity.sh` compares
-  the two byte for byte at every cursor position, width and palette, which is
-  the same oracle that made the table migration verifiable.
+- `src/ui/menu.py` draws menu frames and `src/ui/menu_select.py` runs the
+  selection loop. ADR-0001 in the workspace repository moves presentation to
+  Python; the Dotfiles menu stack cannot follow, because it draws before that
+  machine has an interpreter, but this repository is not installed until
+  `python3` and PyYAML exist, so its menus can.
+
+  `agentbot_menu_run` in `scripts/lib/tui.sh` is the seam: it describes the menu
+  as `name\x1fvalue` lines, Python draws and reads it, and the chosen key comes
+  back. One process per menu display, not one per keystroke. Dispatch stays in
+  Bash. Shared code that runs a menu takes it from `MENU_SIMPLE_RUNNER`, which
+  defaults to the Bash `menu_simple_run` so `scripts/lib/shared/tui/` stays
+  language-neutral and Dotfiles keeps its Bash loop.
+
+  Without `python3`, or if the Python side fails (exit 3, as opposed to exit 1
+  for a cancelled menu), the shared Bash loop answers instead.
+
+  Three suites hold it: `tests/test_menu_parity.sh` compares frames byte for
+  byte at every cursor position, width and palette and compares the key decoder
+  against `menu_read_key`; `tests/test_menu_select.py` drives real sessions
+  through a pty; `tests/test_menu_runner.sh` covers the handover, including the
+  no-`python3` fallback.
 
 ## Authored and generated data
 
