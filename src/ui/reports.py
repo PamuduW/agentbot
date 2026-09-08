@@ -102,6 +102,29 @@ def print_command_help(spec: CommandSpec | None = None) -> None:
         print(f"  Related: {', '.join(spec.related)}")
 
 
+def _repo_row(root: Path | str | None) -> tuple[str, str, str]:
+    """The Agentbot checkout's state against its upstream.
+
+    Loaded by path from the shared tree so both repositories answer this the
+    same way; a failure to load is reported rather than raised, because a status
+    that cannot check its own repository should still print everything else.
+    """
+    import sys
+    from pathlib import Path
+
+    if root is None:
+        return ("Agentbot repo", "unchecked (no checkout given)", "skipped")
+    shared = Path(__file__).resolve().parents[2] / "scripts" / "lib" / "shared" / "python"
+    if str(shared) not in sys.path:
+        sys.path.insert(0, str(shared))
+    try:
+        import repo_status
+    except ImportError:
+        return ("Agentbot repo", "unchecked (checker unavailable)", "skipped")
+    detail, _, result = repo_status.check(Path(root)).rpartition("|")
+    return ("Agentbot repo", detail, result)
+
+
 def print_status_summary(
     *,
     installed_skills: int,
@@ -114,6 +137,7 @@ def print_status_summary(
     claude_statusline_state: str = "unknown",
     manual_skill_count: int = 0,
     doctor_issue_count: int = 0,
+    repo_root: Path | str | None = None,
 ) -> None:
     manifest_detail = "skills.sources.yaml"
     if enabled_sources >= 0 and skills_sources_exists:
@@ -182,6 +206,11 @@ def print_status_summary(
                         else f"{doctor_issue_count} issue(s)",
                         "ok" if doctor_issue_count == 0 else "check",
                     ),
+                    # The checkout is part of this machine's setup too, and
+                    # status never said whether it had updates waiting. The
+                    # check is bounded and degrades to "unchecked" rather than
+                    # hanging on a slow or absent network.
+                    _repo_row(repo_root),
                 ),
             ),
         ),

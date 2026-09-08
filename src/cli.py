@@ -876,6 +876,9 @@ def print_status(diagnostics: Diagnostics, *, include_issues: bool = False) -> i
         claude_statusline_state=snapshot.claude_statusline_state,
         manual_skill_count=snapshot.manual_skill_count,
         doctor_issue_count=len(snapshot.issues),
+        # The checkout Diagnostics was built against, so status reports on the
+        # repository it actually inspected rather than the process's cwd.
+        repo_root=getattr(getattr(diagnostics, 'paths', None), 'root', None),
     )
     if include_issues:
         return print_doctor_summary(list(snapshot.issues), include_header=False)
