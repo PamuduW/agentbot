@@ -11,8 +11,18 @@ import shutil
 import sys
 import textwrap
 from collections.abc import Callable
+from pathlib import Path
 
 from ..models import Table
+
+# The layout itself is shared with the Bash renderer's repository through
+# scripts/lib/shared/, which sync-shared.sh holds byte-identical. Loaded by path
+# because that tree is deliberately outside the package: it is vendored code,
+# not part of src/.
+_SHARED_PY = Path(__file__).resolve().parents[2] / "scripts" / "lib" / "shared" / "python"
+if str(_SHARED_PY) not in sys.path:
+    sys.path.insert(0, str(_SHARED_PY))
+import report_table as _shared  # noqa: E402
 
 BOLD = "\033[1m"
 DIM = "\033[2m"
@@ -60,35 +70,11 @@ def terminal_columns() -> int:
 
 
 def _fit_line(text: str, width: int) -> str:
-    if len(text) <= width:
-        return text
-    if width <= 1:
-        return text[:width]
-    return f"{text[: width - 1]}…"
+    return _shared.fit_line(text, width)
 
 
 def shorten_path(text: str, max_len: int) -> str:
-    """Mirror of _rt_shorten_path in scripts/lib/shared/tui/report_table.sh.
-
-    Paths get a middle ellipsis because their end identifies them: truncating
-    "~/.cursor/statusline-command.sh" from the right leaves every path under
-    ~/.cursor looking the same. Ordinary text keeps a trailing ellipsis.
-
-    One design, two renderers, so the two must agree byte for byte. A
-    differential test renders the same rows through both.
-    """
-    home = os.path.expanduser("~").rstrip("/")
-    if text == home:
-        text = "~"
-    elif home and text.startswith(home + "/"):
-        text = "~" + text[len(home) :]
-    if max_len > 0 and len(text) > max_len:
-        if max_len <= 8:
-            return text[: max_len - 1] + "…"
-        head = max_len // 2 - 1
-        tail = max_len - head - 1
-        return text[:head] + "…" + text[-tail:]
-    return text
+    return _shared.shorten_path(text, max_len, os.path.expanduser("~"))
 
 
 def _table_widths() -> tuple[int, int, int]:
@@ -105,11 +91,7 @@ def _table_widths() -> tuple[int, int, int]:
     is known, so deriving the default from the same formula at the same 80
     column fallback removes the only divergence.
     """
-    available = max(24, terminal_columns() - 8)
-    label_width = max(10, available * 30 // 100)
-    result_width = max(7, available * 14 // 100)
-    detail_width = max(1, available - label_width - result_width)
-    return label_width, detail_width, result_width
+    return _shared.three_column_widths(max(32, terminal_columns()))
 
 
 def shorten_detail(text: str, *, max_len: int | None = None) -> str:

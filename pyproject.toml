@@ -29,5 +29,9 @@ skip_covered = true
 [tool.mypy]
 python_version = "3.10"
 files = ["src"]
+# The shared report layout is vendored outside src/ (scripts/lib/shared/ is
+# held byte-identical with the sibling repository by sync-shared.sh), so mypy
+# needs the path to resolve it -- and type-checks it too, which is the point.
+mypy_path = "scripts/lib/shared/python"
 warn_unused_ignores = true
 warn_redundant_casts = true
