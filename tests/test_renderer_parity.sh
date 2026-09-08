@@ -22,6 +22,12 @@ REPO_DIR="$(cd -- "$TEST_DIR/.." && pwd)"
 # scripts/lib/shared/tui/report_table.sh, and the Python one in src/ui/table.py.
 # sync-shared.sh keeps the Bash copy byte-identical with Dotfiles, so checking
 # this copy covers both repositories without either looking at the other.
+# No bytecode in the shared tree. It is vendored code held byte-identical
+# between two repositories, and a stale __pycache__ masked an edit during this
+# test's own development -- the source was restored, the test kept failing, and
+# the cache was why.
+export PYTHONDONTWRITEBYTECODE=1
+
 if ! command -v python3 >/dev/null 2>&1; then
 	printf 'ok - renderer parity skipped; python3 unavailable\n'
 	exit 0
@@ -124,5 +130,38 @@ else
 	failures=$((failures + 1))
 fi
 
-printf '\nRan 2 renderer-parity test(s); %d failure(s).\n' "$failures"
+# The update report uses a four-column layout with its own width rule and, unlike
+# the three-column table, no leading indent. Checked across a spread of terminal
+# widths because the action column is pinned at 18 only once there is room, so
+# the rule changes shape below 64 columns.
+for cols in 32 48 60 80 100 120 200; do
+	NO_COLOR=1 DOTFILES_REPORT_COLS="$cols" bash -c '
+		source "'"$REPO_DIR"'/scripts/lib/shared/tui/report_table.sh"
+		declare -a w=()
+		rt_four_column_widths w
+		rt_print_four_column_header "${w[0]}" component "${w[1]}" installed \
+			"${w[2]}" available "${w[3]}" action
+	' 2>/dev/null
+done >"$work/4bash.out"
+
+python3 - >"$work/4py.out" <<PYEOF
+import sys
+sys.path.insert(0, '$sibling/scripts/lib/shared/python')
+import report_table as rt
+for cols in (32, 48, 60, 80, 100, 120, 200):
+    w = rt.four_column_widths(max(32, cols))
+    head, rule = rt.format_four_column_header(w, ("component", "installed", "available", "action"))
+    print(head)
+    print(rule)
+PYEOF
+
+if diff -u "$work/4bash.out" "$work/4py.out" >"$work/4diff" 2>&1; then
+	printf 'ok - four-column layout matches across seven terminal widths\n'
+else
+	printf 'not ok - four-column layout disagrees\n'
+	cat "$work/4diff" | head -12
+	failures=$((failures + 1))
+fi
+
+printf '\nRan 3 renderer-parity test(s); %d failure(s).\n' "$failures"
 ((failures == 0))
