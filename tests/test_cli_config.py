@@ -186,6 +186,38 @@ class CliConfigTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(desired, {"authSource": "ANTHROPIC_API_KEY"})
 
+    def test_a_credential_key_is_refused_whatever_it_is_called(self) -> None:
+        """Cursor keeps its credentials under `authInfo`, whose name matches
+        none of the credential words and whose value is an object -- so the name
+        heuristic failed both of its conditions and would have accepted it."""
+        self._declare("cursor", '{"authInfo": {"accessToken": "sk-live-abc"}}')
+
+        desired, error = read_desired(self.paths.root, self.clis["cursor"])
+
+        self.assertEqual(desired, {})
+        self.assertIsNotNone(error)
+        self.assertIn("credential-shaped", error)
+
+    def test_a_credential_nested_in_an_object_is_refused(self) -> None:
+        """One level down is still version control."""
+        self._declare("claude", '{"env": {"apiKey": "sk-live-abc123"}}')
+
+        desired, error = read_desired(self.paths.root, self.clis["claude"])
+
+        self.assertEqual(desired, {})
+        self.assertIsNotNone(error)
+        self.assertIn("env.apiKey", error)
+
+    def test_naming_where_a_secret_lives_is_still_allowed(self) -> None:
+        """The widened guard must not swallow the supported form. Exact names
+        only: authSource is not authInfo."""
+        self._declare("claude", '{"authSource": "ANTHROPIC_API_KEY"}')
+
+        desired, error = read_desired(self.paths.root, self.clis["claude"])
+
+        self.assertIsNone(error)
+        self.assertEqual(desired, {"authSource": "ANTHROPIC_API_KEY"})
+
     def test_an_unparseable_config_is_reported_and_not_written(self) -> None:
         broken = '{"model": '
         self._write_config("claude", broken)

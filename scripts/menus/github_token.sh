@@ -55,9 +55,15 @@ _agentbot_token_menu_pause() {
 
 _agentbot_token_menu_secret() {
 	local out_var="$1" prompt="$2" value=''
-	printf '%s' "$prompt" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
-	IFS= read -rs value <&"$AGENTBOT_TOKEN_MENU_IN_FD" || value='q'
-	printf '\n' >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+	# `read -rs` shows nothing at all, so a mistyped token gives no feedback that
+	# anything was typed. read_tty_secret masks with * and supports backspace.
+	#
+	# It reads the DOTFILES_TTY_* seam, which tui.sh already feeds from
+	# AGENTBOT_TUI_*. These are `local`, which in Bash is dynamic scope: the
+	# helper sees them and the exported values come back untouched afterwards.
+	local DOTFILES_TTY_IN_FD="$AGENTBOT_TOKEN_MENU_IN_FD"
+	local DOTFILES_TTY_OUT_FD="$AGENTBOT_TOKEN_MENU_OUT_FD"
+	read_tty_secret value "$prompt" || value='q'
 	printf -v "$out_var" '%s' "$value"
 }
 

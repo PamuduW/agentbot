@@ -37,6 +37,15 @@ SOURCE_DIRECTORY = "cli"
 # version control. Env var names are fine; values are not.
 _SECRET_NAME = re.compile(r"(token|secret|password|passwd|apikey|api_key|credential)", re.I)
 
+# Keys that hold a credential whatever they are called. The name heuristic above
+# cannot see Cursor's: "authInfo" contains none of those words, and its value is
+# an object rather than a string, so it failed both conditions and would have
+# been accepted into a committed desired-state file.
+#
+# Matched exactly, not as substrings: "authSource" names where a secret lives
+# and is deliberately allowed.
+_CREDENTIAL_KEYS = frozenset({"authinfo", "auth", "credentials"})
+
 
 @dataclass(frozen=True)
 class ManagedCli:
@@ -77,12 +86,22 @@ def desired_source(root: Path, cli: ManagedCli) -> Path:
     return root / SOURCE_DIRECTORY / cli.source_name
 
 
-def _secret_keys(desired: dict[str, object]) -> tuple[str, ...]:
-    return tuple(
-        key
-        for key, value in sorted(desired.items())
-        if _SECRET_NAME.search(key) and isinstance(value, str) and value
-    )
+def _secret_keys(desired: dict[str, object], prefix: str = "") -> tuple[str, ...]:
+    """Credential-shaped keys anywhere in a desired-state file.
+
+    Nested objects are searched too: a secret one level down is still a secret
+    in version control, and the flat check could not see one.
+    """
+    found: list[str] = []
+    for key, value in sorted(desired.items()):
+        path = f"{prefix}{key}"
+        if key.lower() in _CREDENTIAL_KEYS:
+            found.append(path)
+        elif _SECRET_NAME.search(key) and isinstance(value, str) and value:
+            found.append(path)
+        elif isinstance(value, dict):
+            found.extend(_secret_keys(value, f"{path}."))
+    return tuple(found)
 
 
 def read_desired(root: Path, cli: ManagedCli) -> tuple[dict[str, object], str | None]:
