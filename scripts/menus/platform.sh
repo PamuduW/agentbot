@@ -7,34 +7,6 @@
 # directly; every mutating one confirms first, because apply installs editor
 # extensions and writes into the Windows profile.
 
-_agentbot_platform_menu() {
-	MENU_SIMPLE_TITLE='Platform'
-	MENU_SIMPLE_BREADCRUMB='Agentbot › Platform'
-	MENU_SIMPLE_LABELS=(
-		'VS Code status'
-		'VS Code seed'
-		'VS Code apply'
-		'Cursor statusline status'
-		'Cursor statusline install'
-		'CLI config status'
-		'CLI config apply'
-	)
-	MENU_SIMPLE_KEYS=(
-		vscode-status vscode-seed vscode-apply
-		cursor-status cursor-install
-		cli-config-status cli-config-apply
-	)
-	MENU_SIMPLE_DESCS=(
-		$'Preview the selected extensions and owned settings for each host.\nRead-only; writes nothing.'
-		$'Record the currently installed extensions into vscode.yaml.\nWrites the manifest in this repository, not your editor.'
-		$'Install missing extensions and merge owned settings into each host.\nBacks each settings file up first. Requires confirmation.'
-		$'Report whether the managed Cursor statusline is installed and current.\nRead-only; writes nothing.'
-		$'Install the managed statusline and point the Cursor CLI at it.\nWrites ~/.cursor and the statusLine block. Requires confirmation.'
-		$'Preview the declared Claude, Codex, and Cursor CLI configuration keys.\nRead-only; writes nothing.'
-		$'Merge the declared keys into each CLI config, rolling back on failure.\nBacks each config up first. Requires confirmation.'
-	)
-}
-
 agentbot_menu_platform_confirm() {
 	local prompt="$1"
 	tui_confirm "${C_YELLOW}${prompt}${C_RESET}"
@@ -71,8 +43,7 @@ agentbot_menu_platform_dispatch() {
 agentbot_menu_platform() {
 	local choice rc
 	while true; do
-		_agentbot_platform_menu
-		if ! agentbot_menu_run; then
+		if ! agentbot_menu_run platform; then
 			return 0
 		fi
 		choice="${MENU_SIMPLE_RESULT:-}"

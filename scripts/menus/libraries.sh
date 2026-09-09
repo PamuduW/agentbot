@@ -18,20 +18,8 @@ agentbot_menu_libraries_dispatch() {
 	return "$rc"
 }
 
-_agentbot_menu_libraries_setup() {
-	MENU_SIMPLE_TITLE='Libraries'
-	MENU_SIMPLE_BREADCRUMB='Agentbot › Libraries'
-	MENU_SIMPLE_LABELS=('Command Lib' 'Graphify Lib')
-	MENU_SIMPLE_KEYS=(command_lib graphify_lib)
-	MENU_SIMPLE_DESCS=(
-		$'Show Agentbot commands and whether they read or mutate state.\nUse this as the local command reference.'
-		$'Show Graphify assistant and shell commands plus safety boundaries.\nRead-only; Install and Update own generic skill synchronization.'
-	)
-}
-
 agentbot_menu_libraries() {
 	tui_menu_declare_owns_pause
-	tui_submenu_loop _agentbot_menu_libraries_setup agentbot_menu_libraries_dispatch
-	MENU_SIMPLE_TITLE='Agentbot'
-	MENU_SIMPLE_BREADCRUMB='Agentbot'
+	# No globals to put back: the parent menu is named, not built here.
+	agentbot_submenu_loop libraries agentbot_menu_libraries_dispatch
 }

@@ -49,24 +49,6 @@ _agentbot_graphify_rows_for_section() {
 	esac
 }
 
-_agentbot_graphify_section_menu() {
-	MENU_SIMPLE_TITLE='Graphify Lib'
-	MENU_SIMPLE_BREADCRUMB='Agentbot › Graphify Lib'
-	MENU_SIMPLE_LABELS=(
-		'Assistant commands'
-		'Shell query and export commands'
-		'Manual platform setup'
-		'Agentbot lifecycle boundary'
-	)
-	MENU_SIMPLE_KEYS=(assistant shell platform boundary)
-	MENU_SIMPLE_DESCS=(
-		'Commands used inside supported coding-agent conversations.'
-		'Read-only queries plus explicit local extraction and export commands.'
-		'Manual platform copies; Agentbot does not run these platform-specific paths.'
-		'What Agentbot Install and Update own, and what remains manual.'
-	)
-}
-
 _agentbot_graphify_command_menu() {
 	local section="$1" row label command description
 	MENU_SIMPLE_TITLE='Graphify commands'
@@ -112,8 +94,7 @@ _agentbot_graphify_render_boundary() {
 agentbot_menu_graphify_lib() {
 	local section command
 	while true; do
-		_agentbot_graphify_section_menu
-		agentbot_menu_run || return 0
+		agentbot_menu_run graphify_lib || return 0
 		section="${MENU_SIMPLE_RESULT:-}"
 		if [[ "$section" == boundary ]]; then
 			tui_clear

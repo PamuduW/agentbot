@@ -24,7 +24,7 @@ test_main_dispatch_and_pause_ownership() (
 	: >"$calls"
 	local index=0
 	local -a choices=(status install update prune-skills token workspaces libraries quit)
-	menu_simple_run() {
+	agentbot_menu_run() {
 		MENU_SIMPLE_RESULT="${choices[$index]}"
 		index=$((index + 1))
 	}
@@ -126,7 +126,7 @@ test_repository_change_reaches_the_outer_menu_without_pause() (
 	local calls="$TEST_ROOT/repository-change.calls"
 	: >"$calls"
 	local index=0
-	menu_simple_run() {
+	agentbot_menu_run() {
 		((index++ == 0)) || return 1
 		MENU_SIMPLE_RESULT=update
 	}
@@ -200,7 +200,7 @@ test_workspace_removal_prompt_uses_the_shared_tty_adapter() (
 
 test_command_lib_selects_one_detail() (
 	local capture="$TEST_ROOT/command-lib.capture" output calls=0
-	menu_simple_run() {
+	agentbot_menu_run() {
 		calls=$((calls + 1))
 		if ((calls == 1)); then
 			printf '%s\n' "${MENU_SIMPLE_LABELS[*]}" >"$capture"
@@ -219,7 +219,7 @@ test_command_lib_selects_one_detail() (
 
 test_graphify_library_is_data_driven_and_supported() (
 	local output step=0 fake_help
-	menu_simple_run() {
+	agentbot_menu_run() {
 		step=$((step + 1))
 		case "$step" in
 		1) MENU_SIMPLE_RESULT=assistant ;;
@@ -261,7 +261,7 @@ test_workspaces_routes_read_preview_and_apply() (
 	: >"$calls"
 	local index=0
 	local -a choices=(list preview apply back)
-	menu_simple_run() {
+	agentbot_menu_run() {
 		local choice="${choices[$index]}"
 		index=$((index + 1))
 		[[ "$choice" != back ]] || return 1
@@ -301,7 +301,7 @@ test_undeclared_submenu_still_gets_a_parent_pause() (
 	: >"$calls"
 	local index=0
 	local -a choices=(libraries quit)
-	menu_simple_run() {
+	agentbot_menu_run() {
 		MENU_SIMPLE_RESULT="${choices[$index]}"
 		index=$((index + 1))
 	}

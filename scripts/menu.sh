@@ -29,34 +29,9 @@ source "$_AGENTBOT_MENU_DIR/menus/components.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/libraries.sh"
 
-# shellcheck disable=SC2034
-_agentbot_menu_setup() {
-	MENU_SIMPLE_TITLE='Agentbot'
-	MENU_SIMPLE_BREADCRUMB='Agentbot'
-	MENU_SIMPLE_LABELS=(
-		'Check Status'
-		'Install Agentbot'
-		'Update'
-		'Prune Skills'
-		'GitHub Token Config'
-		'Workspaces'
-		'Platform'
-		'Libraries'
-		'Quit'
-	)
-	MENU_SIMPLE_KEYS=(status install update prune-skills token workspaces platform libraries quit)
-	MENU_SIMPLE_DESCS=(
-		$'Check the installed Agentbot components and baseline.\nRead-only status; no updates or writes are performed.'
-		$'Choose what to set up, then install: skills, Graphify, Boost.\nManaged outputs, Doctor and the launcher link always run.'
-		$'Update the repository, reconcile skills, and refresh workspaces plus global outputs.\nA preview and explicit confirmation are required before mutation.'
-		$'Select and permanently remove manual, orphaned, excluded, or stale skills.\nEach candidate shows its classification and source detail before confirmation.'
-		$'Configure the optional shared GitHub API token.\nThe token is stored outside this repository.'
-		$'List, preview, and resync locally registered workspaces.\nApply actions require explicit confirmation.'
-		$'Manage VS Code extensions and settings, the Cursor statusline, and the agent CLI configs.\nPreviews are read-only; every apply confirms first.'
-		$'Open the Agentbot and Graphify command reference libraries.\nRead-only command and safety information.'
-		$'Exit the Agentbot menu.\nReturn to the calling process.'
-	)
-}
+# The menu itself is defined in src/ui/menus.py; this fills the globals for the
+# geometry helpers and the suites that read them.
+_agentbot_menu_setup() { agentbot_menu_load main; }
 
 agentbot_menu_dispatch() {
 	local choice="$1" rc=0
@@ -85,8 +60,7 @@ agentbot_menu_loop() {
 	export AGENTBOT_TUI=1
 	AGENTBOT_MENU_QUIT=false
 	while true; do
-		_agentbot_menu_setup
-		if ! agentbot_menu_run; then
+		if ! agentbot_menu_run main; then
 			return 0
 		fi
 		choice="${MENU_SIMPLE_RESULT:-}"

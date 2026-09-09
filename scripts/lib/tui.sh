@@ -216,27 +216,106 @@ tui_table_row() {
 # so menu_runner.sh stays language-neutral and Dotfiles keeps the Bash default.
 MENU_SIMPLE_RUNNER=agentbot_menu_run
 
+# With a name, the menu is defined in src/ui/menus.py and nothing here builds
+# it. Without one, the caller has already filled MENU_SIMPLE_* -- which is how
+# the menus whose entries are computed at runtime still work.
 agentbot_menu_run() {
-	local choice rc=0
+	local name="${1:-}" choice rc=0
+	local -a args=()
 
-	if ! command -v python3 >/dev/null 2>&1 || [[ ! -d "${AGENTBOT_HOME:-}/src/ui" ]]; then
-		menu_simple_run
-		return $?
+	if ! _agentbot_python_available; then
+		# Only a caller-built menu can fall back: a named one is defined on the
+		# other side of this call. That is not a gap worth closing by writing
+		# the definitions twice -- every action behind these menus runs the
+		# Python CLI, so a machine that cannot run this cannot run them either.
+		if [[ -z "$name" ]]; then
+			menu_simple_run
+			return $?
+		fi
+		printf '%sThe menu needs python3, which is not available.%s\n' \
+			"${C_RED:-}" "${C_RESET:-}" >&2
+		return 1
 	fi
 
-	choice="$(_agentbot_menu_spec | (cd "$AGENTBOT_HOME" && PYTHONDONTWRITEBYTECODE=1 python3 -m src.ui.menu_select))" || rc=$?
+	args=(--cols "$(tui_cols)")
+	[[ -n "${C_RESET:-}" ]] && args+=(--color)
+	[[ -n "$name" ]] && args+=(--menu "$name")
 
-	# 3 is "this did not work", and only that falls back -- a cancelled menu
-	# must stay cancelled rather than being re-drawn by the other loop.
+	if [[ -n "$name" ]]; then
+		choice="$(_agentbot_menu_python "${args[@]}" </dev/null)" || rc=$?
+	else
+		choice="$(_agentbot_menu_spec | _agentbot_menu_python "${args[@]}")" || rc=$?
+	fi
+
 	if ((rc == 3)); then
-		menu_simple_run
-		return $?
+		if [[ -z "$name" ]]; then
+			menu_simple_run
+			return $?
+		fi
+		return 1
 	fi
 	if ((rc != 0)); then
 		MENU_SIMPLE_RESULT=''
 		return 1
 	fi
 	MENU_SIMPLE_RESULT="$choice"
+}
+
+# agentbot_menu_load <name>: fill MENU_SIMPLE_* from a named definition, for the
+# Bash that still reads those globals directly.
+agentbot_menu_load() {
+	local name="$1" line field value
+	MENU_SIMPLE_TITLE=''
+	MENU_SIMPLE_BREADCRUMB=''
+	MENU_SIMPLE_LABELS=()
+	MENU_SIMPLE_KEYS=()
+	MENU_SIMPLE_TYPES=()
+	MENU_SIMPLE_DESCS=()
+
+	_agentbot_python_available || return 1
+	while IFS= read -r line; do
+		field="${line%%$'\x1f'*}"
+		value="${line#*$'\x1f'}"
+		value="${value//$'\x1e'/$'\n'}"
+		case "$field" in
+		title) MENU_SIMPLE_TITLE="$value" ;;
+		breadcrumb) MENU_SIMPLE_BREADCRUMB="$value" ;;
+		label) MENU_SIMPLE_LABELS+=("$value") ;;
+		key) MENU_SIMPLE_KEYS+=("$value") ;;
+		type) MENU_SIMPLE_TYPES+=("$value") ;;
+		desc) MENU_SIMPLE_DESCS+=("$value") ;;
+		esac
+	done < <(_agentbot_menu_python --menu "$name" --dump </dev/null)
+	((${#MENU_SIMPLE_LABELS[@]} > 0))
+}
+
+_agentbot_python_available() {
+	command -v python3 >/dev/null 2>&1 && [[ -d "${AGENTBOT_HOME:-}/src/ui" ]]
+}
+
+_agentbot_menu_python() {
+	(cd "$AGENTBOT_HOME" && PYTHONDONTWRITEBYTECODE=1 python3 -m src.ui.menu_select "$@")
+}
+
+# agentbot_submenu_loop <menu-name> <dispatch-fn>
+#
+# tui_submenu_loop's shape, taking a defined menu instead of a setup function.
+# The shared one calls its setup on every pass, which for a named menu would
+# mean fetching the definition once per redraw on top of running it -- two
+# processes per display where the point of the port was one.
+agentbot_submenu_loop() {
+	local name="$1" dispatch_fn="$2" choice rc
+	while true; do
+		if ! agentbot_menu_run "$name"; then
+			return 0
+		fi
+		choice="${MENU_SIMPLE_RESULT:-}"
+		[[ "$choice" == back || "$choice" == quit ]] && return 0
+		ui_clear
+		rc=0
+		"$dispatch_fn" "$choice" || rc=$?
+		((rc == 0)) || ui_pause
+	done
 }
 
 # The menu as `name<FS>value` lines. No quoting to get wrong, and a description

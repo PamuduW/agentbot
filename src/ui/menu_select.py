@@ -270,14 +270,58 @@ def parse_spec(text: str) -> dict:
     return spec
 
 
+def dump_spec(spec: dict) -> str:
+    """A definition back out in the same lines it comes in on.
+
+    For the Bash that still needs `MENU_SIMPLE_*` populated -- the geometry
+    helpers and the suites that assert on them -- so a named menu is written
+    once here and read there rather than kept in step by hand.
+    """
+    lines = [
+        f"title{FIELD_SEP}{spec['title']}",
+        f"breadcrumb{FIELD_SEP}{spec['breadcrumb']}",
+    ]
+    for field_name, values in (
+        ("label", spec.get("labels")),
+        ("key", spec.get("keys")),
+        ("type", spec.get("types")),
+        ("desc", spec.get("descs")),
+    ):
+        for value in values or ():
+            lines.append(f"{field_name}{FIELD_SEP}{value.replace(chr(10), NEWLINE_SUB)}")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit 0 with the chosen key, 1 for a cancelled menu, 3 for anything else.
 
     Three rather than one so the caller can tell "the operator pressed q" from
-    "this did not work", and fall back to the Bash loop only for the second.
+    "this did not work".
     """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run one menu.")
+    parser.add_argument("--menu", help="a menu defined in src/ui/menus.py")
+    parser.add_argument("--cols", type=int, default=80)
+    parser.add_argument("--color", action="store_true")
+    parser.add_argument(
+        "--dump",
+        action="store_true",
+        help="write the named menu's definition out instead of running it",
+    )
+    args = parser.parse_args(argv)
+
     try:
-        choice = run(parse_spec(sys.stdin.read()))
+        if args.menu:
+            from . import menus
+
+            spec = menus.as_spec(args.menu, cols=args.cols, color=args.color)
+        else:
+            spec = parse_spec(sys.stdin.read())
+        if args.dump:
+            sys.stdout.write(dump_spec(spec))
+            return 0
+        choice = run(spec)
     except Exception:  # the caller has a Bash menu to fall back to
         import traceback
 

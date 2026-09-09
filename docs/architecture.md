@@ -42,11 +42,21 @@ src/lifecycle.py
   Without `python3`, or if the Python side fails (exit 3, as opposed to exit 1
   for a cancelled menu), the shared Bash loop answers instead.
 
+  `src/ui/menus.py` holds the menus whose entries are fixed -- main, libraries,
+  platform, workspaces, Graphify Lib -- and `agentbot_menu_run <name>` runs one
+  by name with nothing built in Bash. Menus whose entries are computed at
+  runtime still fill `MENU_SIMPLE_*` and call `agentbot_menu_run` with no name.
+  Dispatch stays in Bash either way, and `tests/test_menu_definitions.sh` holds
+  the halves together: every key has a branch and every branch has a key.
+
   Three suites hold it: `tests/test_menu_parity.sh` compares frames byte for
   byte at every cursor position, width and palette and compares the key decoder
   against `menu_read_key`; `tests/test_menu_select.py` drives real sessions
   through a pty; `tests/test_menu_runner.sh` covers the handover, including the
-  no-`python3` fallback.
+  no-`python3` fallback for a caller-built menu. A *named* menu has no such
+  fallback -- its definition lives on the Python side, and every action behind
+  it runs the Python CLI, so a machine that cannot run one cannot run the
+  other.
 
 ## Authored and generated data
 

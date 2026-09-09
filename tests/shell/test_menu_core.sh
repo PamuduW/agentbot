@@ -276,7 +276,7 @@ test_every_platform_action_reaches_its_backend_command() (
 	agentbot_run_backend() { calls+="$* | "; }
 	tui_confirm() { return 0; }
 	local key
-	_agentbot_platform_menu
+	agentbot_menu_load platform || return 1
 	for key in "${MENU_SIMPLE_KEYS[@]}"; do
 		[[ "$key" == back ]] && continue
 		agentbot_menu_platform_dispatch "$key" >/dev/null || return 1

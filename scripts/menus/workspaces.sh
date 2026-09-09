@@ -95,26 +95,8 @@ agentbot_menu_workspaces() {
 	tui_menu_declare_owns_pause
 	local choice rc
 
-	MENU_SIMPLE_TITLE='Workspaces'
-	MENU_SIMPLE_BREADCRUMB='Agentbot › Workspaces'
-	MENU_SIMPLE_LABELS=(
-		'List recorded workspaces'
-		'Preview resync (all)'
-		'Apply resync (all)'
-		'Remove recorded workspaces'
-	)
-	MENU_SIMPLE_KEYS=(list preview apply remove)
-	MENU_SIMPLE_DESCS=(
-		$'Read the private local workspace registry.\nNo repository or state changes are performed.'
-		$'Preview managed changes for every enabled workspace plus global Codex/Claude outputs.\nNo files are written.'
-		$'Apply managed workspace changes and refresh global AGENTS/CLAUDE/statusline outputs.\nConfirmation is required before mutation.'
-		$'Select one recorded path and stop managing it.\nNo workspace files are changed or removed.'
-	)
-
 	while true; do
-		if ! agentbot_menu_run; then
-			MENU_SIMPLE_TITLE='Agentbot'
-			MENU_SIMPLE_BREADCRUMB='Agentbot'
+		if ! agentbot_menu_run workspaces; then
 			return 0
 		fi
 		choice="${MENU_SIMPLE_RESULT:-}"
