@@ -261,6 +261,65 @@ agentbot_menu_run() {
 	MENU_SIMPLE_RESULT="$choice"
 }
 
+# agentbot_checkbox_run: the checkbox list, in Python.
+#
+# Reads and writes the same MENU_CB_* globals menu_checkbox_run does, so a
+# caller changes one word. The Bash loop still answers when there is no python3,
+# and when the caller uses the callback hooks -- MENU_CB_TOGGLE_FN and its
+# siblings are Bash functions, and a loop in another process cannot call them.
+# Neither Agentbot checkbox uses them; the Dotfiles component selector does, and
+# it stays on the Bash loop for that reason as well as the boundary one.
+agentbot_checkbox_run() {
+	local result rc=0 index
+	local -a flags=()
+
+	if ! _agentbot_python_available ||
+		[[ -n "${MENU_CB_TOGGLE_FN:-}${MENU_CB_ALL_FN:-}${MENU_CB_NONE_FN:-}${MENU_CB_DESC_FN:-}" ]]; then
+		menu_checkbox_run
+		return $?
+	fi
+
+	local -a args=(--checkbox --cols "$(tui_cols)")
+	[[ -n "${C_RESET:-}" ]] && args+=(--color)
+
+	result="$(_agentbot_checkbox_spec | _agentbot_menu_python "${args[@]}")" || rc=$?
+	if ((rc == 3)); then
+		menu_checkbox_run
+		return $?
+	fi
+	((rc == 0)) || return 1
+
+	IFS=',' read -r -a flags <<<"$result"
+	((${#flags[@]} == ${#MENU_CB_LABELS[@]})) || return 1
+	for index in "${!flags[@]}"; do
+		MENU_CB_CHECKED[index]="${flags[$index]}"
+	done
+}
+
+_agentbot_checkbox_spec() {
+	local fs=$'\x1f' nl=$'\x1e' item index
+	local color=0
+
+	[[ -n "${C_RESET:-}" ]] && color=1
+	printf 'title%s%s\n' "$fs" "${MENU_CB_TITLE:-}"
+	printf 'breadcrumb%s%s\n' "$fs" "${MENU_CB_BREADCRUMB:-}"
+	printf 'hint%s%s\n' "$fs" "${MENU_CB_HINT:-}"
+	printf 'cols%s%s\n' "$fs" "$(tui_cols)"
+	printf 'rows%s%s\n' "$fs" "$(menu_tty_rows)"
+	printf 'color%s%s\n' "$fs" "$color"
+	printf 'compact%s%s\n' "$fs" "$([[ "${MENU_CB_COMPACT:-false}" == true ]] && printf 1 || printf 0)"
+	for item in "${MENU_CB_LABELS[@]}"; do
+		printf 'label%s%s\n' "$fs" "${item//$'\n'/$nl}"
+	done
+	for index in "${!MENU_CB_LABELS[@]}"; do
+		printf 'status%s%s\n' "$fs" "${MENU_CB_STATUS[$index]:-}"
+		printf 'checked%s%s\n' "$fs" "${MENU_CB_CHECKED[$index]:-0}"
+	done
+	for item in ${MENU_CB_DESCS[@]+"${MENU_CB_DESCS[@]}"}; do
+		printf 'desc%s%s\n' "$fs" "${item//$'\n'/$nl}"
+	done
+}
+
 # agentbot_menu_load <name>: fill MENU_SIMPLE_* from a named definition, for the
 # Bash that still reads those globals directly.
 agentbot_menu_load() {

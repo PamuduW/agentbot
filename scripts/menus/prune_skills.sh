@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # MENU_CB globals are consumed by menu_checkbox_run.
+# shellcheck disable=SC2034  # MENU_CB globals are consumed by the checkbox runner.
 
 _agentbot_load_prune_candidates() {
 	local listing name reason detail rc=0
@@ -46,7 +46,7 @@ agentbot_menu_prune_skills() {
 	MENU_CB_HINT='Up/Down navigate   Space toggle   a all   n none   Enter confirm   q back'
 	MENU_CB_COMPACT=false
 	unset MENU_CB_TOGGLE_FN MENU_CB_ALL_FN MENU_CB_NONE_FN MENU_CB_DESC_FN
-	menu_checkbox_run || return 0
+	agentbot_checkbox_run || return 0
 
 	for index in "${!AGENTBOT_PRUNE_SKILLS[@]}"; do
 		if [[ "${MENU_CB_CHECKED[index]}" -eq 1 ]]; then

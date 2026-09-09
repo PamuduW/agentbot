@@ -240,7 +240,14 @@ def run(spec: dict, *, input_fd: int | None = None, output_fd: int | None = None
 
 FIELD_SEP = "\x1f"
 NEWLINE_SUB = "\x1e"
-_REPEATED = {"label": "labels", "key": "keys", "desc": "descs", "type": "types"}
+_REPEATED = {
+    "label": "labels",
+    "key": "keys",
+    "desc": "descs",
+    "type": "types",
+    "status": "statuses",
+    "checked": "checked",
+}
 
 
 def parse_spec(text: str) -> dict:
@@ -265,6 +272,10 @@ def parse_spec(text: str) -> dict:
             spec["cols"] = int(value or 80)
         elif name == "color":
             spec["color"] = value == "1"
+        elif name == "compact":
+            spec["compact"] = value == "1"
+        elif name == "rows":
+            spec["rows"] = int(value or 24)
         else:
             spec[name] = value
     return spec
@@ -292,6 +303,106 @@ def dump_spec(spec: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def run_checkbox(
+    spec: dict, *, input_fd: int | None = None, output_fd: int | None = None
+) -> list[int] | None:
+    """Toggle, page and confirm. None means the operator backed out.
+
+    The moves are the same as the simple menu's plus the ones a list of choices
+    needs: space toggles the row under the cursor, `a` and `n` take or clear
+    everything, and PageUp/PageDown move a screen at a time. A message under the
+    list says what a bulk key just did, and clears as soon as the cursor moves,
+    because it describes an action rather than a state.
+    """
+    from . import checkbox as cb
+
+    labels = spec["labels"]
+    count = len(labels)
+    if count == 0:
+        return None
+
+    checked = [int(value) for value in spec["checked"]]
+    descs = spec.get("descs") or None
+    palette = menu.Palette(color=bool(spec.get("color")))
+    cols = int(spec.get("cols", 80))
+    size = cb.page_size(int(spec.get("rows", 24)), cb.fixed_rows(descs=descs))
+    cursor = 0
+    status_message = ""
+
+    def frame() -> str:
+        return cb.draw(
+            title=spec["title"],
+            breadcrumb=spec.get("breadcrumb", ""),
+            labels=labels,
+            statuses=spec.get("statuses"),
+            checked=checked,
+            descs=descs,
+            hint=spec.get("hint") or cb.DEFAULT_HINT,
+            status_message=status_message,
+            cursor=cursor,
+            size=size,
+            cols=cols,
+            palette=palette,
+            compact=bool(spec.get("compact")),
+        )
+
+    def height(at: int) -> int:
+        return cb.frame_height(count, size, cb.page_for_cursor(at, size), descs=descs)
+
+    reader = KeyReader(None if input_fd is not None else input_path(), fd=input_fd)
+    with _open_output(output_fd) as out:
+        try:
+            out.write(_terminfo("civis", "\x1b[?25l"))
+            out.write(_terminfo("clear", "\x1b[2J\x1b[H"))
+            out.write(frame())
+            out.flush()
+            while True:
+                previous, previous_height = cursor, height(cursor)
+                action = reader.read_action()
+                if action == "up":
+                    cursor = max(cursor - 1, 0)
+                    status_message = ""
+                elif action == "down":
+                    cursor = min(cursor + 1, count - 1)
+                    status_message = ""
+                elif action == "page_up":
+                    cursor = max(cursor - size, 0)
+                    status_message = ""
+                elif action == "page_down":
+                    cursor = min(cursor + size, count - 1)
+                    status_message = ""
+                elif action == "toggle":
+                    checked[cursor] = 0 if checked[cursor] else 1
+                elif action == "all":
+                    checked = [1] * count
+                    status_message = spec.get("all_message") or "All items selected"
+                elif action == "none":
+                    checked = [0] * count
+                    status_message = spec.get("none_message") or "All items cleared"
+                elif action == "confirm":
+                    return checked
+                elif action == "cancel":
+                    return None
+                else:
+                    continue
+
+                # A page change redraws from the top: the frame is a different
+                # height, so winding the cursor up by the old one would leave
+                # the tail of the previous page on the screen.
+                if cb.page_for_cursor(previous, size) != cb.page_for_cursor(cursor, size) or (
+                    previous_height != height(cursor)
+                ):
+                    out.write(_terminfo("clear", "\x1b[2J\x1b[H"))
+                else:
+                    out.write(f"\x1b[{previous_height}A")
+                out.write(frame())
+                out.flush()
+        finally:
+            out.write(_terminfo("cnorm", "\x1b[?25h"))
+            out.flush()
+            reader.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit 0 with the chosen key, 1 for a cancelled menu, 3 for anything else.
 
@@ -309,6 +420,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="write the named menu's definition out instead of running it",
     )
+    parser.add_argument(
+        "--checkbox",
+        action="store_true",
+        help="run a checkbox list; the result is the checked flags, comma separated",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -321,11 +437,24 @@ def main(argv: list[str] | None = None) -> int:
         if args.dump:
             sys.stdout.write(dump_spec(spec))
             return 0
+        if args.checkbox:
+            selection = run_checkbox(spec)
+            if selection is None:
+                return 1
+            print(",".join(str(flag) for flag in selection))
+            return 0
         choice = run(spec)
-    except Exception:  # the caller has a Bash menu to fall back to
-        import traceback
+    except Exception as error:
+        # One line, not a stack trace: exit 3 means "use the Bash loop", the
+        # caller does exactly that, and a traceback in the middle of a menu is
+        # noise in front of an operator who is about to see the menu anyway.
+        # Set AGENTBOT_MENU_DEBUG=1 when the reason matters.
+        if os.environ.get("AGENTBOT_MENU_DEBUG") == "1":
+            import traceback
 
-        traceback.print_exc()
+            traceback.print_exc()
+        else:
+            print(f"menu unavailable: {error}", file=sys.stderr)
         return 3
     if choice is None:
         return 1

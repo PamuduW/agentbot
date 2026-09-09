@@ -69,7 +69,7 @@ test_prune_skill_menu_removes_only_checked_names_and_refreshes_agents() (
 		fi
 		printf '%s\n' "$*" >>"$calls"
 	}
-	menu_checkbox_run() {
+	agentbot_checkbox_run() {
 		[[ "${MENU_CB_LABELS[*]}" == 'gpt-taste gitlab-ci pitstop' ]] || return 1
 		[[ "${MENU_CB_STATUS[*]}" == 'manual orphaned excluded' ]] || return 1
 		[[ "${MENU_CB_DESCS[1]}" == *'owner/retired'* ]] || return 1
@@ -101,7 +101,7 @@ test_prune_skill_menu_does_nothing_when_no_skill_is_checked() (
 		fi
 		printf '%s\n' "$*" >>"$calls"
 	}
-	menu_checkbox_run() { return 0; }
+	agentbot_checkbox_run() { return 0; }
 	tui_confirm() {
 		printf 'unexpected confirmation\n' >>"$calls"
 		return 0
@@ -333,7 +333,7 @@ test_component_selector_keeps_the_install_contracts() (
 		printf '%s\n' "$*" >>"$calls"
 		return 3
 	}
-	menu_checkbox_run() {
+	agentbot_checkbox_run() {
 		MENU_CB_CHECKED=(1 0 1)
 		return 0
 	}
@@ -347,7 +347,7 @@ test_component_selector_cancels_when_nothing_is_checked() (
 	local calls="$TEST_ROOT/selector-none.calls" rc=0
 	: >"$calls"
 	agentbot_run_backend() { printf '%s\n' "$*" >>"$calls"; }
-	menu_checkbox_run() {
+	agentbot_checkbox_run() {
 		MENU_CB_CHECKED=(0 0 0)
 		return 0
 	}

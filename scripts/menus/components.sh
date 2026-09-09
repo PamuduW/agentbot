@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # MENU_CB_* globals are consumed by menu_checkbox_run.
+# shellcheck disable=SC2034  # MENU_CB_* globals are consumed by the checkbox runner.
 
 # Roadmap 4.1: Agentbot had no component selection, so bootstrap triggered
 # `agentbot install` outright and the operator got skills, Graphify and Boost as
@@ -53,7 +53,7 @@ agentbot_menu_components() {
 	local selection rc=0
 
 	_agentbot_components_prepare
-	menu_checkbox_run || return 0
+	agentbot_checkbox_run || return 0
 
 	selection="$(agentbot_components_selection)"
 	if [[ -z "$selection" ]]; then

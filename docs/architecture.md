@@ -53,8 +53,15 @@ src/lifecycle.py
   the halves together: every key has a branch and every branch has a key.
 
   `src/ui/checkbox.py` is the second menu shape -- a list where every row is on
-  or off, with a status column and paging. Frames only so far; the loop that
-  reads keys and toggles is still `scripts/lib/shared/tui/menu_checkbox.sh`.
+  or off, with a status column and paging -- and `agentbot_checkbox_run` runs it
+  the way `agentbot_menu_run` runs the simple one, through the same MENU_CB_*
+  globals `menu_checkbox_run` uses. Install's component selector and Prune
+  Skills both go through it.
+
+  The Bash loop still answers in two cases: no `python3`, and a caller using the
+  `MENU_CB_TOGGLE_FN` hooks, which are Bash functions a loop in another process
+  cannot call. Neither Agentbot checkbox uses them; the Dotfiles component
+  selector does.
 
   Three suites hold it: `tests/test_menu_parity.sh` compares frames byte for
   byte at every cursor position, width and palette and compares the key decoder

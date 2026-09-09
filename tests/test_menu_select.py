@@ -142,5 +142,132 @@ class MenuSelectTests(unittest.TestCase):
         self.assertTrue(drawn.endswith(menu_select._terminfo("cnorm", "\x1b[?25h")))
 
 
+CHECKBOX = {
+    "title": "Install Agentbot",
+    "breadcrumb": "Agentbot › Install Agentbot",
+    "labels": ["Skills", "Graphify integration", "Boost integration"],
+    "checked": [1, 1, 1],
+    "descs": ["Skills.", "Graphify.", "Boost."],
+    "cols": 80,
+    "rows": 24,
+    "color": False,
+}
+SPACE = b" "
+
+
+class CheckboxTests(unittest.TestCase):
+    """The other loop, driven the same way. What a checkbox has that a menu does
+    not is state that survives a keystroke, so these press keys in sequences and
+    assert on where the marks ended up."""
+
+    def _run(
+        self, keys: list[bytes], spec: dict | None = None, *, close_input: bool = False
+    ) -> tuple[list[int] | None, str]:
+        controller, follower = pty.openpty()
+        out_read, out_write = os.pipe()
+        drawn: list[bytes] = []
+
+        def drain() -> None:
+            while True:
+                chunk = os.read(out_read, 65536)
+                if not chunk:
+                    return
+                drawn.append(chunk)
+
+        reader = threading.Thread(target=drain, daemon=True)
+        reader.start()
+        result: list[list[int] | None] = []
+
+        def run_checkbox() -> None:
+            try:
+                result.append(
+                    menu_select.run_checkbox(
+                        spec or CHECKBOX, input_fd=follower, output_fd=out_write
+                    )
+                )
+            finally:
+                os.close(out_write)
+
+        worker = threading.Thread(target=run_checkbox)
+        worker.start()
+        for key in keys:
+            time.sleep(0.05)
+            os.write(controller, key)
+        if close_input:
+            time.sleep(0.05)
+            os.close(controller)
+        worker.join(timeout=5)
+        reader.join(timeout=5)
+        if not close_input:
+            os.close(controller)
+        os.close(follower)
+        os.close(out_read)
+        self.assertFalse(worker.is_alive(), "the checkbox did not return")
+        return result[0], b"".join(drawn).decode()
+
+    def test_space_toggles_the_row_under_the_cursor_only(self) -> None:
+        selection, _ = self._run([SPACE, ENTER])
+        self.assertEqual(selection, [0, 1, 1])
+        selection, _ = self._run([DOWN, SPACE, ENTER])
+        self.assertEqual(selection, [1, 0, 1])
+
+    def test_a_row_toggles_back(self) -> None:
+        selection, _ = self._run([SPACE, SPACE, ENTER])
+        self.assertEqual(selection, [1, 1, 1])
+
+    def test_all_and_none_take_and_clear_everything(self) -> None:
+        selection, drawn = self._run([b"n", ENTER])
+        self.assertEqual(selection, [0, 0, 0])
+        self.assertIn("All items cleared", drawn)
+        selection, drawn = self._run([b"n", b"a", ENTER])
+        self.assertEqual(selection, [1, 1, 1])
+        self.assertIn("All items selected", drawn)
+
+    def test_the_bulk_message_clears_when_the_cursor_moves(self) -> None:
+        """It says what a key just did, not what is true, so it must not linger
+        over a list the operator has since moved through."""
+        _, drawn = self._run([b"n", DOWN, ENTER])
+        last_frame = drawn.rsplit("=== Install Agentbot ===", 1)[-1]
+        self.assertNotIn("All items cleared", last_frame)
+
+    def test_q_backs_out_and_keeps_nothing(self) -> None:
+        selection, _ = self._run([SPACE, b"q"])
+        self.assertIsNone(selection)
+
+    def test_the_cursor_stops_at_both_ends(self) -> None:
+        selection, _ = self._run([UP, UP, SPACE, ENTER])
+        self.assertEqual(selection, [0, 1, 1])
+        selection, _ = self._run([DOWN, DOWN, DOWN, DOWN, SPACE, ENTER])
+        self.assertEqual(selection, [1, 1, 0])
+
+    def test_paging_moves_a_screen_and_stops_at_the_last_entry(self) -> None:
+        spec = dict(CHECKBOX)
+        spec["labels"] = [f"entry {index}" for index in range(20)]
+        spec["checked"] = [0] * 20
+        spec["descs"] = ["d"] * 20
+        # A short terminal, so a page holds fewer rows than the list has.
+        spec["rows"] = 16
+        selection, drawn = self._run([b"[6~", SPACE, ENTER], spec)
+        assert selection is not None
+        self.assertEqual(sum(selection), 1)
+        self.assertEqual(selection.index(1), 6)
+        self.assertIn("Page 2/", drawn)
+
+        selection, _ = self._run([b"[6~"] * 9 + [SPACE, ENTER], spec)
+        assert selection is not None
+        self.assertEqual(selection.index(1), 19)
+
+    def test_an_empty_list_returns_nothing_rather_than_drawing(self) -> None:
+        spec = dict(CHECKBOX)
+        spec["labels"] = []
+        spec["checked"] = []
+        spec["descs"] = []
+        self.assertIsNone(menu_select.run_checkbox(spec))
+
+    def test_input_ending_confirms_what_is_marked(self) -> None:
+        selection, _ = self._run([SPACE], close_input=True)
+        self.assertEqual(selection, [0, 1, 1])
+
+
 if __name__ == "__main__":
     unittest.main()
