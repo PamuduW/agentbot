@@ -45,7 +45,8 @@ src/lifecycle.py
   `src/ui/menus.py` holds the menus whose entries are fixed -- main, libraries,
   platform, workspaces, Graphify Lib -- and builds the derived ones: the Command
   Lib lists whatever `src/commands.py` declares, so a new command appears in the
-  menu with nothing else edited. `agentbot_menu_run <name>` runs one by name
+  menu with nothing else edited, and the Graphify reference menus come from
+  `src/ui/graphify_lib.py`, which is where those commands are written down. `agentbot_menu_run <name>` runs one by name
   with nothing built in Bash. Menus whose entries are computed at
   runtime still fill `MENU_SIMPLE_*` and call `agentbot_menu_run` with no name.
   Dispatch stays in Bash either way, and `tests/test_menu_definitions.sh` holds

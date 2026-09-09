@@ -2,76 +2,25 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016,SC2034  # literal Codex syntax and MENU_SIMPLE globals are intentional
 
-GRAPHIFY_ASSISTANT_ROWS=(
-	'Build or refresh|/graphify .|Create or update the current project graph.'
-	'Codex skill|$graphify .|Run the same workflow through the Codex skill form.'
-	'Query|/graphify query "what connects auth to the database?"|Ask a graph-grounded architecture question.'
-	'Path|/graphify path "UserService" "DatabasePool"|Find the shortest connection between two nodes.'
-	'Explain|/graphify explain "RateLimiter"|Explain one node and its immediate relationships.'
-	'Wiki|/graphify . --wiki|Generate the graph and its navigable wiki output.'
-)
-
-GRAPHIFY_SHELL_ROWS=(
-	'Extract|graphify extract .|Run a headless full extraction.'
-	'Update|graphify update .|Refresh a graph without semantic LLM extraction.'
-	'Recluster|graphify cluster-only . --resolution 1.5|Recluster an existing graph and regenerate its report.'
-	'Query|graphify query "what connects auth to the database?"|Query the local graph from the shell.'
-	'Path|graphify path "UserService" "DatabasePool"|Find the shortest path from the shell.'
-	'Explain|graphify explain "RateLimiter"|Explain a graph node from the shell.'
-	'Export call flow|graphify export callflow-html|Export the Mermaid call-flow report.'
-	'Hook status|graphify hook status|Inspect repository hook integration.'
-	'Merge graphs|graphify merge-graphs a.json b.json --out merged.json|Merge two graph files without altering their sources.'
-)
-
-GRAPHIFY_PLATFORM_ROWS=(
-	'Agent Skills|graphify install --platform agents|Copy the generic skill into the Agent Skills store.'
-	'Claude|graphify install --platform claude|Copy the skill into Claude configuration.'
-	'Codex|graphify install --platform codex|Copy the skill into Codex configuration.'
-	'Cursor|graphify install --platform cursor|Copy the skill into Cursor configuration.'
-)
+# The reference itself is src/ui/graphify_lib.py; the menus are derived from it
+# and the detail page reads one row back. What stays here is the drawing, which
+# uses the shared TUI, and the routing between the two.
 
 agentbot_graphify_validate_rows() {
-	local help_text="$1" row _label command _description top
-	for row in "${GRAPHIFY_SHELL_ROWS[@]}" "${GRAPHIFY_PLATFORM_ROWS[@]}"; do
-		IFS='|' read -r _label command _description <<<"$row"
-		top="${command#graphify }"
-		top="${top%% *}"
+	local help_text="$1" top
+	while IFS= read -r top; do
+		[[ -n "$top" ]] || continue
 		grep -Eq "^[[:space:]]{2}${top}([[:space:]]|$)" <<<"$help_text" || return 1
-	done
-}
-
-_agentbot_graphify_rows_for_section() {
-	case "$1" in
-	assistant) printf '%s\n' "${GRAPHIFY_ASSISTANT_ROWS[@]}" ;;
-	shell) printf '%s\n' "${GRAPHIFY_SHELL_ROWS[@]}" ;;
-	platform) printf '%s\n' "${GRAPHIFY_PLATFORM_ROWS[@]}" ;;
-	*) return 2 ;;
-	esac
-}
-
-_agentbot_graphify_command_menu() {
-	local section="$1" row label command description
-	MENU_SIMPLE_TITLE='Graphify commands'
-	MENU_SIMPLE_BREADCRUMB="Agentbot › Graphify Lib › ${section^}"
-	MENU_SIMPLE_LABELS=()
-	MENU_SIMPLE_KEYS=()
-	MENU_SIMPLE_DESCS=()
-	while IFS= read -r row; do
-		IFS='|' read -r label command description <<<"$row"
-		MENU_SIMPLE_LABELS+=("${label} — ${description}")
-		MENU_SIMPLE_KEYS+=("$command")
-		MENU_SIMPLE_DESCS+=("$command")
-	done < <(_agentbot_graphify_rows_for_section "$section")
+	done < <(cd "$AGENTBOT_HOME" && python3 -m src.ui.graphify_lib --commands)
 }
 
 _agentbot_graphify_render_detail() {
-	local command="$1" section="$2" row label candidate description cols
+	local command="$1" section="$2" row label description cols
 	cols="$(tui_cols)"
-	description=''
-	while IFS= read -r row; do
-		IFS='|' read -r label candidate description <<<"$row"
-		[[ "$candidate" == "$command" ]] && break
-	done < <(_agentbot_graphify_rows_for_section "$section")
+	row="$(cd "$AGENTBOT_HOME" && python3 -m src.ui.graphify_lib \
+		--section "$section" --command "$command")" || return 0
+	label="${row%%$'\x1f'*}"
+	description="${row#*$'\x1f'}"
 	tui_header "$label" "Agentbot › Graphify Lib › ${section^} › ${label}" "$cols"
 	tui_section 'Command' "$cols"
 	printf '  %s%s%s\n\n' "$C_CYAN" "$(tui_fit "$command" "$((cols - 2))")" "$C_RESET"
@@ -103,8 +52,7 @@ agentbot_menu_graphify_lib() {
 			continue
 		fi
 		while true; do
-			_agentbot_graphify_command_menu "$section"
-			agentbot_menu_run || break
+			agentbot_menu_run "graphify_${section}" || break
 			command="${MENU_SIMPLE_RESULT:-}"
 			tui_clear
 			_agentbot_graphify_render_detail "$command" "$section"

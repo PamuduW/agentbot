@@ -236,6 +236,36 @@ def _command_lib_bootstrap() -> Menu:
     )
 
 
+@builder("graphify_assistant")
+def _graphify_assistant() -> Menu:
+    return _graphify_section("assistant")
+
+
+@builder("graphify_shell")
+def _graphify_shell() -> Menu:
+    return _graphify_section("shell")
+
+
+@builder("graphify_platform")
+def _graphify_platform() -> Menu:
+    return _graphify_section("platform")
+
+
+def _graphify_section(section: str) -> Menu:
+    """The key is the command itself: the detail page needs no other handle on
+    the row, and a synthetic id would be one more thing to keep in step."""
+    from . import graphify_lib
+
+    rows = graphify_lib.rows(section)
+    return Menu(
+        title="Graphify commands",
+        breadcrumb=f"Agentbot › Graphify Lib › {section.capitalize()}",
+        labels=tuple(f"{row.label} — {row.description}" for row in rows),
+        keys=tuple(row.command for row in rows),
+        descs=tuple(row.command for row in rows),
+    )
+
+
 def menu(name: str) -> Menu:
     if name in BUILDERS:
         return BUILDERS[name]()
