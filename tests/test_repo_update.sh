@@ -92,7 +92,7 @@ reset_case() {
 
 run_case() {
 	reset_case "$1" "${2:-no}"
-	repo_update_run "$TEST_ROOT/repo" decision OUTCOME REASON >/dev/null 2>&1
+	agentbot_repo_update_run "$TEST_ROOT/repo" decision OUTCOME REASON >/dev/null 2>&1
 	RUN_RC=$?
 	return 0
 }
@@ -110,7 +110,7 @@ test_dirty() {
 test_dirty_approved_replacement() {
 	reset_case dirty yes
 	local output_file="$TEST_ROOT/dirty-replacement.output"
-	repo_update_run "$TEST_ROOT/repo" decision OUTCOME REASON >"$output_file" 2>&1
+	agentbot_repo_update_run "$TEST_ROOT/repo" decision OUTCOME REASON >"$output_file" 2>&1
 	RUN_RC=$?
 	[[ "$OUTCOME/$REASON" == repository_changed/replaced && "$RUN_RC" -eq 2 ]] || return 1
 	grep -Fq 'Recovery stash: agentbot-stash-object' "$output_file" || return 1
@@ -315,41 +315,40 @@ test_safety_and_scope() {
 install_git_scenario_fake
 mkdir -p "$TEST_ROOT/repo"
 [[ -f "$ROOT/scripts/lib/repo_update.sh" ]] && source "$ROOT/scripts/lib/repo_update.sh"
-declare -F repo_update_run >/dev/null || repo_update_run() {
+declare -F agentbot_repo_update_run >/dev/null || agentbot_repo_update_run() {
 	printf -v "$3" stopped
 	printf -v "$4" missing
 	return 1
 }
 
-test_binding_overrides_are_declared_not_accidental() {
+test_the_binding_shadows_nothing_shared() {
 	# scripts/lib/shared/repo_update.sh is byte-identical in both repositories
-	# and the drift check enforces that. Identical text is not identical
-	# behaviour: this binding sources the shared machine and then redefines four
-	# of its functions, so in Agentbot the shared versions never run. The
-	# signatures differ too --
+	# and the drift check enforces that. Identical text used not to mean
+	# identical behaviour: this binding sourced the shared machine and then
+	# redefined four of its functions with different signatures, so in Agentbot
+	# the shared versions never ran --
 	#
-	#   shared:   repo_update_run <repo_dir> <repo_label> <confirm_fn> <result_name> [slug]
-	#   binding:  repo_update_run <repo> <decision_fn> <outcome_var> <reason_var> [repository]
+	#   shared:   agentbot_repo_update_run <repo_dir> <repo_label> <confirm_fn> <result_name> [slug]
+	#   binding:  agentbot_repo_update_run <repo> <decision_fn> <outcome_var> <reason_var> [repository]
 	#
-	# -- so a reader who looks the name up in the shared file reads the wrong
-	# contract, and a fix applied there silently reaches Dotfiles only.
+	# -- while the drift check read as "both repositories behave the same". A
+	# reader who looked a name up in the shared file read the wrong contract,
+	# and a fix applied there reached Dotfiles only.
 	#
-	# The overrides are deliberate. This test pins the set so a fifth one cannot
-	# appear unnoticed, and so removing one is a decision rather than an
-	# accident.
+	# The wrappers are agentbot_-prefixed now, so the invariant is the strong
+	# one rather than a list: the binding defines no name the shared machine
+	# defines, and any new collision fails here instead of being pinned.
 	local shared="$ROOT/scripts/lib/shared/repo_update.sh"
 	local binding="$ROOT/scripts/lib/repo_update.sh"
-	local expected='repo_update_is_declined repo_update_print_changed repo_update_print_recovery repo_update_run'
-	local actual
+	local collisions
 
-	actual="$(comm -12 \
+	collisions="$(comm -12 \
 		<(grep -oE '^[a-z_]+\(\)' "$shared" | tr -d '()' | sort -u) \
 		<(grep -oE '^[a-z_]+\(\)' "$binding" | tr -d '()' | sort -u) | tr '\n' ' ')"
-	actual="${actual% }"
+	collisions="${collisions% }"
 
-	if [[ "$actual" != "$expected" ]]; then
-		printf 'shared functions the binding overrides changed\n  expected: %s\n  actual:   %s\n' \
-			"$expected" "$actual" >&2
+	if [[ -n "$collisions" ]]; then
+		printf 'the binding shadows shared functions: %s\n' "$collisions" >&2
 		return 1
 	fi
 }
@@ -380,7 +379,7 @@ expect 'only clean confirmed behind state pulls across full table' test_pull_onl
 expect 'successful pull returns at adapter boundary without relaunch or extra commands' test_success_returns_at_pull_boundary
 expect 'repository update uses one exit contract for continue, stop, and changed states' test_exit_contract
 expect 'harness prevents exec network skills home and repository mutation' test_safety_and_scope
-expect 'the binding overrides exactly the four shared functions it declares' test_binding_overrides_are_declared_not_accidental
+expect 'the binding shadows no shared function' test_the_binding_shadows_nothing_shared
 
 test_harness_verify_safety || failed=$((failed + 1))
 printf '\nRan %d repo-update test(s); %d failure(s).\n' "$((passed + failed))" "$failed"

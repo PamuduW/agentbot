@@ -266,15 +266,15 @@ run_install_repo_gate() {
 	local update_outcome update_reason repo_rc=0
 	AGENTBOT_REPOSITORY_UPDATE_DECLINED=false
 	AGENTBOT_REPOSITORY_UPDATE_DECLINE_REPORTED=false
-	repo_update_run "$REPO_ROOT" run_install_decision update_outcome update_reason agentbot || repo_rc=$?
+	agentbot_repo_update_run "$REPO_ROOT" run_install_decision update_outcome update_reason agentbot || repo_rc=$?
 	case "$repo_rc" in
 	0) return 0 ;;
 	2)
-		repo_update_print_changed
+		agentbot_repo_update_print_changed
 		return 2
 		;;
 	*)
-		if repo_update_is_declined "$update_reason"; then
+		if agentbot_repo_update_is_declined "$update_reason"; then
 			if [[ "${AGENTBOT_REPOSITORY_UPDATE_DECLINE_REPORTED:-false}" != true ]]; then
 				repo_update_print_declined pull-behind
 			fi
@@ -297,7 +297,7 @@ run_install_repo_gate() {
 run_update_backend_as() {
 	local update_command="$1"
 	shift
-	# shellcheck disable=SC2034  # populated indirectly by repo_update_run
+	# shellcheck disable=SC2034  # populated indirectly by agentbot_repo_update_run
 	local confirm=no dry_run=false interactive=false arg update_outcome update_reason repo_rc=0
 	AGENTBOT_REPOSITORY_UPDATE_DECLINED=false
 	AGENTBOT_REPOSITORY_UPDATE_DECLINE_REPORTED=false
@@ -314,14 +314,14 @@ run_update_backend_as() {
 	done
 	[[ "$confirm" == yes ]] && export AGENTBOT_UPDATE_CONFIRM=yes
 
-	repo_update_run "$REPO_ROOT" run_update_decision update_outcome update_reason || repo_rc=$?
+	agentbot_repo_update_run "$REPO_ROOT" run_update_decision update_outcome update_reason || repo_rc=$?
 	case "$repo_rc" in
 	2)
-		repo_update_print_changed
+		agentbot_repo_update_print_changed
 		return 2
 		;;
 	1)
-		if repo_update_is_declined "$update_reason"; then
+		if agentbot_repo_update_is_declined "$update_reason"; then
 			if [[ "${AGENTBOT_REPOSITORY_UPDATE_DECLINE_REPORTED:-false}" != true ]]; then
 				repo_update_print_declined pull-behind
 			fi

@@ -158,7 +158,7 @@ test_install_repo_gate_link_and_failure_status() (
 	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
 	local calls="$TEST_ROOT/install.calls" output rc
 	: >"$calls"
-	repo_update_run() {
+	agentbot_repo_update_run() {
 		printf 'repo\n' >>"$calls"
 		printf -v "$3" '%s' current
 		printf -v "$4" '%s' current

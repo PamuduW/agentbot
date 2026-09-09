@@ -6,10 +6,18 @@
 # shared verbatim with the sibling repository. This file supplies the Agentbot
 # identity and keeps the calling convention Agentbot's callers already use:
 #
-#   repo_update_run <repo> <decision_fn> <outcome_var> <reason_var> [repository]
+#   agentbot_repo_update_run <repo> <decision_fn> <outcome_var> <reason_var> [repository]
 #
 # plus the REPO_UPDATE_* globals its callers read, and Agentbot's own
 # result vocabulary (invalid-repository, invalid-origin, replaced, pulled).
+#
+# The wrappers carry the agentbot_ prefix, and that is the point of the prefix:
+# they used to be called repo_update_run and the rest, which are names the
+# shared file also defines with different signatures. Sourcing the shared
+# machine and then redefining four of its functions meant that in Agentbot the
+# shared versions never ran, while `sync-shared.sh --check` proved the shared
+# file byte-identical in both repositories and so read as "both behave the
+# same". Nothing said otherwise at any call site. Now the name does.
 
 if [[ "${_AGENTBOT_REPO_UPDATE_LOADED:-0}" == 1 ]]; then
 	return 0
@@ -175,7 +183,7 @@ repo_update_print_report() {
 
 # Agentbot's callers hold the reason as a string, where the shared machine
 # holds a result array. Defined after the shared source so this spelling wins.
-repo_update_is_declined() {
+agentbot_repo_update_is_declined() {
 	case "${1:-unknown}" in
 	behind-declined | ahead-declined | replace-declined) return 0 ;;
 	*) return 1 ;;
@@ -198,7 +206,7 @@ repo_update_print_declined() {
 	esac
 }
 
-repo_update_print_changed() {
+agentbot_repo_update_print_changed() {
 	local green="${C_GREEN:-}" reset="${C_RESET:-}"
 	if [[ -z "$green" ]] && _repo_update_color_output_enabled; then
 		green=$'\033[32m'
@@ -208,7 +216,7 @@ repo_update_print_changed() {
 	printf 'Run setup again when ready.\n'
 }
 
-repo_update_print_recovery() {
+agentbot_repo_update_print_recovery() {
 	[[ -n "${REPO_UPDATE_RECOVERY_BRANCH:-}${REPO_UPDATE_RECOVERY_STASH:-}" ]] || return 0
 	printf 'Recovery data preserved:\n'
 	[[ -n "${REPO_UPDATE_RECOVERY_BRANCH:-}" ]] &&
@@ -218,7 +226,7 @@ repo_update_print_recovery() {
 	return 0
 }
 
-repo_update_run() {
+agentbot_repo_update_run() {
 	# Contract: 0 continue, 1 stopped, 2 the checkout changed and all
 	# higher-level work must stop so the user can rerun from the new state.
 	local repo="$1" decision_fn="$2" outcome_name="$3" reason_name="$4"
@@ -254,7 +262,7 @@ repo_update_run() {
 	if ! repo_update_apply _AGENTBOT_REPO_RESULT; then
 		_agentbot_repo_update_export
 		REPO_UPDATE_RECOVERY_REASON="${_AGENTBOT_REPO_RESULT[reason]}"
-		repo_update_print_recovery
+		agentbot_repo_update_print_recovery
 		printf -v "$outcome_name" '%s' stopped
 		printf -v "$reason_name" '%s' \
 			"$(_agentbot_repo_update_reason "${_AGENTBOT_REPO_RESULT[reason]}")"
@@ -262,7 +270,7 @@ repo_update_run() {
 	fi
 
 	_agentbot_repo_update_export
-	repo_update_print_recovery
+	agentbot_repo_update_print_recovery
 
 	case "${_AGENTBOT_REPO_RESULT[outcome]}" in
 	repository_changed)

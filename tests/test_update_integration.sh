@@ -14,7 +14,7 @@ test_repo_gate_short_circuits_unsafe_states() (
 	: >"$TEST_ROOT/calls"
 	run_update_backend_for() {
 		local gate_outcome="$1" gate_reason="$2"
-		repo_update_run() {
+		agentbot_repo_update_run() {
 			printf -v "$3" '%s' "$gate_outcome"
 			printf -v "$4" '%s' "$gate_reason"
 			case "$gate_outcome" in
@@ -40,7 +40,7 @@ test_repo_gate_short_circuits_unsafe_states() (
 test_direct_update_shows_status_before_reconciliation() (
 	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
 	check_skills_deps() { :; }
-	repo_update_run() {
+	agentbot_repo_update_run() {
 		printf -v "$3" '%s' current
 		printf -v "$4" '%s' current
 	}
@@ -62,7 +62,7 @@ test_dirty_state_reports_changes_remote_history_and_blocks_backend() (
 		*) return 1 ;;
 		esac
 	}
-	repo_update_run() {
+	agentbot_repo_update_run() {
 		REPO_UPDATE_STATE=behind
 		REPO_UPDATE_AHEAD=0
 		REPO_UPDATE_BEHIND=3
@@ -98,7 +98,7 @@ test_dirty_current_reports_verified_current_and_stops() (
 		*) return 1 ;;
 		esac
 	}
-	repo_update_run() {
+	agentbot_repo_update_run() {
 		REPO_UPDATE_STATE=current
 		REPO_UPDATE_DIRTY=1
 		REPO_UPDATE_UPSTREAM=origin/main
@@ -125,7 +125,7 @@ test_dirty_fetch_failure_reports_paths_and_unknown_freshness() (
 		*) return 1 ;;
 		esac
 	}
-	repo_update_run() {
+	agentbot_repo_update_run() {
 		REPO_UPDATE_STATE=stopped
 		REPO_UPDATE_DIRTY=1
 		REPO_UPDATE_UPSTREAM=origin/main
@@ -233,7 +233,7 @@ test_current_interactive_update_plan_uses_descriptor_backed_tty() (
 	local input="$TEST_ROOT/current-plan.input" output="$TEST_ROOT/current-plan.output" errors="$TEST_ROOT/current-plan.errors" rc=0
 	printf 'n\n' >"$input"
 	: >"$output"
-	repo_update_run() {
+	agentbot_repo_update_run() {
 		printf -v "$3" '%s' current
 		printf -v "$4" '%s' current
 	}

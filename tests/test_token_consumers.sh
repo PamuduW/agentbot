@@ -103,7 +103,7 @@ test_repo_update_child_is_authenticated() (
 	reset_state
 	write_token_file "$(active_file)" "saved_$(token saved)"
 	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
-	repo_update_run() {
+	agentbot_repo_update_run() {
 		printf -v "$3" '%s' current
 		printf -v "$4" '%s' current
 	}
