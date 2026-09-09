@@ -19,7 +19,6 @@ agentbot_die() {
 	printf '[err] %s\n' "$*" >&2
 	return 1
 }
-agentbot_info() { printf '[info] %s\n' "$*"; }
 
 agentbot_has_tty() {
 	case "${AGENTBOT_TTY:-}" in 1 | true) return 0 ;; 0 | false) return 1 ;; esac
