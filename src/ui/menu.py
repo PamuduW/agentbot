@@ -19,7 +19,7 @@ behind when a description shortens.
 
 from __future__ import annotations
 
-from .table import BOLD, CYAN, DIM, ORANGE, RESET, YELLOW
+from .table import BOLD, CYAN, DIM, GREEN, ORANGE, RED, RESET, YELLOW
 
 CLEAR_EOL = "\x1b[K"
 DESC_LINES = 2
@@ -62,6 +62,8 @@ class Palette:
         self.orange = ORANGE if color else ""
         self.yellow = YELLOW if color else ""
         self.cyan = CYAN if color else ""
+        self.green = GREEN if color else ""
+        self.red = RED if color else ""
         self.reset = RESET if color else ""
 
 

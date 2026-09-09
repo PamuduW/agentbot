@@ -34,6 +34,10 @@ source "$REPO_DIR/scripts/lib/shared/tui/ui.sh"
 # shellcheck source=/dev/null
 source "$REPO_DIR/scripts/lib/shared/tui/menu_descriptions.sh"
 # shellcheck source=/dev/null
+source "$REPO_DIR/scripts/lib/shared/tui/menu_paging.sh"
+# shellcheck source=/dev/null
+source "$REPO_DIR/scripts/lib/shared/tui/menu_checkbox.sh"
+# shellcheck source=/dev/null
 source "$REPO_DIR/scripts/lib/shared/tui/menu_keys.sh"
 # shellcheck source=/dev/null
 source "$REPO_DIR/scripts/lib/shared/tui/menu_simple.sh"
@@ -164,6 +168,141 @@ compare_menu 'a menu that overflows its width' '{
  "labels": ["A label long enough that forty columns cannot hold it", "Quit"],
  "descs": ["A description line long enough that it must be cut short at the narrow width and not at the wide one.\nSecond line.",
            "Short."]}'
+
+# The checkbox frame is the other menu shape, and a fiddlier one: eight colour
+# combinations per row, a status column as wide as its widest status, and a
+# label fitted against whatever is left. Every row state is compared.
+cb_py_draw() {
+	python3 - "$1" "$2" "$3" "$4" "$REPO_DIR" <<'PY'
+import json, sys
+
+sys.path.insert(0, sys.argv[5])
+from src.ui import checkbox, menu
+
+cursor, cols, color, spec = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3] == "1", json.loads(sys.argv[4])
+sys.stdout.write(
+    checkbox.draw(
+        title=spec["title"],
+        breadcrumb=spec.get("breadcrumb", ""),
+        labels=spec["labels"],
+        statuses=spec.get("statuses"),
+        checked=spec["checked"],
+        descs=spec.get("descs"),
+        hint=spec.get("hint", checkbox.DEFAULT_HINT),
+        status_message=spec.get("status_message", ""),
+        cursor=cursor,
+        size=int(spec["size"]),
+        cols=cols,
+        palette=menu.Palette(color=color),
+        compact=bool(spec.get("compact")),
+    )
+)
+PY
+}
+
+compare_checkbox() {
+	local name="$1" spec="$2" cursor cols color want got count size
+
+	eval "$(
+		python3 - "$spec" <<'SPEC'
+import json, shlex, sys
+
+spec = json.loads(sys.argv[1])
+out = [f"MENU_CB_TITLE={shlex.quote(spec['title'])}"]
+out.append(f"MENU_CB_BREADCRUMB={shlex.quote(spec.get('breadcrumb', ''))}")
+if spec.get("hint"):
+    out.append(f"MENU_CB_HINT={shlex.quote(spec['hint'])}")
+else:
+    out.append("unset MENU_CB_HINT")
+out.append("MENU_CB_LABELS=(%s)" % " ".join(shlex.quote(x) for x in spec["labels"]))
+out.append("MENU_CB_STATUS=(%s)" % " ".join(shlex.quote(x) for x in (spec.get("statuses") or [""] * len(spec["labels"]))))
+out.append("MENU_CB_CHECKED=(%s)" % " ".join(str(int(x)) for x in spec["checked"]))
+if spec.get("descs"):
+    out.append("MENU_CB_DESCS=(%s)" % " ".join(shlex.quote(x) for x in spec["descs"]))
+else:
+    out.append("unset MENU_CB_DESCS")
+out.append("MENU_CB_COMPACT=%s" % ("true" if spec.get("compact") else "false"))
+out.append("size=%d" % spec["size"])
+print("\n".join(out))
+SPEC
+	)"
+
+	count="${#MENU_CB_LABELS[@]}"
+	for color in 0 1; do
+		if ((color == 1)); then
+			unset NO_COLOR
+			colors_set_palette
+		else
+			NO_COLOR=1
+			colors_clear_palette
+		fi
+		for cols in 40 80 120; do
+			for ((cursor = 0; cursor < count; cursor++)); do
+				want="$(_menu_cb_draw "$cursor" "$size" "${3:-}" "$cols")"
+				got="$(cb_py_draw "$cursor" "$cols" "$color" \
+					"$(python3 -c "
+import json, sys
+spec = json.loads(sys.argv[1])
+spec['status_message'] = sys.argv[2]
+print(json.dumps(spec))
+" "$spec" "${3:-}")")"
+				if [[ "$want" == "$got" ]]; then
+					passed=$((passed + 1))
+				else
+					failed=$((failed + 1))
+					printf 'not ok - %s cursor=%d cols=%d color=%d\n' "$name" "$cursor" "$cols" "$color"
+					diff <(printf '%s\n' "$want" | cat -v) <(printf '%s\n' "$got" | cat -v) | head -6
+				fi
+			done
+		done
+	done
+	unset NO_COLOR
+	printf 'ok - %s frames match in every row state, width and palette\n' "$name"
+}
+
+# The Agentbot component selector: everything checked, no statuses.
+compare_checkbox 'the component selector' '{
+ "title": "Install Agentbot", "breadcrumb": "Agentbot › Install Agentbot", "size": 10,
+ "labels": ["Skills", "Graphify integration", "Boost integration"],
+ "checked": [1, 1, 1],
+ "descs": ["Install and update the skills named in skills.sources.yaml.",
+           "Refresh the Graphify CLI and Agent Skills integration.",
+           "Configure Boost for Claude, Codex, and Cursor."]}'
+
+# Mixed checks and every status colour, including the one that reads as its own
+# opposite: "not backed up" contains "backed up".
+compare_checkbox 'every status colour and check state' '{
+ "title": "Prune Skills", "breadcrumb": "Agentbot › Prune Skills", "size": 10,
+ "labels": ["installed-one", "orphaned-two", "a skill whose name is far too long to fit in forty columns", "four", "five", "six"],
+ "statuses": ["installed", "not backed up", "missing", "skipped", "upgrade available", "unknown"],
+ "checked": [1, 0, 1, 0, 1, 0],
+ "descs": ["one", "two", "three", "four", "five", "six"]}' \
+	'Nothing selected yet.'
+
+# Paging: more rows than a page holds, so the header counts and the visible
+# window have to agree between the two.
+compare_checkbox 'a list that pages' '{
+ "title": "Prune Skills", "breadcrumb": "Agentbot › Prune Skills", "size": 3,
+ "labels": ["one", "two", "three", "four", "five", "six", "seven"],
+ "statuses": ["ok", "ok", "drift", "ok", "extra", "ok", "ok"],
+ "checked": [0, 0, 0, 0, 0, 0, 0]}'
+
+# Compact rows take a different path through the colours entirely.
+compare_checkbox 'compact rows' '{
+ "title": "Compact", "breadcrumb": "Agentbot › Compact", "size": 10, "compact": true,
+ "labels": ["alpha", "beta", "gamma"],
+ "checked": [1, 0, 1]}'
+
+# A status wider than the column pushes the label, and a three-digit list
+# widens the index.
+compare_checkbox 'a wide status and a long list' "$(python3 -c "
+import json
+print(json.dumps({
+    'title': 'Wide', 'breadcrumb': 'Agentbot › Wide', 'size': 4,
+    'labels': [f'entry number {i}' for i in range(101)],
+    'statuses': ['a status longer than sixteen characters'] + ['ok'] * 100,
+    'checked': [i % 2 for i in range(101)],
+}))")"
 
 # The key decoder moved too, and it must agree with menu_read_key on every
 # sequence the Bash names -- an arrow read as `ignore` is a menu that will not

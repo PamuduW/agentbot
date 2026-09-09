@@ -52,6 +52,10 @@ src/lifecycle.py
   Dispatch stays in Bash either way, and `tests/test_menu_definitions.sh` holds
   the halves together: every key has a branch and every branch has a key.
 
+  `src/ui/checkbox.py` is the second menu shape -- a list where every row is on
+  or off, with a status column and paging. Frames only so far; the loop that
+  reads keys and toggles is still `scripts/lib/shared/tui/menu_checkbox.sh`.
+
   Three suites hold it: `tests/test_menu_parity.sh` compares frames byte for
   byte at every cursor position, width and palette and compares the key decoder
   against `menu_read_key`; `tests/test_menu_select.py` drives real sessions
