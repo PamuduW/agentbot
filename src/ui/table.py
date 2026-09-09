@@ -33,6 +33,10 @@ RED = "\033[31m"
 CYAN = "\033[36m"
 ORANGE = "\033[38;5;208m"
 
+# Narrower than this and the three columns have nothing left to show; the Bash
+# renderer floors here too.
+MINIMUM_COLUMNS = 32
+
 LABEL_W = 22
 DETAIL_W = 40
 RESULT_W = 10
@@ -61,12 +65,22 @@ def strip_ansi(text: str) -> str:
 
 
 def terminal_columns() -> int:
+    """The same width rt_report_columns settles on, by the same steps.
+
+    It used to consult the terminal only when AGENTBOT_TUI was set and to sit at
+    80 otherwise, while the Bash renderer honoured COLUMNS and the terminal
+    whatever it was called from. A `dotfiles full-update` prints tables from
+    both, so on a machine that exports COLUMNS the two came out different widths
+    in one session -- which is the drift the parity suite exists to catch, and
+    it only caught it once the suite was run with COLUMNS set.
+
+    `shutil.get_terminal_size` reads COLUMNS first and then the terminal, which
+    is the Bash order; the floor matches too.
+    """
     configured = os.environ.get("AGENTBOT_MENU_COLS", "")
     if configured.isdigit():
-        return max(20, int(configured))
-    if os.environ.get("AGENTBOT_TUI"):
-        return max(20, shutil.get_terminal_size(fallback=(80, 24)).columns)
-    return 80
+        return max(MINIMUM_COLUMNS, int(configured))
+    return max(MINIMUM_COLUMNS, shutil.get_terminal_size(fallback=(80, 24)).columns)
 
 
 def _fit_line(text: str, width: int) -> str:

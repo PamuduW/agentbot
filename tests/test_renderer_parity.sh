@@ -107,7 +107,10 @@ preview|x|preview
 unmapped|x|something-nobody-maps
 ROWS
 
-FORCE_COLOR=1 bash -c '
+# Both sides pinned to the same width. Pinning only the Python side made this
+# compare a 100-column table against an 80-column one the moment COLUMNS was
+# set, which is a difference in the test, not in the colours it is about.
+FORCE_COLOR=1 DOTFILES_REPORT_COLS=80 bash -c '
 	source "'"$REPO_DIR"'/scripts/lib/shared/tui/report_table.sh"
 	while IFS="|" read -r component detail result; do
 		rt_print_table_row "$component" "$detail" "$result"
@@ -163,5 +166,34 @@ else
 	failures=$((failures + 1))
 fi
 
-printf '\nRan 3 renderer-parity test(s); %d failure(s).\n' "$failures"
+# Neither side pinned, at several widths: the two must agree on how to work out
+# how wide a table is, not merely on how to draw one when told. They did not --
+# Bash honoured COLUMNS and the terminal, Python looked at neither unless
+# AGENTBOT_TUI was set, so `dotfiles full-update` drew an 80-column table beside
+# a 100-column one on any machine that exports COLUMNS.
+width_failures=0
+for width in 60 80 100 132; do
+	COLUMNS="$width" NO_COLOR=1 bash -c '
+		source "'"$REPO_DIR"'/scripts/lib/shared/tui/report_table.sh"
+		rt_print_table_columns
+	' >"$work/wbash.out" 2>&1
+	COLUMNS="$width" NO_COLOR=1 python3 -c "
+import sys
+sys.path.insert(0, '$sibling')
+from src.ui import print_table_columns
+print_table_columns()
+" >"$work/wpy.out" 2>&1
+	if ! diff -u "$work/wbash.out" "$work/wpy.out" >"$work/wdiff" 2>&1; then
+		printf 'not ok - renderers disagree about width at COLUMNS=%s\n' "$width"
+		cat "$work/wdiff"
+		width_failures=$((width_failures + 1))
+	fi
+done
+if ((width_failures == 0)); then
+	printf 'ok - both renderers derive the same width from the environment\n'
+else
+	failures=$((failures + width_failures))
+fi
+
+printf '\nRan 4 renderer-parity test(s); %d failure(s).\n' "$failures"
 ((failures == 0))
