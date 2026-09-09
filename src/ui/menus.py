@@ -17,6 +17,7 @@ and a missing second line leaves a blank row.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
@@ -173,11 +174,79 @@ MENUS: dict[str, Menu] = {
 }
 
 
+# Some menus are not written down, they are derived: the Command Lib lists the
+# commands this build actually has. Those come from the same metadata the help
+# output does, so a command added to src/commands.py appears in the menu with
+# nothing else edited -- which is the whole reason not to write them out here.
+BUILDERS: dict[str, Callable[[], Menu]] = {}
+
+
+def builder(name: str) -> Callable[[Callable[[], Menu]], Callable[[], Menu]]:
+    def register(build: Callable[[], Menu]) -> Callable[[], Menu]:
+        BUILDERS[name] = build
+        return build
+
+    return register
+
+
+def _command_entries(surface: str) -> tuple[tuple[str, str, str], ...]:
+    from src.commands import COMMANDS
+
+    return tuple(
+        (
+            spec.name,
+            f"{spec.name} [{spec.behavior}] — {spec.summary}",
+            f"agentbot help {spec.name}",
+        )
+        for spec in COMMANDS
+        if spec.surface == surface
+    )
+
+
+@builder("command_lib")
+def _command_lib() -> Menu:
+    """The public commands, plus a way into the bootstrap ones.
+
+    `__bootstrap__` is a key with no command behind it; the caller opens the
+    other menu when it sees it. It is spelled unmistakably so it cannot collide
+    with a real command name.
+    """
+    entries = _command_entries("public")
+    return Menu(
+        title="Command Lib",
+        breadcrumb="Agentbot › Command Lib",
+        labels=(*(label for _, label, _ in entries), "Bootstrap commands"),
+        keys=(*(name for name, _, _ in entries), "__bootstrap__"),
+        descs=(
+            *(desc for _, _, desc in entries),
+            "Commands exposed by install.sh for setup and repair.",
+        ),
+    )
+
+
+@builder("command_lib_bootstrap")
+def _command_lib_bootstrap() -> Menu:
+    entries = _command_entries("bootstrap")
+    return Menu(
+        title="Bootstrap commands",
+        breadcrumb="Agentbot › Command Lib › Bootstrap commands",
+        labels=tuple(label for _, label, _ in entries),
+        keys=tuple(name for name, _, _ in entries),
+        descs=tuple(desc for _, _, desc in entries),
+    )
+
+
 def menu(name: str) -> Menu:
+    if name in BUILDERS:
+        return BUILDERS[name]()
     try:
         return MENUS[name]
     except KeyError:
         raise KeyError(f"unknown menu: {name}") from None
+
+
+def names() -> tuple[str, ...]:
+    return tuple(sorted({*MENUS, *BUILDERS}))
 
 
 def as_spec(name: str, *, cols: int, color: bool) -> dict:

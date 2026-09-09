@@ -200,10 +200,13 @@ test_workspace_removal_prompt_uses_the_shared_tty_adapter() (
 
 test_command_lib_selects_one_detail() (
 	local capture="$TEST_ROOT/command-lib.capture" output calls=0
+	# The menu is derived from the command metadata now, so what this asserts is
+	# which menu was asked for and what came back -- the entries themselves are
+	# checked against that metadata below.
 	agentbot_menu_run() {
 		calls=$((calls + 1))
 		if ((calls == 1)); then
-			printf '%s\n' "${MENU_SIMPLE_LABELS[*]}" >"$capture"
+			printf '%s\n' "$1" >"$capture"
 			MENU_SIMPLE_RESULT='boot'
 			return 0
 		fi
@@ -212,9 +215,16 @@ test_command_lib_selects_one_detail() (
 	tui_clear() { :; }
 	tui_wait_back() { :; }
 	output="$(AGENTBOT_MENU_COLS=80 agentbot_menu_command_lib)"
-	[[ "$(<"$capture")" == *'status [read-only]'* ]] || return 1
-	[[ "$(<"$capture")" == *'Bootstrap commands'* ]] || return 1
-	[[ "$output" == *'Agentbot › Help › boot'* && "$output" == *'agentbot boot'* ]]
+	[[ "$(<"$capture")" == command_lib ]] || return 1
+	[[ "$output" == *'Agentbot › Help › boot'* && "$output" == *'agentbot boot'* ]] || return 1
+
+	# And the derived menu carries the public commands plus the way into the
+	# bootstrap ones: a command added to src/commands.py appears here with
+	# nothing edited, which is the reason it is derived at all.
+	agentbot_menu_load command_lib || return 1
+	[[ "${MENU_SIMPLE_LABELS[*]}" == *'status [read-only]'* ]] || return 1
+	[[ "${MENU_SIMPLE_LABELS[*]}" == *'Bootstrap commands'* ]] || return 1
+	[[ "${MENU_SIMPLE_KEYS[*]}" == *__bootstrap__* ]]
 )
 
 test_graphify_library_is_data_driven_and_supported() (

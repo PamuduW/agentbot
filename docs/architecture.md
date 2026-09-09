@@ -43,8 +43,10 @@ src/lifecycle.py
   for a cancelled menu), the shared Bash loop answers instead.
 
   `src/ui/menus.py` holds the menus whose entries are fixed -- main, libraries,
-  platform, workspaces, Graphify Lib -- and `agentbot_menu_run <name>` runs one
-  by name with nothing built in Bash. Menus whose entries are computed at
+  platform, workspaces, Graphify Lib -- and builds the derived ones: the Command
+  Lib lists whatever `src/commands.py` declares, so a new command appears in the
+  menu with nothing else edited. `agentbot_menu_run <name>` runs one by name
+  with nothing built in Bash. Menus whose entries are computed at
   runtime still fill `MENU_SIMPLE_*` and call `agentbot_menu_run` with no name.
   Dispatch stays in Bash either way, and `tests/test_menu_definitions.sh` holds
   the halves together: every key has a branch and every branch has a key.
