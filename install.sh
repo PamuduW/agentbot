@@ -163,6 +163,11 @@ run_agentbot_install_backend() {
 run_install() {
 	run_install_repo_gate || return $?
 	[[ "${AGENTBOT_REPOSITORY_UPDATE_DECLINED:-false}" == true ]] && return 0
+	# The component selector runs in the menu, before this process starts, so
+	# the menu asks for the gate on its own first: a pull moves the checkout and
+	# restarts the run, and asking afterwards would throw the selection away.
+	# Same contract, stopped one step early.
+	[[ "${AGENTBOT_INSTALL_GATE_ONLY:-0}" == 1 ]] && return 0
 	local rc=0
 	# Forwarded so the component selector can narrow an install; no arguments
 	# still means every component, exactly as before selection existed.

@@ -19,7 +19,10 @@ src/lifecycle.py
 ## Main boundaries
 
 - `install.sh` handles bootstrap prerequisites, repository maintenance, private
-  token scope, and dispatch into the Python CLI.
+  token scope, and dispatch into the Python CLI. The repository gate is the
+  first thing `install` does; `AGENTBOT_INSTALL_GATE_ONLY=1` stops it right
+  after, which is how the component selector asks about the repository before
+  anything is selected rather than after.
 - `bin/agentbot` resolves `AGENTBOT_HOME` and provides the installed launcher.
 - `src/commands.py` is the command metadata authority used by help and the TUI.
 - `src/cli.py` parses commands, composes services, and owns exit policy.

@@ -49,8 +49,38 @@ agentbot_components_selection() {
 	printf '%s\n' "$selected"
 }
 
+# The repository gate, before anything is selected.
+#
+# It used to run inside the install that follows the selector, so the operator
+# chose components and was then asked to pull -- and pulling moves the checkout,
+# restarts the run, and throws the selection away. Dotfiles asks first for the
+# same reason (run_install_action). Through the same seam agentbot_menu_install
+# uses, so the TUI output path and the exit contract are the ones this menu
+# already understands.
+_agentbot_menu_components_repo_gate() {
+	local rc=0
+	if [[ -n "${AGENTBOT_TUI:-}" ]]; then
+		AGENTBOT_INSTALL_GATE_ONLY=1 tui_run_to_output agentbot_run_backend install || rc=$?
+	else
+		AGENTBOT_INSTALL_GATE_ONLY=1 agentbot_run_backend install || rc=$?
+	fi
+	return "$rc"
+}
+
 agentbot_menu_components() {
 	local selection rc=0
+
+	# 2 is "the checkout moved": the caller restarts into the new code, and the
+	# selector must not open on the old one. 3 is a declined pull under the TUI,
+	# which the gate has already explained -- back to the menu without a second
+	# message. Anything else stopped, and says why.
+	_agentbot_menu_components_repo_gate || rc=$?
+	case "$rc" in
+	0) ;;
+	2) return 2 ;;
+	3) return 0 ;;
+	*) return "$rc" ;;
+	esac
 
 	_agentbot_components_prepare
 	agentbot_checkbox_run || return 0

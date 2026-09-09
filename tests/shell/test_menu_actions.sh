@@ -327,10 +327,13 @@ test_component_selector_keeps_the_install_contracts() (
 	# around the two things agentbot_menu_install owns: the TUI output seam and
 	# the exit-3 repository-change contract. A repository change then surfaced
 	# as a failed action instead of a clean restart.
+	#
+	# The gate runs first now, so the calls are the gate and then the install.
 	local calls="$TEST_ROOT/selector.calls" rc=0
 	: >"$calls"
 	agentbot_run_backend() {
 		printf '%s\n' "$*" >>"$calls"
+		[[ "$*" == 'install' ]] && return 0
 		return 3
 	}
 	agentbot_checkbox_run() {
@@ -339,8 +342,40 @@ test_component_selector_keeps_the_install_contracts() (
 	}
 	agentbot_menu_components >/dev/null 2>&1 || rc=$?
 
-	[[ "$(<"$calls")" == 'install --components skills,boost' ]] || return 1
+	[[ "$(<"$calls")" == $'install\ninstall --components skills,boost' ]] || return 1
 	[[ "$rc" -eq 0 ]]
+)
+
+test_component_selector_asks_about_the_repository_first() (
+	# The operator chose components and was then asked to pull, and pulling
+	# moves the checkout and restarts the run -- so the selection was thrown
+	# away. Dotfiles asks first; this now does too.
+	local calls="$TEST_ROOT/selector-order.calls" rc=0
+
+	# A declined pull: the gate says so, and the selector never opens.
+	: >"$calls"
+	agentbot_run_backend() {
+		printf 'gate %s\n' "$*" >>"$calls"
+		return 3
+	}
+	agentbot_checkbox_run() {
+		printf 'selector\n' >>"$calls"
+		MENU_CB_CHECKED=(1 1 1)
+		return 0
+	}
+	agentbot_menu_components >/dev/null 2>&1 || rc=$?
+	[[ "$(<"$calls")" == 'gate install' && "$rc" -eq 0 ]] || return 1
+
+	# A moved checkout: the caller restarts into the new code, so the selector
+	# must not open on the old one either.
+	: >"$calls"
+	rc=0
+	agentbot_run_backend() {
+		printf 'gate %s\n' "$*" >>"$calls"
+		return 2
+	}
+	agentbot_menu_components >/dev/null 2>&1 || rc=$?
+	[[ "$(<"$calls")" == 'gate install' && "$rc" -eq 2 ]]
 )
 
 test_component_selector_cancels_when_nothing_is_checked() (
@@ -352,11 +387,13 @@ test_component_selector_cancels_when_nothing_is_checked() (
 		return 0
 	}
 	agentbot_menu_components >/dev/null 2>&1 || rc=$?
-	[[ ! -s "$calls" && "$rc" -eq 0 ]]
+	# The gate ran and nothing else did: an empty selection installs nothing.
+	[[ "$(<"$calls")" == 'install' && "$rc" -eq 0 ]]
 )
 
 check 'main dispatch gives direct actions exactly one pause' test_main_dispatch_and_pause_ownership
 check 'component selector keeps the install contracts' test_component_selector_keeps_the_install_contracts
+check 'component selector asks about the repository first' test_component_selector_asks_about_the_repository_first
 check 'component selector cancels when nothing is checked' test_component_selector_cancels_when_nothing_is_checked
 check 'prune skill menu removes only checked names and refreshes agents' test_prune_skill_menu_removes_only_checked_names_and_refreshes_agents
 check 'prune skill menu leaves state unchanged when nothing is checked' test_prune_skill_menu_does_nothing_when_no_skill_is_checked
