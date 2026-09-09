@@ -35,24 +35,24 @@ STATUS_COL_WIDTH = 16
 MID_SEP = " · "
 DEFAULT_HINT = "Up/Down navigate   Space toggle   a all   n none   Enter confirm   q back"
 
-# Transcribed from _menu_cb_status_context in
-# scripts/lib/shared/tui/menu_checkbox.sh, in its order, including one reading
-# that is wrong: "not backed up" contains "backed up", so the first test claims
-# it and a missing backup is drawn in green. Matched here rather than corrected,
-# because a port that silently improves what it replaces cannot be compared
-# against it -- see the commit that fixes both sides together.
-_OK = ("backed up", "installed", "configured", "up to date")
+# Mirrors _menu_cb_status_context in scripts/lib/shared/tui/menu_checkbox.sh,
+# including the order, which is load-bearing: "not backed up" contains "backed
+# up", so the negative reading has to be tested first or a missing backup is
+# drawn in green. Both sides were written the other way round and were corrected
+# together; no caller produces either status today, so it is a trap removed
+# rather than a display changed.
 _WARN = ("not backed", "upgrade", "delta", "warn")
+_OK = ("backed up", "installed", "configured", "up to date")
 _ERR = ("missing", "failed", "error", "drift", "extra")
 _DIM = ("skipped",)
 _DIM_EXACT = ("—", "-")
 
 
 def status_context(status: str) -> str:
-    if any(word in status for word in _OK) or status in ("ok", "OK"):
-        return "ok"
     if any(word in status for word in _WARN):
         return "warn"
+    if any(word in status for word in _OK) or status in ("ok", "OK"):
+        return "ok"
     if any(word in status for word in _ERR):
         return "err"
     if any(word in status for word in _DIM) or status in _DIM_EXACT:

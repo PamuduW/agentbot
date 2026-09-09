@@ -34,11 +34,13 @@ class StatusContextTests(unittest.TestCase):
             with self.subTest(status=status):
                 self.assertEqual(checkbox.status_context(status), want)
 
-    def test_not_backed_up_reads_as_ok_which_is_the_bug(self) -> None:
-        """Pinned, not endorsed: "not backed up" contains "backed up", so the
-        first test claims it and a missing backup is drawn green. The Bash does
-        the same, and the two are corrected together or not at all."""
-        self.assertEqual(checkbox.status_context("not backed up"), "ok")
+    def test_a_missing_backup_is_a_warning_not_a_success(self) -> None:
+        """"not backed up" contains "backed up", so the order of these tests is
+        what decides it. Both languages read it as ok until they were corrected
+        together; nothing produces the status today, which is why this is the
+        only place the correction is visible."""
+        self.assertEqual(checkbox.status_context("not backed up"), "warn")
+        self.assertEqual(checkbox.status_context("backed up"), "ok")
 
     def test_an_unknown_context_is_left_unpainted(self) -> None:
         palette = Palette(color=True)
