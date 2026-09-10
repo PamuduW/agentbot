@@ -436,6 +436,41 @@ class WorkspaceReportTests(unittest.TestCase):
 
 
 class ReconciliationReportTests(unittest.TestCase):
+    def _render(self, status: str) -> str:
+        text, _ = _capture(
+            print_reconciliation_report,
+            ReconcileResult(status, (Path("a.md"), Path("b.md")), (), ("newskill",)),
+        )
+        return strip_ansi(text)
+
+    def test_counts_move_out_of_the_result_column(self):
+        """A number is not a result.
+
+        The counts sat in the result cell, uncoloured beside coloured siblings
+        and read as attention items by anything tallying the table. They belong
+        with the thing they count.
+        """
+        text = self._render("applied")
+        self.assertIn("2: a.md, b.md", text)
+        for line in text.splitlines():
+            if "|" not in line:
+                continue
+            result = line.rsplit(" | ", 1)[-1].strip()
+            header_or_rule = result == "result" or set(result) <= set("-+ ")
+            if not result or header_or_rule or line.rstrip().endswith("|"):
+                continue
+            self.assertNotRegex(result, r"^\d+$")
+            self.assertNotEqual("unknown", result_class(result))
+
+    def test_a_long_status_stays_out_of_a_short_column(self):
+        """`applied-with-local-changes` is 26 characters; the column is 10."""
+        text = self._render("applied-with-local-changes")
+        self.assertIn("applied-with-local-changes", text)
+        self.assertNotIn("applied-w\u2026", text)
+
+    def test_a_failure_still_reads_as_one(self):
+        self.assertRegex(self._render("failed"), r"\| failed")
+
     def test_changes_are_listed(self):
         result = ReconcileResult(
             status="applied",

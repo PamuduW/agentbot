@@ -515,20 +515,34 @@ def print_output_refresh_report(*, linked: int, updated: int, skipped: int) -> N
     )
 
 
+def _counted(items) -> str:
+    """`2: a.md, b.md`, or `none`. The count led the result column before.
+
+    A number is not a result: it is uncoloured beside coloured siblings, and any
+    rollup counting the table reads it as an attention item. It belongs with the
+    thing it counts.
+    """
+    names = ", ".join(str(item) for item in items)
+    return f"{len(items)}: {names}" if names else "none"
+
+
 def print_reconciliation_report(result) -> None:
     """Render the final source-owned reconciliation outcome as a compact table."""
-    changed = ", ".join(str(path) for path in result.changed_paths) or "none"
-    updated = ", ".join(result.updated_skills) or "none"
-    added = ", ".join(result.added_skills) or "none"
-    removed = ", ".join(result.removed_skills) or "none"
     print_section_block("── Reconciliation report ──")
     print_table(
         [
-            ("status", "repository reconciliation", result.status),
-            ("changed files", changed, str(len(result.changed_paths))),
-            ("updated skills", updated, str(len(result.updated_skills))),
-            ("added skills", added, str(len(result.added_skills))),
-            ("removed skills", removed, str(len(result.removed_skills))),
+            # `applied-with-local-changes` is twenty-six characters and this
+            # column is ten, so the row read `applied-w…`. The status is the
+            # detail; the result says whether it worked.
+            (
+                "status",
+                f"repository reconciliation: {result.status}",
+                "ok" if result.status.startswith("applied") else result.status,
+            ),
+            ("changed files", _counted(result.changed_paths), "info"),
+            ("updated skills", _counted(result.updated_skills), "info"),
+            ("added skills", _counted(result.added_skills), "info"),
+            ("removed skills", _counted(result.removed_skills), "info"),
         ],
         show_header=False,
         wrap_details=True,
