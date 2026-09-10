@@ -24,7 +24,7 @@ if [[ "${_AGENTBOT_REPO_UPDATE_LOADED:-0}" == 1 ]]; then
 fi
 _AGENTBOT_REPO_UPDATE_LOADED=1
 
-if ! declare -F tui_table_header >/dev/null 2>&1; then
+if ! declare -F tui_cols >/dev/null 2>&1; then
 	# shellcheck disable=SC1091
 	source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/tui.sh"
 fi
@@ -33,6 +33,10 @@ REPO_UPDATE_RECOVERY_PREFIX=agentbot
 # Agentbot's decision prompt renders its own table before asking, so the shared
 # machine must not print a second one.
 REPO_UPDATE_REPORT_FN=_agentbot_repo_update_no_report
+# Read by the shared renderer, which repo_update_print_report calls below. The
+# shared default is the Dotfiles breadcrumb, and it must be set before the
+# shared file is sourced: it claims the name with `: "${VAR:=...}"`.
+REPO_UPDATE_REPORT_BREADCRUMB='Agentbot › Update › Repository'
 export REPO_UPDATE_RECOVERY_PREFIX
 
 _agentbot_repo_update_no_report() { :; }
@@ -126,60 +130,31 @@ repo_update_classify_history() {
 	REPO_UPDATE_STATE="$state"
 }
 
-# Agentbot's proportional-width result table.
+# The result table, rendered by the shared table the sibling product uses.
+#
+# This carried its own four-column layout -- widths proportional to the terminal
+# -- and its own colour mapping for the available and action columns, against
+# the shared fixed 18/28/22/16 and status_color_available/status_color_action.
+# Two implementations of one table, so the same repository state was drawn two
+# ways depending on which product printed it. The proportional layout had
+# exactly one caller: this function.
+#
+# The signature stays as Agentbot's callers use it -- a repository path, with
+# the state read from the REPO_UPDATE_* globals -- so the globals are folded
+# back into the result array the shared renderer takes.
 repo_update_print_report() {
 	local repo="$1"
-	local branch local_rev history action upstream change_count remote_result cols
-	local available_color action_color
+	local -A report=()
 	colors_complete_palette
-	cols="$(tui_cols)"
-	branch="$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-	local_rev="$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-	history="$(repo_update_history_detail)"
-	change_count="$(repo_update_change_count)"
-	upstream="${REPO_UPDATE_UPSTREAM:-upstream}"
-	case "${REPO_UPDATE_STATE:-stopped}" in
-	current | ahead | behind | diverged) remote_result='verified' ;;
-	*) remote_result='unchecked' ;;
-	esac
-	if [[ "${REPO_UPDATE_DIRTY:-0}" == 1 ]]; then
-		action='blocked'
-	else
-		case "${REPO_UPDATE_STATE:-stopped}" in
-		behind) action='pull --ff-only' ;;
-		ahead | diverged) action='replace after backup' ;;
-		current) action='current' ;;
-		*) action='check' ;;
-		esac
-	fi
-	case "$history" in
-	current | none | up\ to\ date | freshness\ unknown) available_color="$C_DIM" ;;
-	*behind | *ahead) available_color="$C_YELLOW" ;;
-	*) available_color="$C_CYAN" ;;
-	esac
-	case "$action" in
-	current) action_color="$C_GREEN" ;;
-	pull* | verified) action_color="$C_CYAN" ;;
-	replace*) action_color="$C_YELLOW" ;;
-	blocked) action_color="$C_RED" ;;
-	*) action_color="$C_YELLOW" ;;
-	esac
-
-	# The shared header, like every other section heading in either product: an
-	# orange `=== Title ===` over a dim breadcrumb. This was a bold yellow
-	# label with nothing to say where the operator was.
-	rt_print_header 'Repository update' 'Agentbot › Update › Repository'
-	tui_table_header "$cols" component installed available action
-	if [[ "${REPO_UPDATE_DIRTY:-0}" == 1 ]]; then
-		tui_table_row "$cols" 'agentbot repo' "${branch}@${local_rev}" \
-			"${change_count} local change(s)" "$action" "$C_RED" "$action_color"
-	else
-		tui_table_row "$cols" 'agentbot repo' "${branch}@${local_rev}" \
-			"$history" "$action" "$available_color" "$action_color"
-	fi
-	tui_table_row "$cols" "$upstream" 'remote history' "$history" "$remote_result" \
-		"$available_color" "$C_CYAN"
-	printf '\n'
+	report[dir]="$repo"
+	report[label]='agentbot repo'
+	report[state]="${REPO_UPDATE_STATE:-stopped}"
+	report[ahead]="${REPO_UPDATE_AHEAD:-0}"
+	report[behind]="${REPO_UPDATE_BEHIND:-0}"
+	report[dirty]="${REPO_UPDATE_DIRTY:-0}"
+	report[changes]="${REPO_UPDATE_CHANGES:-}"
+	report[upstream]="${REPO_UPDATE_UPSTREAM:-upstream}"
+	_repo_update_print_result_default report
 }
 
 # Agentbot's callers hold the reason as a string, where the shared machine

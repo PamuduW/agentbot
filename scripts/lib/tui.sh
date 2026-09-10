@@ -130,68 +130,6 @@ tui_confirm() {
 	ui_confirm_yes_no "$1" true
 }
 
-# --- Four-column tables -------------------------------------------------
-#
-# Widths are proportional to the terminal, which is what Agentbot always did
-# and is why its tables stay readable below ~90 columns. Dotfiles' fixed-width
-# report tables live alongside as rt_print_four_column_*.
-tui_table_widths() {
-	local cols="$1" available
-	available=$((cols - 11))
-	((available < 4)) && available=4
-	TUI_TABLE_W1=$((available * 20 / 100))
-	TUI_TABLE_W2=$((available * 28 / 100))
-	TUI_TABLE_W3=$((available * 27 / 100))
-	TUI_TABLE_W4=$((available - TUI_TABLE_W1 - TUI_TABLE_W2 - TUI_TABLE_W3))
-	((TUI_TABLE_W1 < 1)) && TUI_TABLE_W1=1
-	((TUI_TABLE_W2 < 1)) && TUI_TABLE_W2=1
-	((TUI_TABLE_W3 < 1)) && TUI_TABLE_W3=1
-	((TUI_TABLE_W4 < 1)) && TUI_TABLE_W4=1
-	return 0
-}
-
-tui_table_cell() {
-	local text="$1" width="$2" color="${3:-}" fit padding
-	fit="$(tui_fit "$text" "$width")"
-	printf '%s%s%s' "$color" "$fit" "${color:+$C_RESET}"
-	padding=$((width - ${#fit}))
-	((padding > 0)) && printf '%*s' "$padding" ''
-	return 0
-}
-
-tui_table_rule() { _rt_rule "$1"; }
-
-tui_table_header() {
-	local cols="$1" h1="$2" h2="$3" h3="$4" h4="$5"
-	tui_table_widths "$cols"
-	printf '  %s%s' "$C_BOLD" "$C_WHITE"
-	tui_table_cell "$h1" "$TUI_TABLE_W1"
-	printf ' | '
-	tui_table_cell "$h2" "$TUI_TABLE_W2"
-	printf ' | '
-	tui_table_cell "$h3" "$TUI_TABLE_W3"
-	printf ' | '
-	tui_table_cell "$h4" "$TUI_TABLE_W4"
-	printf '%s\n' "$C_RESET"
-	printf '  %s%s-+-%s-+-%s-+-%s%s\n' "$C_DIM" \
-		"$(tui_table_rule "$TUI_TABLE_W1")" "$(tui_table_rule "$TUI_TABLE_W2")" \
-		"$(tui_table_rule "$TUI_TABLE_W3")" "$(tui_table_rule "$TUI_TABLE_W4")" "$C_RESET"
-}
-
-tui_table_row() {
-	local cols="$1" t1="$2" t2="$3" t3="$4" t4="$5" color3="${6:-}" color4="${7:-}"
-	tui_table_widths "$cols"
-	printf '  '
-	tui_table_cell "$t1" "$TUI_TABLE_W1"
-	printf ' | '
-	tui_table_cell "$t2" "$TUI_TABLE_W2"
-	printf ' | '
-	tui_table_cell "$t3" "$TUI_TABLE_W3" "$color3"
-	printf ' | '
-	tui_table_cell "$t4" "$TUI_TABLE_W4" "$color4"
-	printf '\n'
-}
-
 # --- Menu ---------------------------------------------------------------
 #
 # menu_simple_run comes from the shared stack and reports its choice in

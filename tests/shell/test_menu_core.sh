@@ -32,8 +32,6 @@ test_width_and_palette_snapshots() (
 		output="$({
 			tui_header 'Check Status' 'Agentbot › Check Status' "$cols"
 			tui_section Health "$cols"
-			tui_table_header "$cols" component installed available action
-			tui_table_row "$cols" agentbot current current none
 		} | strip_ansi_stream)"
 		[[ "$output" == *'=== Check Status ==='* && "$output" == *'Health'* ]] || return 1
 		while IFS= read -r line; do ((${#line} <= cols)) || return 1; done <<<"$output"
@@ -43,11 +41,9 @@ test_width_and_palette_snapshots() (
 		output="$(
 			tui_header 'Check Status' 'Agentbot › Check Status' "$cols"
 			tui_section Health "$cols"
-			tui_table_header "$cols" component installed available action
 		)"
 		[[ "$output" == *$'\033[1m\033[38;5;208m=== Check Status ==='* ]] || return 1
 		[[ "$output" == *$'\033[1m\033[33mHealth'* ]] || return 1
-		[[ "$output" == *$'\033[1m\033[37m'* ]] || return 1
 		while IFS= read -r line; do
 			plain="$(strip_ansi_stream <<<"$line")"
 			((${#plain} <= cols)) || return 1

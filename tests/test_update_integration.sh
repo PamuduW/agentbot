@@ -300,7 +300,44 @@ test_ahead_repo_table_describes_recoverable_replacement() (
 	REPO_UPDATE_UPSTREAM=origin/main
 	tui_cols() { printf '120\n'; }
 	NO_COLOR=1 output="$(print_repo_update_table)"
-	[[ "$output" == *'replace after backup'* && "$output" != *'continue'* ]]
+	# The shared table's action column is 16 wide, so the longest action this
+	# screen can name is cut. Asserted as rendered rather than as written: the
+	# sibling product's table cuts it in exactly the same place, which is the
+	# point of both drawing through the one renderer.
+	[[ "$output" == *"replace after b$(printf '\u2026')"* && "$output" != *'continue'* ]]
+)
+
+test_repo_table_is_the_shared_one_the_sibling_draws() (
+	# One table, one implementation. This screen used to carry its own
+	# four-column layout -- widths proportional to the terminal -- and its own
+	# colour mapping, against the shared fixed widths the sibling product draws
+	# through. The same repository state was rendered two ways depending on
+	# which product printed it, and `sync-shared.sh --check` proved the shared
+	# file byte-identical the whole time, because the divergence was here.
+	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
+	local ours theirs
+	git() {
+		case "$*" in
+		*'rev-parse --abbrev-ref HEAD'*) printf 'main\n' ;;
+		*'rev-parse --short HEAD'*) printf 'abc123\n' ;;
+		*) return 1 ;;
+		esac
+	}
+	REPO_UPDATE_STATE=behind
+	REPO_UPDATE_AHEAD=0
+	REPO_UPDATE_BEHIND=3
+	REPO_UPDATE_DIRTY=0
+	REPO_UPDATE_UPSTREAM=origin/main
+	ours="$(NO_COLOR=1 print_repo_update_table)"
+
+	local -A theirs_result=(
+		[dir]="$REPO_ROOT" [label]='agentbot repo' [state]=behind
+		[ahead]=0 [behind]=3 [dirty]=0 [changes]='' [upstream]=origin/main
+	)
+	theirs="$(NO_COLOR=1 _repo_update_print_result_default theirs_result)"
+	[[ "$ours" == "$theirs" ]] || return 1
+	# And it names Agentbot, not the shared default's Dotfiles breadcrumb.
+	[[ "$ours" == *'Agentbot › Update › Repository'* ]]
 )
 
 test_full_runs_install_then_update_with_one_restart_budget() (
@@ -357,6 +394,7 @@ check 'repository prompt supports recover and replace decisions' test_repo_promp
 check 'current interactive update plan uses the descriptor-backed TTY' test_current_interactive_update_plan_uses_descriptor_backed_tty
 check 'repository update table honors the Agentbot TUI color mode' test_repo_update_table_honors_tui_color_mode
 check 'ahead repository table describes recoverable replacement' test_ahead_repo_table_describes_recoverable_replacement
+check 'repository table is the shared one the sibling draws' test_repo_table_is_the_shared_one_the_sibling_draws
 check 'direct update shows the status table before reconciliation' test_direct_update_shows_status_before_reconciliation
 test_harness_verify_safety || failed=$((failed + 1))
 printf '\nRan %d update-integration test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
