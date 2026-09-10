@@ -260,13 +260,52 @@ def print_doctor_summary(issues: list, *, include_header: bool = True) -> int:
     return 1 if errors else 0
 
 
+# Integration states, mapped to the result vocabulary.
+#
+# These rows were written as ("State", status.state, status.state) -- the same
+# string in the detail cell and the result cell. The detail column is forty
+# wide and the result column is ten, so `unsafe-config`, `not-installed` and
+# `skill-without-cli` were cut to `unsafe-co…`, `not-insta…` and `skill-wit…`,
+# and five of the ten states were outside the vocabulary entirely, rendering
+# uncoloured and counting as attention items.
+#
+# The detail cell still carries the state in full. The result cell carries the
+# verdict, which is what the column is for.
+_INTEGRATION_RESULTS = {
+    "ready": "ok",
+    "stale": "stale",
+    "partial": "partial",
+    "conflict": "conflict",
+    "broken": "error",
+    "absent": "missing",
+    "not-installed": "missing",
+    # Forbidden BoostGraph or MCP configuration is present: something is there
+    # that must not be, which is a state to fix rather than to note.
+    "unsafe-config": "check",
+    "forbidden": "error",
+    # Half-installed: one side of the integration exists and the other does not.
+    "cli-only": "partial",
+    "skill-without-cli": "partial",
+}
+
+
+def integration_result(state: str) -> str:
+    """The result word for an integration state.
+
+    An unmapped state falls through to `check` rather than to the raw string:
+    an unknown word in the result column is uncoloured and silently counted as
+    attention, and `check` at least says the right thing while it is unmapped.
+    """
+    return _INTEGRATION_RESULTS.get(state, "check")
+
+
 def print_graphify_status(status) -> None:
     """Render the Graphify integration state without performing repairs."""
     print_header("Graphify", "Agentbot › Graphify")
     cli_detail = str(status.cli_path) if status.cli_path else "not installed"
     skill_detail = str(status.skill_path)
     rows = [
-        ("State", status.state, status.state),
+        ("State", status.state, integration_result(status.state)),
         ("CLI", cli_detail, "ok" if status.cli_path else "missing"),
         ("CLI version", status.cli_version or "—", "ok" if status.cli_version else "check"),
         ("Agent Skills", skill_detail, "ok" if status.skill_path.is_file() else "missing"),
@@ -288,7 +327,7 @@ def print_boost_status(status) -> None:
     """Render Boost CLI, safety, and Claude/Codex/Cursor integration state."""
     print_header("Boost", "Agentbot › Boost")
     rows = [
-        ("State", status.state, status.state),
+        ("State", status.state, integration_result(status.state)),
         (
             "CLI",
             str(status.cli_path) if status.cli_path else "not installed",

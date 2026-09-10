@@ -31,7 +31,8 @@ from src.ui import (
     print_workspace_report,
     print_workspace_resync_report,
 )
-from src.ui.table import print_table, strip_ansi
+from src.ui.reports import integration_result
+from src.ui.table import _table_widths, print_table, result_class, strip_ansi
 from src.workspace_service import WorkspaceReport, WorkspaceResult
 from src.workspace_state import WorkspaceRecord
 
@@ -247,6 +248,77 @@ class GraphifyStatusTests(unittest.TestCase):
     def test_a_message_is_shown(self):
         text, _ = _capture(print_graphify_status, self._status("broken", "cli missing"))
         self.assertIn("cli missing", text)
+
+
+class IntegrationStateTests(unittest.TestCase):
+    """Every state boost and graphify can report, not just today's.
+
+    The surface sweep in tests/test_report_contract.sh reads rendered output, so
+    it only ever sees the state the machine running it happens to be in. These
+    states are read out of the source instead, so `forbidden` is covered on a
+    machine that has never been forbidden.
+    """
+
+    @staticmethod
+    def _states_assigned_in(module: str) -> set[str]:
+        import ast
+
+        source = Path(module).read_text(encoding="utf-8")
+        found: set[str] = set()
+        for node in ast.walk(ast.parse(source, filename=module)):
+            if isinstance(node, ast.keyword) and node.arg == "state":
+                value = node.value
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    found.add(value.value)
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if not (isinstance(target, ast.Name) and target.id == "state"):
+                        continue
+                    value = node.value
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        found.add(value.value)
+        return found
+
+    def _states(self) -> set[str]:
+        states = self._states_assigned_in("src/boost.py") | self._states_assigned_in(
+            "src/graphify.py"
+        )
+        self.assertIn("unsafe-config", states, "the reader stopped finding states")
+        return states
+
+    def test_every_state_has_a_considered_verdict(self):
+        """Membership, not just a valid answer.
+
+        integration_result falls back to `check` so an unmapped state cannot
+        break a report at runtime. That makes asserting on its return value
+        toothless: every state passes whether or not anyone thought about it.
+        The map is what has to be complete.
+        """
+        from src.ui.reports import _INTEGRATION_RESULTS
+
+        for state in sorted(self._states()):
+            with self.subTest(state=state):
+                self.assertIn(state, _INTEGRATION_RESULTS)
+
+    def test_every_verdict_is_a_word_the_vocabulary_knows(self):
+        for state in sorted(self._states()):
+            with self.subTest(state=state):
+                self.assertNotEqual(
+                    "unknown",
+                    result_class(integration_result(state)),
+                    f"{state!r} produces a result the vocabulary cannot colour or count",
+                )
+
+    def test_every_state_maps_to_a_word_that_fits_the_column(self):
+        """`unsafe-config` reached the result cell as `unsafe-co…`.
+
+        The detail column is wide and the result column is not, and these rows
+        were putting the same string in both.
+        """
+        width = _table_widths()[2]
+        for state in sorted(self._states()):
+            with self.subTest(state=state):
+                self.assertLessEqual(len(integration_result(state)), width)
 
 
 class WorkspaceReportTests(unittest.TestCase):
