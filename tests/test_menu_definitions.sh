@@ -123,5 +123,41 @@ else
 	fail 'a definition with mismatched labels and keys refuses to exist'
 fi
 
+# Every submenu advertises the `q` it accepts, and says it in the same words the
+# Bash loop uses. tui.sh set MENU_SUBMENU_HINT for the shared Bash loop, but a
+# named menu is drawn by the Python one, which never read that variable -- so
+# every Agentbot submenu took `q` and offered no sign of it. The root menu is
+# the exception on purpose: it leaves through its own Quit entry.
+# `|| hint_report=FAILED` rather than a bare capture: an empty report has to
+# mean "every menu agreed", and a python3 that died on an import would otherwise
+# produce the same empty string and pass.
+hint_report="$(cd "$REPO_DIR" && python3 -c "
+from src.ui import menus
+from src.ui.menu import DEFAULT_HINT
+
+for name in menus.names():
+    spec = menus.as_spec(name, cols=80, color=False)
+    root = 'quit' in spec['keys']
+    want = DEFAULT_HINT if root else menus.SUBMENU_HINT
+    if spec['hint'] != want:
+        print(f\"{name}: {spec['hint']!r}\")
+" 2>&1)" || hint_report="hint check did not run: $hint_report"
+if [[ -z "$hint_report" ]]; then
+	printf 'ok - submenus advertise the q they accept\n'
+	passed=$((passed + 1))
+else
+	fail "menus with the wrong hint: $(tr '\n' ' ' <<<"$hint_report")"
+fi
+
+# And the words themselves are the Bash loop's, not a second spelling of them.
+bash_hint="$MENU_SUBMENU_HINT"
+python_hint="$(cd "$REPO_DIR" && python3 -c 'from src.ui import menus; print(menus.SUBMENU_HINT)' 2>/dev/null)"
+if [[ "$bash_hint" == "$python_hint" ]]; then
+	printf 'ok - the Bash and Python submenu hints are the same string\n'
+	passed=$((passed + 1))
+else
+	fail "submenu hint differs: bash=${bash_hint@Q} python=${python_hint@Q}"
+fi
+
 printf '\nRan %d menu-definition test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
 ((failed == 0))

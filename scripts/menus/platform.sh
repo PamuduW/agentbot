@@ -41,6 +41,10 @@ agentbot_menu_platform_dispatch() {
 }
 
 agentbot_menu_platform() {
+	# This loop pauses after every action, so the parent must not add a second
+	# one. Without the declaration `q` out of here cost two keystrokes: the
+	# parent paused on a screen the operator had already left.
+	tui_menu_declare_owns_pause
 	local choice rc
 	while true; do
 		if ! agentbot_menu_run platform; then

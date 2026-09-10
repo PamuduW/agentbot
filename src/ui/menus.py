@@ -279,9 +279,23 @@ def names() -> tuple[str, ...]:
     return tuple(sorted({*MENUS, *BUILDERS}))
 
 
+# A root menu offers Quit as an entry; a submenu leaves with `q` and has to say
+# so. Bash sets MENU_SUBMENU_HINT for the shared loop, but a named menu is drawn
+# by the Python loop, which never saw that variable -- so every Agentbot submenu
+# accepted `q` and advertised only "Up/Down navigate   Enter confirm", which is
+# the gap the Bash-side comment claims to have closed.
+#
+# Derived from the keys rather than declared per menu: the distinction *is* "does
+# this menu have its own way out", and a hand-set field is one more thing a new
+# submenu forgets.
+SUBMENU_HINT = "Up/Down navigate   Enter confirm   q back"
+
+
 def as_spec(name: str, *, cols: int, color: bool) -> dict:
     """A definition in the shape the selection loop takes."""
     defined = menu(name)
+    from .menu import DEFAULT_HINT
+
     return {
         "title": defined.title,
         "breadcrumb": defined.breadcrumb,
@@ -289,6 +303,7 @@ def as_spec(name: str, *, cols: int, color: bool) -> dict:
         "keys": list(defined.keys),
         "descs": list(defined.descs),
         "types": list(defined.types),
+        "hint": DEFAULT_HINT if "quit" in defined.keys else SUBMENU_HINT,
         "cols": cols,
         "color": color,
     }
