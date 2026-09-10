@@ -261,6 +261,28 @@ class WorkspaceReportTests(unittest.TestCase):
         self.assertIn("/tmp/ws", text)
         self.assertIn("a message", text)
 
+    def test_workspace_surfaces_close_on_the_rollup(self):
+        """The rollup is the last line, and the message explains above it.
+
+        These three printed a table and a sentence and stopped. The contract
+        puts one line at the bottom for "does this need me?", and a surface
+        that ends on prose does not have one.
+        """
+        report = WorkspaceReport(results=(self._result("preview"),), global_actions=())
+        for printer, argument in (
+            (print_workspace_report, self._result("preview")),
+            (print_workspace_resync_report, report),
+        ):
+            with self.subTest(printer=printer.__name__):
+                text, _ = _capture(printer, argument)
+                last = [line for line in text.splitlines() if line.strip()][-1]
+                self.assertRegex(last, r"^  (\d+ ok|All \d+ component)")
+
+    def test_a_single_group_draws_no_section_rule(self):
+        """A rule earns its place by separating things."""
+        text, _ = _capture(print_workspace_report, self._result("preview"))
+        self.assertNotIn("──", text)
+
     def test_resync_report_covers_each_status(self):
         report = WorkspaceReport(
             results=tuple(

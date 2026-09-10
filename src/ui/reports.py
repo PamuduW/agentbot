@@ -275,9 +275,14 @@ def print_graphify_status(status) -> None:
         ("Claude", status.claude_state, "ok" if status.claude_state == "linked" else "check"),
     ]
     ok, check, miss = print_table(rows)
-    # print_rollup already closes with a blank line.
-    print_rollup(ok=ok, check=check, miss=miss)
+    # The message explains; the rollup concludes. Printed after it, the message
+    # was the last thing on the screen, so the one line the contract puts at the
+    # bottom for "does this need me?" was not at the bottom. On graphify the two
+    # even disagreed: "5 ok, 1 need attention." above "integration are ready."
+    print()
     print(f"  {status.message}")
+    # print_rollup opens and closes with a blank line.
+    print_rollup(ok=ok, check=check, miss=miss)
 
 
 def print_boost_status(status) -> None:
@@ -339,9 +344,14 @@ def print_boost_status(status) -> None:
             )
         )
     ok, check, miss = print_table(rows)
-    # print_rollup already closes with a blank line.
-    print_rollup(ok=ok, check=check, miss=miss)
+    # The message explains; the rollup concludes. Printed after it, the message
+    # was the last thing on the screen, so the one line the contract puts at the
+    # bottom for "does this need me?" was not at the bottom. On graphify the two
+    # even disagreed: "5 ok, 1 need attention." above "integration are ready."
+    print()
     print(f"  {status.message}")
+    # print_rollup opens and closes with a blank line.
+    print_rollup(ok=ok, check=check, miss=miss)
 
 
 def print_skills_report(results: list, *, title: str) -> int:
@@ -473,15 +483,17 @@ def print_workspace_report(result) -> None:
     if not isinstance(result, WorkspaceResult):
         raise TypeError("expected WorkspaceResult")
     print_header("Workspace", "Agentbot › Workspace")
-    print_section_block("── Render ──")
+    # One group, so no section rule: a rule that separates nothing is one the
+    # contract does not draw, and the table prints its own column header.
     rows: list[tuple[str, str, str]] = []
     for action in result.actions:
         rows.append((action.relative_path, action.detail, action.kind))
     if not rows:
         rows.append((str(result.path), result.message, result.status))
-    print_table(rows, show_header=False, wrap_details=True)
+    ok, check, miss = print_table(rows, wrap_details=True)
     print()
     print(f"  {result.message}")
+    print_rollup(ok=ok, check=check, miss=miss)
 
 
 def print_workspace_resync_report(report) -> None:

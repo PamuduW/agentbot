@@ -110,6 +110,27 @@ test_the_contract_holds_under_a_tty_too() {
 #
 # Swept rather than reviewed, because the failure is invisible on the screen: an
 # unknown word looks like a plain cell and a plausible number.
+# The rollup is the last thing on the screen, not merely somewhere on it.
+#
+# "Every surface closes with a rollup" was tested by grepping for one anywhere
+# in the output, so graphify and boost status could print theirs and then keep
+# talking -- and graphify's two disagreed, "5 ok, 1 need attention." above
+# "Graphify CLI and Agent Skills integration are ready."
+test_the_rollup_is_the_last_line() {
+	local surface output last wrong=''
+	for surface in "${SURFACES[@]}"; do
+		# shellcheck disable=SC2086
+		output="$(surface_output $surface)"
+		last="$(grep -v '^[[:space:]]*$' <<<"$output" | tail -1)"
+		grep -qE '^  ([0-9]+ ok|All [0-9]+ component)' <<<"$last" ||
+			wrong+=" [$surface: ${last# }]"
+	done
+	[[ -z "$wrong" ]] || {
+		printf '   surfaces not closing on the rollup:%s\n' "$wrong" >&2
+		return 1
+	}
+}
+
 test_every_result_word_is_in_the_vocabulary() {
 	local surface output found unknown=''
 	for surface in "${SURFACES[@]}"; do
@@ -142,6 +163,7 @@ check 'terminal width reaches the rendered tables' test_tty_width_reaches_the_ta
 check 'every public surface closes with a rollup' test_every_surface_closes_with_a_rollup
 check 'section rules appear only where a surface has groups' test_section_rules_only_where_there_are_groups
 check 'every result word is in the vocabulary' test_every_result_word_is_in_the_vocabulary
+check 'the rollup is the last line of every surface' test_the_rollup_is_the_last_line
 
 printf '\nRan %d report-contract test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
 ((failed == 0))
