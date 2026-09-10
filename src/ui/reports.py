@@ -299,6 +299,36 @@ def integration_result(state: str) -> str:
     return _INTEGRATION_RESULTS.get(state, "check")
 
 
+# Workspace render actions, mapped the same way and for the same reason.
+#
+# The kind went straight into the result cell, and `create` and `update` are in
+# no vocabulary: previewing a new workspace showed two uncoloured `create` rows
+# and closed "0 ok, 2 need attention." over a plan in which nothing was wrong.
+#
+# What a kind means depends on whether the run wrote anything. In a preview
+# `create` is what would happen; in an applied run it is what did. The detail
+# cell names the action either way -- "create managed AGENTS.md" -- so the
+# result cell is free to answer the question the rollup asks.
+_WORKSPACE_PREVIEW_RESULTS = {
+    "create": "preview",
+    "update": "preview",
+    "unchanged": "unchanged",
+    "conflict": "conflict",
+}
+_WORKSPACE_APPLIED_RESULTS = {
+    "create": "applied",
+    "update": "applied",
+    "unchanged": "unchanged",
+    "conflict": "conflict",
+}
+
+
+def workspace_action_result(kind: str, *, applied: bool) -> str:
+    """The result word for a render action, given what the run actually did."""
+    table = _WORKSPACE_APPLIED_RESULTS if applied else _WORKSPACE_PREVIEW_RESULTS
+    return table.get(kind, "check")
+
+
 def print_graphify_status(status) -> None:
     """Render the Graphify integration state without performing repairs."""
     print_header("Graphify", "Agentbot › Graphify")
@@ -514,9 +544,16 @@ def print_workspace_report(result) -> None:
     print_header("Workspace", "Agentbot › Workspace")
     # One group, so no section rule: a rule that separates nothing is one the
     # contract does not draw, and the table prints its own column header.
+    applied = result.status == "applied"
     rows: list[tuple[str, str, str]] = []
     for action in result.actions:
-        rows.append((action.relative_path, action.detail, action.kind))
+        rows.append(
+            (
+                action.relative_path,
+                action.detail,
+                workspace_action_result(action.kind, applied=applied),
+            )
+        )
     if not rows:
         rows.append((str(result.path), result.message, result.status))
     ok, check, miss = print_table(rows, wrap_details=True)
@@ -531,12 +568,13 @@ def print_workspace_resync_report(report) -> None:
     rows: list[tuple[str, str, str]] = []
     for result in report.results:
         if result.actions:
+            applied = result.status == "applied"
             for action in result.actions:
                 rows.append(
                     (
                         f"{result.path}:{action.relative_path}",
                         action.detail,
-                        action.kind,
+                        workspace_action_result(action.kind, applied=applied),
                     )
                 )
         else:
@@ -552,7 +590,12 @@ def print_workspace_resync_report(report) -> None:
     print_section_block("── Global ──")
     if global_actions:
         global_rows = [
-            (action.relative_path, action.detail, action.kind) for action in global_actions
+            (
+                action.relative_path,
+                action.detail,
+                workspace_action_result(action.kind, applied=bool(getattr(report, "applied", False))),
+            )
+            for action in global_actions
         ]
         global_ok, global_check, global_miss = print_table(
             global_rows, show_header=False, wrap_details=True

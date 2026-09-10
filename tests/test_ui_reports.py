@@ -31,7 +31,7 @@ from src.ui import (
     print_workspace_report,
     print_workspace_resync_report,
 )
-from src.ui.reports import integration_result
+from src.ui.reports import integration_result, workspace_action_result
 from src.ui.table import _table_widths, print_table, result_class, strip_ansi
 from src.workspace_service import WorkspaceReport, WorkspaceResult
 from src.workspace_state import WorkspaceRecord
@@ -319,6 +319,55 @@ class IntegrationStateTests(unittest.TestCase):
         for state in sorted(self._states()):
             with self.subTest(state=state):
                 self.assertLessEqual(len(integration_result(state)), width)
+
+
+class WorkspaceActionResultTests(unittest.TestCase):
+    """Every render-action kind the type declares, in both run modes.
+
+    `create` and `update` went into the result cell raw, and neither is in the
+    vocabulary: previewing a new workspace showed two uncoloured `create` rows
+    and closed "0 ok, 2 need attention." over a plan in which nothing was wrong.
+    """
+
+    @staticmethod
+    def _kinds() -> tuple[str, ...]:
+        """Read off RenderAction.kind, so a new kind is covered when it is added."""
+        import ast
+
+        source = Path("src/workspace_render.py").read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source, filename="src/workspace_render.py")):
+            if not isinstance(node, ast.AnnAssign):
+                continue
+            if not (isinstance(node.target, ast.Name) and node.target.id == "kind"):
+                continue
+            annotation = node.annotation
+            if isinstance(annotation, ast.Subscript):
+                return tuple(
+                    element.value
+                    for element in ast.walk(annotation.slice)
+                    if isinstance(element, ast.Constant) and isinstance(element.value, str)
+                )
+        raise AssertionError("RenderAction.kind is no longer a Literal of strings")
+
+    def test_the_declared_kinds_are_still_the_four_expected(self):
+        self.assertEqual(
+            {"create", "update", "unchanged", "conflict"}, set(self._kinds())
+        )
+
+    def test_every_kind_maps_into_the_vocabulary_in_both_modes(self):
+        width = _table_widths()[2]
+        for kind in self._kinds():
+            for applied in (False, True):
+                with self.subTest(kind=kind, applied=applied):
+                    word = workspace_action_result(kind, applied=applied)
+                    self.assertNotEqual("unknown", result_class(word))
+                    self.assertLessEqual(len(word), width)
+
+    def test_a_write_reads_as_a_plan_before_it_happens_and_a_result_after(self):
+        self.assertEqual("preview", workspace_action_result("create", applied=False))
+        self.assertEqual("applied", workspace_action_result("create", applied=True))
+        # A conflict is a conflict either way.
+        self.assertEqual("conflict", workspace_action_result("conflict", applied=True))
 
 
 class WorkspaceReportTests(unittest.TestCase):
