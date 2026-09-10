@@ -13,7 +13,7 @@ import yaml
 
 from .atomic_io import write_text_atomic
 from .command_runner import CommandRunner
-from .skill_catalog import discover_checkout_skills, skill_name_from_file
+from .skill_catalog import skill_name_from_file
 from .skills_sources import SkillsSourcesConfig
 
 
@@ -52,22 +52,6 @@ class ReconcileResult:
     message: str = ""
     updated_skills: tuple[str, ...] = ()
     workspace_report: object | None = None
-
-    @property
-    def tracked_changes(self) -> bool:
-        return any(path.name in {"skills.sources.yaml", "AGENTS.md"} for path in self.changed_paths)
-
-
-def discover_source_checkouts(
-    config: SkillsSourcesConfig,
-    checkouts: Mapping[str, Path],
-) -> dict[str, tuple[str, ...]]:
-    """Return deterministic catalogs for the supplied source checkout paths."""
-    return {
-        source.id: discover_checkout_skills(checkouts[source.id])
-        for source in config.active_sources()
-        if source.id in checkouts
-    }
 
 
 def _lock_skills(lock: Mapping[str, Any] | None) -> Mapping[str, Any]:

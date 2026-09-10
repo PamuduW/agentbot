@@ -71,7 +71,6 @@ tui_fit() { menu_fit_line "$1" "$(($2 + 1))"; }
 tui_clear() { ui_clear; }
 tui_header() { ui_print_header "$1" "${2:-}" "${3:-$(tui_cols)}"; }
 tui_section() { ui_print_section "$1" "${2:-$(tui_cols)}"; }
-tui_shortcuts() { ui_format_shortcuts "$@"; }
 tui_color_input_hint() { ui_color_input_hint "$1"; }
 tui_print() {
 	tui_refresh_tty_seam
@@ -340,7 +339,6 @@ _agentbot_menu_spec() {
 		printf 'desc%s%s\n' "$fs" "${item//$'\n'/$nl}"
 	done
 }
-tui_menu_desc_lines() { menu_desc_footer_rows MENU_SIMPLE; }
 tui_menu_lines() { _menu_simple_menu_lines "${#MENU_SIMPLE_LABELS[@]}"; }
 tui_menu_draw() { _menu_simple_draw "$1" "${2:-$(tui_cols)}"; }
 

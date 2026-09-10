@@ -87,16 +87,6 @@ repo_update_change_count() {
 	awk 'END { print NR }' <<<"$REPO_UPDATE_CHANGES"
 }
 
-repo_update_history_detail() {
-	case "${REPO_UPDATE_STATE:-stopped}" in
-	current) printf 'current' ;;
-	ahead) printf '%s local commit(s) ahead' "${REPO_UPDATE_AHEAD:-0}" ;;
-	behind) printf '%s commit(s) behind' "${REPO_UPDATE_BEHIND:-0}" ;;
-	diverged) printf '%s ahead / %s behind' "${REPO_UPDATE_AHEAD:-0}" "${REPO_UPDATE_BEHIND:-0}" ;;
-	*) printf 'freshness unknown' ;;
-	esac
-}
-
 # Standalone classifier kept for callers and tests that classify without
 # running the whole machine.
 repo_update_classify_history() {

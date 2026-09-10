@@ -11,7 +11,6 @@ from typing import Literal
 from ..commands import CommandSpec, commands_for_surface
 from ..models import Table, TableSection
 from .table import (
-    CYAN,
     DIM,
     GREEN,
     RED,
@@ -466,15 +465,6 @@ def print_reconciliation_report(result) -> None:
         wrap_details=True,
     )
     print()
-
-
-def print_bridge_summary(*, linked: int, skipped: int, updated: int = 0) -> None:
-    parts = [f"{linked} linked"]
-    if updated:
-        parts.append(f"{updated} updated")
-    if skipped:
-        parts.append(f"{skipped} skipped")
-    print(f"  {_c('Claude skills bridge: ' + ', '.join(parts) + '.', CYAN)}")
 
 
 def print_workspace_report(result) -> None:

@@ -224,14 +224,3 @@ def _migrate_retired_targets(item: Any) -> Any:
     # "agents" is always rendered, so a record cannot end up empty.
     migrated["targets"] = kept or ["agents"]
     return migrated
-
-
-def load_workspace_records(state_file: Path) -> tuple[WorkspaceRecord, ...]:
-    return WorkspaceStore(state_file).load()
-
-
-def save_workspace_records(
-    state_file: Path,
-    records: Iterable[WorkspaceRecord],
-) -> None:
-    WorkspaceStore(state_file).replace(records)

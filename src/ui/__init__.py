@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from .reports import (
     print_boost_status,
-    print_bridge_summary,
     print_command_help,
     print_doctor_summary,
     print_graphify_status,
@@ -49,7 +48,6 @@ __all__ = [
     "color_result",
     "highlight_manual_skill_name",
     "print_boost_status",
-    "print_bridge_summary",
     "print_command_help",
     "print_doctor_summary",
     "print_graphify_status",

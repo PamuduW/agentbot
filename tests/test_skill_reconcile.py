@@ -27,7 +27,10 @@ class SkillReconcileTests(unittest.TestCase):
         )
 
     def test_discover_checkout_skill_names_uses_frontmatter_or_directory(self) -> None:
-        from src.skill_reconcile import discover_checkout_skills
+        # From the module that defines it. Importing it through
+        # src.skill_reconcile worked only while that module happened to import
+        # it for a helper of its own, and broke when the helper was removed.
+        from src.skill_catalog import discover_checkout_skills
 
         checkout = self.root / "checkout"
         (checkout / "nested" / "alpha").mkdir(parents=True)
