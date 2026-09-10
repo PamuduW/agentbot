@@ -266,6 +266,32 @@ test_token_entry_is_hidden_and_reveal_requires_confirmation() (
 	[[ "$(<"$reveal_output")" != *"$token"* ]]
 )
 
+test_token_menu_outcomes_survive_the_redraw() (
+	# Break caught by comparing this screen with the Dotfiles one: every
+	# outcome was printed and then wiped, because the loop clears and
+	# re-renders before the operator can read it. Only the reveal survived,
+	# and only because it pauses. Carried into the next frame instead.
+	local input="$TEST_ROOT/token-status.input" output="$TEST_ROOT/token-status.output"
+	NO_COLOR=1
+	tui_init_colors
+
+	# An unrecognised key, then quit: the notice must be on the frame drawn
+	# after it, not lost with the frame it was printed on.
+	printf 'z\nq\n' >"$input"
+	AGENTBOT_TOKEN_TTY_INPUT="$input" AGENTBOT_TOKEN_TTY_OUTPUT="$output" agentbot_token_config_menu
+	[[ "$(<"$output")" == *'Invalid choice.'* ]] || return 1
+	# It appears once, under the options of the following frame.
+	[[ "$(grep -c 'Invalid choice.' "$output")" -eq 1 ]] || return 1
+	[[ "$(<"$output")" == *$'q Back\n\n  Invalid choice.'* ]] || return 1
+
+	# Removing with nothing saved reports through the same path.
+	local removed_input="$TEST_ROOT/token-remove.input" removed_output="$TEST_ROOT/token-remove.output"
+	github_token_remove >/dev/null 2>&1 || true
+	printf 'd\nq\n' >"$removed_input"
+	AGENTBOT_TOKEN_TTY_INPUT="$removed_input" AGENTBOT_TOKEN_TTY_OUTPUT="$removed_output" agentbot_token_config_menu
+	[[ "$(<"$removed_output")" == *'No saved token file exists.'* ]]
+)
+
 test_workspaces_routes_read_preview_and_apply() (
 	local calls="$TEST_ROOT/workspaces.calls"
 	: >"$calls"
@@ -405,6 +431,7 @@ check 'TUI update carries effective descriptors into Python confirmation' test_t
 check 'Command Lib selects and renders one detail page' test_command_lib_selects_one_detail
 check 'Graphify Lib rows match supported command families' test_graphify_library_is_data_driven_and_supported
 check 'token entry is hidden and reveal is confirmed' test_token_entry_is_hidden_and_reveal_requires_confirmation
+check 'token menu outcomes survive the redraw' test_token_menu_outcomes_survive_the_redraw
 check 'Workspaces routes list preview and confirmed apply' test_workspaces_routes_read_preview_and_apply
 check 'declined workspace apply performs no backend write' test_declined_workspace_apply_is_non_destructive
 check 'workspace removal prompts use the shared TTY adapter' test_workspace_removal_prompt_uses_the_shared_tty_adapter

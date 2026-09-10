@@ -67,6 +67,20 @@ _agentbot_token_menu_secret() {
 	printf -v "$out_var" '%s' "$value"
 }
 
+# What the last action did, shown by the next frame.
+#
+# Every outcome here was printed and then wiped: the loop clears the screen and
+# re-renders before the operator can read "GitHub token saved." or "Invalid
+# token; nothing was saved." Only the reveal survived, because it pauses.
+# Carried into the next frame instead, which is what the checkbox menu does
+# with MENU_CB_STATUS_MESSAGE and costs no extra keystroke. Same fix, same
+# shape, as the Dotfiles token menu.
+_AGENTBOT_TOKEN_MENU_STATUS=''
+
+_agentbot_token_menu_say() {
+	_AGENTBOT_TOKEN_MENU_STATUS="$1"
+}
+
 _agentbot_token_menu_render() {
 	local token='' current='not configured' current_color="${C_DIM:-}"
 	local cols="${AGENTBOT_TOKEN_TTY_COLS:-}"
@@ -90,10 +104,12 @@ _agentbot_token_menu_render() {
 		"${C_DIM:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
 	printf '  %sNo repository scopes are needed for this workflow.%s\n\n' \
 		"${C_DIM:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
-	printf '  %s[s]%s Save or replace   %s[r]%s Reveal once   %s[d]%s Remove   %s[q]%s Back\n' \
-		"${C_CYAN:-}" "${C_RESET:-}" "${C_CYAN:-}" "${C_RESET:-}" \
-		"${C_CYAN:-}" "${C_RESET:-}" "${C_CYAN:-}" "${C_RESET:-}" \
+	printf '  %s\n' \
+		"$(ui_format_shortcuts s 'Save or replace' r 'Reveal once' d Remove q Back)${C_RESET:-}" \
 		>&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+	if [[ -n "$_AGENTBOT_TOKEN_MENU_STATUS" ]]; then
+		printf '\n  %s\n' "$_AGENTBOT_TOKEN_MENU_STATUS" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+	fi
 	printf '\n' >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
 }
 
@@ -104,20 +120,17 @@ _agentbot_token_menu_save() {
 	_agentbot_token_menu_secret token "  ${C_CYAN:-}GitHub token${C_RESET:-} (q cancels): "
 	[[ "$token" != q && "$token" != Q && -n "$token" ]] || return 0
 	if ! github_token_is_valid "$token"; then
-		printf '  %sInvalid token; nothing was saved.%s\n' \
-			"${C_RED:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+		_agentbot_token_menu_say "${C_RED:-}Invalid token; nothing was saved.${C_RESET:-}"
 		return 0
 	fi
-	printf '  %sProposed:%s %s%s%s\n' \
+	printf '\n  %sProposed:%s %s%s%s\n\n' \
 		"${C_DIM:-}" "${C_RESET:-}" "${C_CYAN:-}" \
 		"$(github_token_fingerprint "$token")" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
 	if _agentbot_token_menu_confirm "  Save this token?"; then
 		if github_token_write "$token"; then
-			printf '  %sGitHub token saved.%s\n' \
-				"${C_GREEN:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+			_agentbot_token_menu_say "${C_GREEN:-}GitHub token saved.${C_RESET:-}"
 		else
-			printf '  %sGitHub token was not saved.%s\n' \
-				"${C_RED:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+			_agentbot_token_menu_say "${C_RED:-}GitHub token was not saved.${C_RESET:-}"
 		fi
 	fi
 }
@@ -126,14 +139,15 @@ _agentbot_token_menu_reveal() {
 	local token=''
 	github_token_read token
 	if [[ -z "$token" ]]; then
-		printf '  %sNo valid saved token is available to reveal.%s\n' \
-			"${C_YELLOW:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+		_agentbot_token_menu_say "${C_YELLOW:-}No valid saved token is available to reveal.${C_RESET:-}"
 		return 0
 	fi
-	printf '  %sWARNING: the full token will be printed once on this terminal.%s\n' \
+	printf '  %sWARNING: the full token will be printed once on this terminal.%s\n\n' \
 		"${C_RED:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
 	if _agentbot_token_menu_confirm "  Reveal the full token once?"; then
-		printf '  %s\n' "$token" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+		# The secret gets space around it: it is the one line on this screen
+		# the operator has to read off the terminal and type somewhere else.
+		printf '\n  %s\n' "$token" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
 		_agentbot_token_menu_pause
 	fi
 }
@@ -142,17 +156,14 @@ _agentbot_token_menu_remove() {
 	local file
 	file="$(github_token_file)"
 	if [[ ! -e "$file" && ! -L "$file" ]]; then
-		printf '  %sNo saved token file exists.%s\n' \
-			"${C_DIM:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+		_agentbot_token_menu_say "${C_DIM:-}No saved token file exists.${C_RESET:-}"
 		return 0
 	fi
 	if _agentbot_token_menu_confirm "  Remove the saved token?"; then
 		if github_token_remove; then
-			printf '  %sSaved token removed.%s\n' \
-				"${C_GREEN:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+			_agentbot_token_menu_say "${C_GREEN:-}Saved token removed.${C_RESET:-}"
 		else
-			printf '  %sSaved token could not be removed safely.%s\n' \
-				"${C_RED:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
+			_agentbot_token_menu_say "${C_RED:-}Saved token could not be removed safely.${C_RESET:-}"
 		fi
 	fi
 }
@@ -161,16 +172,22 @@ agentbot_token_config_menu() {
 	local action=''
 	_agentbot_token_menu_open_fds || return 1
 	_github_token_warning_scope_begin
+	_AGENTBOT_TOKEN_MENU_STATUS=''
 	while true; do
 		tui_clear
 		_agentbot_token_menu_render
+		# Shown once: it describes what just happened, not what is true.
+		_AGENTBOT_TOKEN_MENU_STATUS=''
 		_agentbot_token_menu_line action "  ${C_BOLD:-}Select action:${C_RESET:-} "
+		# One blank below the answer, so an action's output starts on its own
+		# rather than running straight on from the line it was asked on.
+		printf '\n' >&"$AGENTBOT_TOKEN_MENU_OUT_FD"
 		case "$action" in
 		s | S) _agentbot_token_menu_save ;;
 		r | R) _agentbot_token_menu_reveal ;;
 		d | D) _agentbot_token_menu_remove ;;
 		q | Q) break ;;
-		*) printf '  %sInvalid choice.%s\n' "${C_YELLOW:-}" "${C_RESET:-}" >&"$AGENTBOT_TOKEN_MENU_OUT_FD" ;;
+		*) _agentbot_token_menu_say "${C_YELLOW:-}Invalid choice.${C_RESET:-}" ;;
 		esac
 	done
 	_github_token_warning_scope_end
