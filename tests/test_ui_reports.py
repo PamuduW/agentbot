@@ -27,12 +27,13 @@ from src.ui import (
     print_skills_report,
     print_skills_update_report,
     print_status_summary,
+    print_workspace_list,
     print_workspace_removed,
     print_workspace_report,
     print_workspace_resync_report,
 )
 from src.ui.reports import integration_result, workspace_action_result
-from src.ui.table import _table_widths, print_table, result_class, strip_ansi
+from src.ui.table import _table_widths, print_rollup, print_table, result_class, strip_ansi
 from src.workspace_service import WorkspaceReport, WorkspaceResult
 from src.workspace_state import WorkspaceRecord
 
@@ -319,6 +320,27 @@ class IntegrationStateTests(unittest.TestCase):
         for state in sorted(self._states()):
             with self.subTest(state=state):
                 self.assertLessEqual(len(integration_result(state)), width)
+
+
+class RollupTests(unittest.TestCase):
+    def test_an_empty_surface_says_nothing_was_inspected(self):
+        """Not the same as everything being fine.
+
+        `cli-config status` on a machine with none of the three CLIs counted
+        three skips, tallied nothing, and closed "All 0 component(s) look
+        good." -- a verdict on work that never happened.
+        """
+        text, _ = _capture(print_rollup, ok=0, check=0, miss=0)
+        self.assertIn("Nothing to report.", strip_ansi(text))
+
+    def test_a_healthy_surface_still_says_so(self):
+        text, _ = _capture(print_rollup, ok=3, check=0, miss=0)
+        self.assertIn("All 3 component(s) look good.", strip_ansi(text))
+
+    def test_empty_workspaces_still_closes_on_a_rollup(self):
+        text, _ = _capture(print_workspace_list, [])
+        last = [line for line in strip_ansi(text).splitlines() if line.strip()][-1]
+        self.assertEqual("  Nothing to report.", last)
 
 
 class WorkspaceActionResultTests(unittest.TestCase):

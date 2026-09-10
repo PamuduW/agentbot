@@ -631,7 +631,9 @@ def print_workspace_list(records) -> None:
     # column header instead, which print_section_block was supplying.
     if not records:
         print("  No registered workspaces.")
-        print()
+        # Closes on the rollup like the populated branch, rather than being the
+        # one shape of this surface that stops on prose.
+        print_rollup(ok=0, check=0, miss=0)
         return
     rows: list[tuple[str, str, str]] = []
     for record in records:

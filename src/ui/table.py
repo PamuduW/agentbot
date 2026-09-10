@@ -296,7 +296,13 @@ def print_table(
 
 def print_rollup(*, ok: int, check: int, miss: int) -> None:
     print()
-    if miss == 0 and check == 0:
+    if ok == check == miss == 0:
+        # Nothing was inspected, which is not the same as everything being
+        # fine. `cli-config status` on a machine with none of the three CLIs
+        # said "All 0 component(s) look good.", which reads like a verdict on
+        # work that never happened. Dim, because it is a non-event.
+        print(f"  {_c('Nothing to report.', DIM)}")
+    elif miss == 0 and check == 0:
         print(f"  {_c(f'All {ok} component(s) look good.', GREEN)}")
     elif miss == 0:
         print(
