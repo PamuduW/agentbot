@@ -138,32 +138,80 @@ def print_section(label: str) -> None:
     print(f"  {_c(_fit_line(label, terminal_columns() - 2), BOLD + YELLOW)}")
 
 
-def color_result(result: str) -> str:
+# The result vocabulary, in one place, because the rollup counts by it as well
+# as colours by it. It used to be written twice -- once here and once inline in
+# print_table's counter -- and the two drifted: `applied`, `read-only` and
+# `conflict` were coloured but missing from the counter, so rows painted green
+# and red were tallied as needing attention. `graphify` was the visible end of
+# it, reporting "5 ok, 1 need attention" over six healthy rows and then closing
+# with "Graphify CLI and Agent Skills integration are ready."
+#
+# A word absent from all four sets renders uncoloured beside coloured siblings
+# and falls to the counter's catch-all, so it silently becomes an attention
+# item. `ready`, `stale` and `unchanged` were each doing that on a public
+# surface. tests/test_report_contract.sh sweeps for it now.
+RESULT_GREEN = {
+    "ok",
+    "installed",
+    "configured",
+    "linked",
+    "up to date",
+    "current",
+    "unchanged",
+    "ready",
+    "applied",
+    "read-only",
+}
+RESULT_RED = {"missing", "failed", "error", "conflict"}
+RESULT_YELLOW = {
+    "check",
+    "warn",
+    "warning",
+    "partial",
+    "drift",
+    "extra",
+    "stale",
+    "applied-with-local-changes",
+    "mutating",
+}
+# Informational, not actionable. The `Prunable skills` row is written as
+# `"info" if manual_skill_count else "ok"`, which says outright that the two are
+# the same kind of non-problem; the rollup counted the second as fine and the
+# first as needing attention.
+RESULT_CYAN = {"info", "dry-run", "preview"}
+
+
+def result_class(result: str) -> str:
+    """Which of the five classes a result word belongs to.
+
+    `unknown` is its own answer rather than a silent fallback: the sweep in
+    tests/test_report_contract.sh reads it, so a surface inventing a word is
+    caught there instead of on the operator's screen.
+    """
     key = result.strip().lower()
-    if key in {"ok", "installed", "configured", "linked", "up to date", "current", "applied", "read-only"}:
-        return _c(result, GREEN)
-    if key in {"missing", "failed", "error", "conflict"}:
-        return _c(result, RED)
+    if key in RESULT_GREEN:
+        return "ok"
+    if key in RESULT_RED:
+        return "missing"
     # Dim, not yellow: a skip is a deliberate non-event -- "nothing declared",
     # "host unavailable" -- and should recede rather than demand attention the
     # way a warning does. The Bash renderer has always dimmed it; this side
     # diverged, and only uncoloured rows were being compared so nothing said so.
     if key.startswith("skipped"):
-        return _c(result, DIM)
-    if key in {
-        "check",
-        "warn",
-        "warning",
-        "partial",
-        "drift",
-        "extra",
-        "applied-with-local-changes",
-        "mutating",
-    }:
-        return _c(result, YELLOW)
-    if key in {"info", "dry-run", "preview"}:
-        return _c(result, CYAN)
-    return result
+        return "skipped"
+    if key in RESULT_YELLOW:
+        return "check"
+    if key in RESULT_CYAN:
+        return "info"
+    return "unknown"
+
+
+_RESULT_COLORS = {"ok": GREEN, "missing": RED, "skipped": DIM, "check": YELLOW, "info": CYAN}
+
+
+def color_result(result: str) -> str:
+    code = _RESULT_COLORS.get(result_class(result))
+    return result if code is None else _c(result, code)
 
 
 def highlight_manual_skill_name(detail: str, line: str) -> str:
@@ -230,15 +278,19 @@ def print_table(
                 print(color_result(result_fit) + " " * (_result_width - len(result_fit)))
             else:
                 print(f"  {'':<{label_width}} | {detail_padded} |")
-        key = result.strip().lower()
-        if key in {"ok", "installed", "configured", "linked", "up to date", "current"}:
-            ok_count += 1
-        elif key in {"missing", "failed", "error"}:
-            miss_count += 1
-        elif key.startswith("skipped"):
-            continue
-        else:
-            check_count += 1
+        # Counted by the same vocabulary the row was coloured with, never by a
+        # second list beside it. `info` joins `ok`: it is something the reader
+        # is being told, not something being asked of them. `skipped` is a
+        # deliberate non-event and stays out of the tally entirely.
+        match result_class(result):
+            case "ok" | "info":
+                ok_count += 1
+            case "missing":
+                miss_count += 1
+            case "skipped":
+                continue
+            case _:
+                check_count += 1
     return ok_count, check_count, miss_count
 
 

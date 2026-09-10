@@ -253,8 +253,10 @@ def print_doctor_summary(issues: list, *, include_header: bool = True) -> int:
         wrap_details=True,
         detail_highlighter=highlight_manual_skill_name,
     )
-    print()
-    print(f"  {errors} error(s), {warnings} warning(s).")
+    # One rollup, not two. This printed "0 error(s), 8 warning(s)." and then
+    # "0 ok, 8 need attention." -- the same rows counted twice in two
+    # vocabularies, when the point of the rollup is one place to look. The
+    # split survives: an error is red and counts as missing, a warning yellow.
     print_rollup(ok=0, check=check, miss=miss)
     return 1 if errors else 0
 
@@ -498,8 +500,9 @@ def print_workspace_resync_report(report) -> None:
                 )
         else:
             rows.append((str(result.path), result.message, result.status))
+    ok = check = miss = 0
     if rows:
-        print_table(rows, show_header=False, wrap_details=True)
+        ok, check, miss = print_table(rows, show_header=False, wrap_details=True)
     else:
         print("  No registered workspaces.")
     print()
@@ -510,15 +513,24 @@ def print_workspace_resync_report(report) -> None:
         global_rows = [
             (action.relative_path, action.detail, action.kind) for action in global_actions
         ]
-        print_table(global_rows, show_header=False, wrap_details=True)
+        global_ok, global_check, global_miss = print_table(
+            global_rows, show_header=False, wrap_details=True
+        )
+        ok += global_ok
+        check += global_check
+        miss += global_miss
     else:
         print("  No global outputs planned.")
-    print()
+    # One rollup for both groups: the reader is asking whether this resync needs
+    # them, and that question has one answer per surface, not one per section.
+    print_rollup(ok=ok, check=check, miss=miss)
 
 
 def print_workspace_list(records) -> None:
     print_header("Workspaces", "Agentbot › Workspaces")
-    print_section_block("── Registered ──")
+    # No section rule: this surface has one group, and a rule that separates
+    # nothing is one the contract does not draw. The table prints its own
+    # column header instead, which print_section_block was supplying.
     if not records:
         print("  No registered workspaces.")
         print()
@@ -531,8 +543,8 @@ def print_workspace_list(records) -> None:
             f"targets={','.join(record.targets)}"
         )
         rows.append((record.path, detail, "ok" if exists and record.enabled else "missing"))
-    print_table(rows, show_header=False, wrap_details=True)
-    print()
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print_rollup(ok=ok, check=check, miss=miss)
 
 
 def print_workspace_removed(record) -> None:

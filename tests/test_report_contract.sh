@@ -11,7 +11,8 @@ set -uo pipefail
 #   2. Section rules (-- Name --) appear only where a surface has two or more
 #      groups. One group is its own section and a rule adds nothing.
 
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd -- "$TEST_DIR/.." && pwd)"
 passed=0
 failed=0
 
@@ -48,6 +49,8 @@ SURFACES=(
 	'vscode status'
 	'boost status'
 	'graphify'
+	'workspaces'
+	'resync --all'
 )
 
 test_every_surface_closes_with_a_rollup() {
@@ -97,6 +100,30 @@ test_the_contract_holds_under_a_tty_too() {
 	}
 }
 
+# Every result word a surface prints must be one the vocabulary names.
+#
+# A word outside it renders uncoloured beside coloured siblings and falls to the
+# rollup counter's catch-all, so it silently becomes an attention item.
+# `graphify` printed `ready`, `boost status` printed `stale`, and `resync`
+# printed `unchanged` -- none of which any set knew. graphify closed "5 ok, 1
+# need attention" over six healthy rows and then said it was ready.
+#
+# Swept rather than reviewed, because the failure is invisible on the screen: an
+# unknown word looks like a plain cell and a plausible number.
+test_every_result_word_is_in_the_vocabulary() {
+	local surface output found unknown=''
+	for surface in "${SURFACES[@]}"; do
+		# shellcheck disable=SC2086
+		output="$(surface_output $surface)"
+		found="$(python3 "$TEST_DIR/lib/result_sweep.py" <<<"$output" | sort -u | tr '\n' ' ')"
+		[[ -z "${found// /}" ]] || unknown+=" [$surface: ${found% }]"
+	done
+	[[ -z "$unknown" ]] || {
+		printf '   results outside the vocabulary:%s\n' "$unknown" >&2
+		return 1
+	}
+}
+
 test_tty_width_reaches_the_tables() {
 	local output width
 	# A wider terminal must produce wider tables: if it does not, the
@@ -114,6 +141,7 @@ check 'the contract holds under a TTY as well' test_the_contract_holds_under_a_t
 check 'terminal width reaches the rendered tables' test_tty_width_reaches_the_tables
 check 'every public surface closes with a rollup' test_every_surface_closes_with_a_rollup
 check 'section rules appear only where a surface has groups' test_section_rules_only_where_there_are_groups
+check 'every result word is in the vocabulary' test_every_result_word_is_in_the_vocabulary
 
 printf '\nRan %d report-contract test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
 ((failed == 0))
