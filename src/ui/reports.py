@@ -18,6 +18,7 @@ from .table import (
     _c,
     highlight_manual_skill_name,
     print_header,
+    print_note,
     print_rollup,
     print_section,
     print_section_block,
@@ -348,7 +349,7 @@ def print_graphify_status(status) -> None:
     # bottom for "does this need me?" was not at the bottom. On graphify the two
     # even disagreed: "5 ok, 1 need attention." above "integration are ready."
     print()
-    print(f"  {status.message}")
+    print_note(status.message)
     # print_rollup opens and closes with a blank line.
     print_rollup(ok=ok, check=check, miss=miss)
 
@@ -417,7 +418,7 @@ def print_boost_status(status) -> None:
     # bottom for "does this need me?" was not at the bottom. On graphify the two
     # even disagreed: "5 ok, 1 need attention." above "integration are ready."
     print()
-    print(f"  {status.message}")
+    print_note(status.message)
     # print_rollup opens and closes with a blank line.
     print_rollup(ok=ok, check=check, miss=miss)
 

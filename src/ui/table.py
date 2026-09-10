@@ -318,6 +318,19 @@ def print_rollup(*, ok: int, check: int, miss: int) -> None:
     print()
 
 
+def print_note(text: str) -> None:
+    """A sentence or paragraph beneath a table, wrapped to the same width.
+
+    Printed as one long line it soft-wraps at the terminal edge, and the
+    continuation starts at column zero -- so the closing note on `boost status`,
+    which lists twelve paths, was the one block on the screen that did not keep
+    the margin. Wrapped here, every line of it starts where the table does.
+    """
+    width = max(MINIMUM_COLUMNS, terminal_columns())
+    for line in textwrap.wrap(text, width=width - 2) or [""]:
+        print(f"  {line}")
+
+
 def print_section_block(label: str) -> None:
     print()
     print_section(label)

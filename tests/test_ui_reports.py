@@ -33,7 +33,14 @@ from src.ui import (
     print_workspace_resync_report,
 )
 from src.ui.reports import integration_result, workspace_action_result
-from src.ui.table import _table_widths, print_rollup, print_table, result_class, strip_ansi
+from src.ui.table import (
+    _table_widths,
+    print_note,
+    print_rollup,
+    print_table,
+    result_class,
+    strip_ansi,
+)
 from src.workspace_service import WorkspaceReport, WorkspaceResult
 from src.workspace_state import WorkspaceRecord
 
@@ -320,6 +327,27 @@ class IntegrationStateTests(unittest.TestCase):
         for state in sorted(self._states()):
             with self.subTest(state=state):
                 self.assertLessEqual(len(integration_result(state)), width)
+
+
+class NoteTests(unittest.TestCase):
+    def test_a_long_note_keeps_the_margin_on_every_line(self):
+        """Printed as one line it soft-wraps to column zero.
+
+        The closing note on `boost status` lists twelve paths, and was the one
+        block on the screen whose continuation lines did not start where the
+        table does.
+        """
+        sentence = " ".join(f"/a/long/path/number-{index}.sh," for index in range(20))
+        text, _ = _capture(print_note, sentence)
+        lines = [line for line in text.splitlines() if line.strip()]
+        self.assertGreater(len(lines), 1, "the sample was not long enough to wrap")
+        for line in lines:
+            self.assertTrue(line.startswith("  "), line)
+            self.assertFalse(line.startswith("   "), line)
+
+    def test_a_short_note_is_one_line(self):
+        text, _ = _capture(print_note, "all good")
+        self.assertEqual(["  all good"], [x for x in text.splitlines() if x.strip()])
 
 
 class RollupTests(unittest.TestCase):
