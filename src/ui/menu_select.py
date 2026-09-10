@@ -454,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
 
             traceback.print_exc()
         else:
-            print(f"menu unavailable: {error}", file=sys.stderr)
+            print(f"  menu unavailable: {error}", file=sys.stderr)
         return 3
     if choice is None:
         return 1

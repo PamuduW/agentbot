@@ -466,7 +466,7 @@ class CliTests(unittest.TestCase):
                 rc, stdout, stderr = run_cli_main(argv)
                 self.assertEqual(1, rc)
                 self.assertEqual("", stdout)
-                self.assertEqual("Error: isolated skills failure\n", stderr)
+                self.assertEqual("  Error: isolated skills failure\n", stderr)
                 failing_boundary.reset_mock()
 
     @patch("src.cli.default_paths")
@@ -497,7 +497,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(1, rc)
         self.assertEqual("", stdout)
-        self.assertEqual("Error: refresh failed\n", stderr)
+        self.assertEqual("  Error: refresh failed\n", stderr)
 
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")

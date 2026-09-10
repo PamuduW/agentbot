@@ -37,10 +37,11 @@ check() {
 #   branch owns. It is a programmer's message on stderr, not a screen, and
 #   Dotfiles prints its own at column zero for the same reason.
 #
-#   The \x1f record in src/ui/graphify_lib.py is a field-separated row read by
-#   another process, not a line anybody sees.
+#   A line carrying \x1f is a field-separated record read by another process --
+#   the graphify detail row, the menu spec -- not a line anybody sees.
 sweep() {
 	python3 - "$ROOT" <<'PY'
+import ast
 import re
 import sys
 from pathlib import Path
@@ -61,12 +62,17 @@ PY_SURFACES = sorted(str(p.relative_to(root)) for p in (root / "src").rglob("*.p
 
 EXEMPT = (
     re.compile(r"^Unknown .* action: "),
-    re.compile(r"^\{found\.label\}\\x1f"),
+    re.compile(r"\x1f"),
+    # Nothing is exempt for going to stderr. The messages there are the ones an
+    # operator sees when a command is refused -- a bad help topic, an archived
+    # command -- and they used to be the last four lines in the product still
+    # printing at column zero, precisely because the first sweep skipped the
+    # stream rather than the message.
 )
 
-# printf -v writes into a variable rather than to a stream.
+# printf -v writes into a variable rather than to a stream. The Python side
+# is parsed instead of matched; see leading_literal below.
 SHELL_FMT = re.compile(r"(?<!-v )\bprintf\s+'((?:[^'\\]|\\.)*)'")
-PY_FMT = re.compile(r'print\(\s*f?"((?:[^"\\]|\\.)*)"')
 
 
 def opens_at_column_zero(fmt: str) -> bool:
@@ -81,23 +87,61 @@ def opens_at_column_zero(fmt: str) -> bool:
 
 
 offenders = []
-for names, pattern in ((SHELL_SURFACES, SHELL_FMT), (PY_SURFACES, PY_FMT)):
-    for name in names:
-        path = root / name
-        if not path.exists():
+for name in SHELL_SURFACES:
+    path = root / name
+    if not path.exists():
+        continue
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        if line.strip().startswith("#"):
             continue
-        for number, line in enumerate(path.read_text().splitlines(), 1):
-            if line.strip().startswith("#"):
+        for match in SHELL_FMT.finditer(line):
+            fmt = match.group(1)
+            if not opens_at_column_zero(fmt):
                 continue
-            if "file=sys.stderr" in line:
+            if any(rule.search(fmt) for rule in EXEMPT):
                 continue
-            for match in pattern.finditer(line):
-                fmt = match.group(1)
-                if not opens_at_column_zero(fmt):
-                    continue
-                if any(rule.search(fmt) for rule in EXEMPT):
-                    continue
-                offenders.append(f"{name}:{number}: {fmt!r}")
+            offenders.append(f"{name}:{number}: {fmt!r}")
+
+
+def leading_literal(node):
+    """The text a print() argument starts with, before any interpolation.
+
+    Parsed rather than matched: _archived_command_error writes its message as a
+    two-line implicitly-concatenated f-string, and a line-oriented regex cannot
+    see the `print(` above it. That one sat at column zero through a sweep that
+    claimed to cover the file.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        # Rebuilt with the interpolations as `{}`, so an offender is reported as
+        # something recognisable and an exemption can still match the literal
+        # parts. An f-string opening on a replacement field puts a value at the
+        # margin just as surely as a literal would, so `{}` counts as visible.
+        return "".join(
+            part.value if isinstance(part, ast.Constant) and isinstance(part.value, str) else "{}"
+            for part in node.values
+        )
+    return None
+
+
+for name in PY_SURFACES:
+    path = root / name
+    if not path.exists():
+        continue
+    for node in ast.walk(ast.parse(path.read_text(), filename=name)):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (isinstance(node.func, ast.Name) and node.func.id == "print"):
+            continue
+        if not node.args:
+            continue
+        text = leading_literal(node.args[0])
+        if text is None or not opens_at_column_zero(text):
+            continue
+        if any(rule.search(text) for rule in EXEMPT):
+            continue
+        offenders.append(f"{name}:{node.lineno}: {text!r}")
 
 for offender in offenders:
     print(offender)

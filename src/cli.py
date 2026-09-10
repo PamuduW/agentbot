@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .boost import BoostIntegration
-from .commands import COMMANDS, CommandSpec, command_by_name
+from .commands import CommandSpec, command_by_name
 from .diagnostics import Diagnostics
 from .graphify import GraphifyIntegration
 from .lifecycle import Lifecycle
@@ -417,7 +417,10 @@ def build_parser() -> argparse.ArgumentParser:
     help_parser.add_argument("help_topic", nargs="*", metavar="COMMAND")
     help_parser.add_argument(
         "--format",
-        choices=("plain", "menu", "tui"),
+        # `menu` was the tab-separated dump the Command Lib used to parse into
+        # Bash arrays before src/ui/menus.py built the menu directly. Nothing
+        # has called for it since; it outlived its only caller.
+        choices=("plain", "tui"),
         default="plain",
         dest="help_format",
         help=argparse.SUPPRESS,
@@ -607,7 +610,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _archived_command_error(command: str) -> int:
     print(
-        f"Error: '{command}' is archived. See archive/docs/README.md for catalog, "
+        f"  Error: '{command}' is archived. See archive/docs/README.md for catalog, "
         "MCP, and interactive control-plane features.",
         file=sys.stderr,
     )
@@ -796,7 +799,7 @@ def handle_skills_command(lifecycle: Lifecycle, skills_command: str) -> int:
 
 
 def print_skills_error(error: Exception) -> int:
-    print(f"Error: {error}", file=sys.stderr)
+    print(f"  Error: {error}", file=sys.stderr)
     return 1
 
 
@@ -899,18 +902,11 @@ def print_doctor(diagnostics: Diagnostics) -> int:
 
 
 def print_help_command(topic: str | None, *, output_format: str = "plain") -> int:
-    if output_format == "menu":
-        for command_spec in COMMANDS:
-            print(
-                f"{command_spec.name}\t{command_spec.behavior}"
-                f"\t{command_spec.surface}\t{command_spec.summary}"
-            )
-        return 0
     spec: CommandSpec | None
     try:
         spec = command_by_name(topic) if topic else None
     except KeyError:
-        print(f"Error: unknown help topic: {topic}", file=sys.stderr)
+        print(f"  Error: unknown help topic: {topic}", file=sys.stderr)
         return 2
     print_command_help(spec)
     return 0
