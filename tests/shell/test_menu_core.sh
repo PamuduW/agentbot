@@ -148,7 +148,7 @@ test_pause_uses_one_blank_line_and_shared_prompt() (
 	NO_COLOR=1
 	tui_init_colors
 	AGENTBOT_TUI_INPUT="$input" AGENTBOT_TUI_OUTPUT="$output" tui_pause
-	[[ "$(<"$output")" == $'\nPress Enter to continue: ' ]]
+	[[ "$(<"$output")" == $'\n  Press Enter to continue: ' ]]
 )
 
 test_refresh_preserves_agentbot_and_dotfiles_tty_overrides_for_pause_and_confirm() (
@@ -166,7 +166,7 @@ test_refresh_preserves_agentbot_and_dotfiles_tty_overrides_for_pause_and_confirm
 	tui_init_colors
 	AGENTBOT_TUI_INPUT="$agent_pause_in" AGENTBOT_TUI_OUTPUT="$agent_pause_out" tui_pause
 	AGENTBOT_TUI_INPUT="$agent_confirm_in" AGENTBOT_TUI_OUTPUT="$agent_confirm_out" tui_confirm 'Apply changes'
-	[[ "$(<"$agent_pause_out")" == $'\nPress Enter to continue: ' ]] || {
+	[[ "$(<"$agent_pause_out")" == $'\n  Press Enter to continue: ' ]] || {
 		printf 'agent pause output: %q\n' "$(<"$agent_pause_out")" >&2
 		return 1
 	}
@@ -184,7 +184,7 @@ test_refresh_preserves_agentbot_and_dotfiles_tty_overrides_for_pause_and_confirm
 		source "$1/scripts/lib/tui.sh"
 		tui_confirm "Apply changes"
 	' _ "$ROOT"
-	[[ "$(<"$dot_pause_out")" == $'\nPress Enter to continue: ' ]] || {
+	[[ "$(<"$dot_pause_out")" == $'\n  Press Enter to continue: ' ]] || {
 		printf 'dotfiles pause output: %q\n' "$(<"$dot_pause_out")" >&2
 		return 1
 	}
@@ -248,7 +248,7 @@ test_token_confirm_returns_to_the_parent_tty_after_its_descriptors_close() (
 		tui_pause
 		printf "parent=%s token=%s\\n" "$(<"$2")" "$(<"$4")"
 	' _ "$parent_input" "$parent_output" "$token_input" "$token_output" "$ROOT")"
-	[[ "$output" == *'parent='$'\nPress Enter to continue: '* && "$output" == *'token=Confirm token [y/N]: '* ]] || {
+	[[ "$output" == *'parent='$'\n  Press Enter to continue: '* && "$output" == *'token=Confirm token [y/N]: '* ]] || {
 		printf 'token return output: %q\n' "$output" >&2
 		return 1
 	}
