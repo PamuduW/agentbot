@@ -31,7 +31,7 @@ agentbot_menu_workspaces_remove_recorded() {
 		fi
 
 		if ((${#recorded_paths[@]} == 0)); then
-			printf '%sNo recorded workspaces to remove.%s\n' "$C_DIM" "$C_RESET"
+			printf '  %sNo recorded workspaces to remove.%s\n' "$C_DIM" "$C_RESET"
 			tui_pause
 			return 0
 		fi
@@ -61,7 +61,7 @@ agentbot_menu_workspaces_remove_recorded() {
 		if agentbot_menu_workspaces_remove_confirm "$path"; then
 			agentbot_run_backend workspaces --remove "$path" || return $?
 		else
-			printf '%sWorkspace removal cancelled.%s\n' "$C_DIM" "$C_RESET"
+			printf '  %sWorkspace removal cancelled.%s\n' "$C_DIM" "$C_RESET"
 		fi
 		tui_pause
 	done
@@ -76,7 +76,7 @@ agentbot_menu_workspaces_dispatch() {
 		if agentbot_menu_workspaces_confirm; then
 			agentbot_run_backend resync --all --yes || rc=$?
 		else
-			printf '%sApply cancelled.%s\n' "$C_DIM" "$C_RESET"
+			printf '  %sApply cancelled.%s\n' "$C_DIM" "$C_RESET"
 		fi
 		;;
 	remove) agentbot_menu_workspaces_remove_recorded || rc=$? ;;
@@ -86,7 +86,7 @@ agentbot_menu_workspaces_dispatch() {
 		;;
 	esac
 	if ((rc != 0)); then
-		printf '%sAction failed (exit %d).%s\n' "$C_RED" "$rc" "$C_RESET" >&2
+		printf '  %sAction failed (exit %d).%s\n' "$C_RED" "$rc" "$C_RESET" >&2
 	fi
 	return "$rc"
 }

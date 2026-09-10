@@ -30,7 +30,7 @@ agentbot_menu_prune_skills() {
 
 	_agentbot_load_prune_candidates || return $?
 	if ((${#AGENTBOT_PRUNE_SKILLS[@]} == 0)); then
-		printf 'No prunable skills found.\n'
+		printf '  %sNo prunable skills found.%s\n' "${C_DIM:-}" "${C_RESET:-}"
 		return 0
 	fi
 
@@ -54,7 +54,7 @@ agentbot_menu_prune_skills() {
 		fi
 	done
 	if ((${#selected[@]} == 0)); then
-		printf 'No skills selected for pruning.\n'
+		printf '  %sNo skills selected for pruning.%s\n' "${C_DIM:-}" "${C_RESET:-}"
 		return 0
 	fi
 

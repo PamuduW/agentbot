@@ -16,7 +16,7 @@ export AGENTBOT_HOME
 source "$AGENTBOT_HOME/scripts/lib/shared/tui/tty.sh"
 
 agentbot_die() {
-	printf '[err] %s\n' "$*" >&2
+	printf '  [err] %s\n' "$*" >&2
 	return 1
 }
 

@@ -201,8 +201,8 @@ def _handle_vscode(context: CommandContext) -> int:
         counts = ", ".join(
             f"{host}: {len(values)}" for host, values in sorted(manifest.extensions.items())
         )
-        print(f"Recorded installed extensions in {target}")
-        print(f"  {counts or 'no hosts available'}")
+        print(f"  Recorded installed extensions in {target}")
+        print(f"    {counts or 'no hosts available'}")
         return 0
 
     report = (
@@ -838,7 +838,7 @@ def run_agentbot_install(
     if outcome.boost.cli_path is not None or outcome.boost.state == "broken":
         print_boost_status(outcome.boost)
     doctor_rc = print_doctor_summary(list(outcome.diagnostics.issues))
-    print(f"AGENTBOT_HOME={paths.root.resolve()}")
+    print(f"  AGENTBOT_HOME={paths.root.resolve()}")
     if skills_rc != 0:
         return skills_rc
     if outcome.graphify.state == "broken":

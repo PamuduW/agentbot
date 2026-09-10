@@ -170,7 +170,7 @@ agentbot_menu_run() {
 			menu_simple_run
 			return $?
 		fi
-		printf '%sThe menu needs python3, which is not available.%s\n' \
+		printf '  %sThe menu needs python3, which is not available.%s\n' \
 			"${C_RED:-}" "${C_RESET:-}" >&2
 		return 1
 	fi

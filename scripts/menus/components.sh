@@ -87,7 +87,7 @@ agentbot_menu_components() {
 
 	selection="$(agentbot_components_selection)"
 	if [[ -z "$selection" ]]; then
-		printf '%sNothing selected; install cancelled.%s\n' "${C_DIM:-}" "${C_RESET:-}"
+		printf '  %sNothing selected; install cancelled.%s\n' "${C_DIM:-}" "${C_RESET:-}"
 		return 0
 	fi
 

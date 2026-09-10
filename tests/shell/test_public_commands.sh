@@ -16,7 +16,7 @@ test_launcher_and_headless_guidance() {
 	output="$(env -u AGENTBOT_TTY "$AGENTBOT" 2>&1)"
 	rc=$?
 	set -e
-	[[ "$rc" -ne 0 && "$output" == '[err] No usable controlling TTY. Use agentbot help or an explicit command such as agentbot install.' ]]
+	[[ "$rc" -ne 0 && "$output" == '  [err] No usable controlling TTY. Use agentbot help or an explicit command such as agentbot install.' ]]
 }
 
 test_menu_repository_change_propagates_to_launcher() (
@@ -190,7 +190,7 @@ test_link_agentbot_only_replaces_owned_launchers() (
 	}
 
 	assert_refusal() {
-		expected="[err] refusing to replace existing launcher: ${target}. Move or remove it, then retry."
+		expected="  [err] refusing to replace existing launcher: ${target}. Move or remove it, then retry."
 		[[ "$rc" -eq 1 && "$output" == "$expected" ]]
 	}
 
@@ -226,7 +226,7 @@ test_link_agentbot_only_replaces_owned_launchers() (
 	home="$TEST_ROOT/launcher-absent"
 	target="$home/bin/agentbot"
 	run_link "$home"
-	[[ "$rc" -eq 0 && "$output" == "[info] linked ${target} -> ${source}" ]] || return 1
+	[[ "$rc" -eq 0 && "$output" == "  [info] linked ${target} -> ${source}" ]] || return 1
 	[[ "$(readlink -f "$target")" == "$source" && -x "$(readlink -f "$target")" ]] || return 1
 
 	home="$TEST_ROOT/launcher-owned"
@@ -234,7 +234,7 @@ test_link_agentbot_only_replaces_owned_launchers() (
 	mkdir -p "$(dirname "$target")"
 	ln -s "$source" "$target"
 	run_link "$home"
-	[[ "$rc" -eq 0 && "$output" == "[info] linked ${target} -> ${source}" ]] || return 1
+	[[ "$rc" -eq 0 && "$output" == "  [info] linked ${target} -> ${source}" ]] || return 1
 	[[ "$(readlink -f "$target")" == "$source" && -x "$(readlink -f "$target")" ]] || return 1
 
 	home="$TEST_ROOT/launcher-foreign-symlink"
@@ -277,7 +277,7 @@ test_link_agentbot_only_replaces_owned_launchers() (
 	home="$TEST_ROOT/launcher-create-race"
 	target="$home/bin/agentbot"
 	run_foreign_create_race "$home"
-	expected="[err] failed to create Agentbot launcher: ${target}. Inspect the existing path, then retry."
+	expected="  [err] failed to create Agentbot launcher: ${target}. Inspect the existing path, then retry."
 	[[ "$rc" -eq 1 && "$output" == "$expected" ]] || return 1
 	[[ -f "$target" && ! -L "$target" && "$(<"$target")" == 'foreign launcher contents' ]] || return 1
 
@@ -286,7 +286,7 @@ test_link_agentbot_only_replaces_owned_launchers() (
 	printf 'foreign executable\n' >"$TEST_ROOT/foreign-agentbot"
 	chmod +x "$TEST_ROOT/foreign-agentbot"
 	run_wrong_link_success "$home"
-	expected="[err] failed to verify Agentbot launcher: ${target}"
+	expected="  [err] failed to verify Agentbot launcher: ${target}"
 	[[ "$rc" -eq 1 && "$output" == "$expected" ]] || return 1
 	[[ -L "$target" && "$(readlink -f "$target")" == "$TEST_ROOT/foreign-agentbot" ]] || return 1
 )

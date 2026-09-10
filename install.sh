@@ -29,16 +29,16 @@ github_token_child() (
 )
 
 die() {
-	printf '%s[err]%s %s\n' "$AGENTBOT_OUT_RED" "$AGENTBOT_OUT_RESET" "$*" >&2
+	printf '  %s[err]%s %s\n' "$AGENTBOT_OUT_RED" "$AGENTBOT_OUT_RESET" "$*" >&2
 	exit 1
 }
 
 info() {
-	printf '%s[info]%s %s\n' "$AGENTBOT_OUT_CYAN" "$AGENTBOT_OUT_RESET" "$*"
+	printf '  %s[info]%s %s\n' "$AGENTBOT_OUT_CYAN" "$AGENTBOT_OUT_RESET" "$*"
 }
 
 warn() {
-	printf '%s[warn]%s %s\n' "$AGENTBOT_OUT_YELLOW" "$AGENTBOT_OUT_RESET" "$*" >&2
+	printf '  %s[warn]%s %s\n' "$AGENTBOT_OUT_YELLOW" "$AGENTBOT_OUT_RESET" "$*" >&2
 }
 
 bootstrap_quiet() {
