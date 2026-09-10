@@ -567,8 +567,34 @@ class UniversalSettingsTests(unittest.TestCase):
 
         report = preview(self.home, self.root, self.mount)
 
-        self.assertIsNotNone(report.settings["windows"].unreadable)
+        self.assertIsNotNone(report.settings["windows"].skipped)
         self.assertEqual(report.settings["wsl"].additions, {"a": 1})
+
+    def test_an_unavailable_host_is_a_skip_not_a_failure(self) -> None:
+        """A host that is not on this machine is pending, not wrong.
+
+        It was recorded as `unreadable`, which put it in `failures` -- so a
+        read-only `vscode status` exited 1 for a feature merely not installed,
+        and the Settings table called it yellow while the Extensions table
+        called the very same host a dim skip.
+        """
+        import shutil
+
+        shutil.rmtree(self.mount / "Users")
+        self._write_scope("universal", '{"a": 1}')
+
+        report = preview(self.home, self.root, self.mount)
+
+        self.assertIsNone(report.settings["windows"].unreadable)
+        self.assertEqual(report.failures, ())
+
+    def test_an_unreadable_source_is_still_a_failure(self) -> None:
+        """The other half of the split: a real read error still fails."""
+        self._write_scope("universal", '{"a": 1}')
+        report = preview(self.home, self.root, self.mount)
+        report.settings["windows"].unreadable = "settings.json is not valid JSON"
+
+        self.assertTrue(report.failures)
 
 
 class PreviewTests(unittest.TestCase):

@@ -722,7 +722,10 @@ def print_vscode_report(report) -> None:
 
     settings_rows: list[tuple[str, str, str]] = []
     for scope, plan in sorted(report.settings.items()):
-        if plan.unreadable:
+        if plan.skipped:
+            # The same verdict the Extensions table gives the same host.
+            settings_rows.append((scope, plan.skipped, "skipped"))
+        elif plan.unreadable:
             settings_rows.append((scope, plan.unreadable, "check"))
         elif plan.is_noop:
             settings_rows.append((scope, "current", "ok"))

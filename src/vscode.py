@@ -60,6 +60,13 @@ class SettingsPlan:
     additions: dict[str, object] = field(default_factory=dict)
     changes: dict[str, tuple[object, object]] = field(default_factory=dict)
     unreadable: str | None = None
+    # A host that is not on this machine, kept apart from one whose settings
+    # could not be read. ExtensionPlan has always drawn that line; this side
+    # recorded both as `unreadable`, so an absent Windows profile was a yellow
+    # "needs attention" under Settings and a dim "skipped" under Extensions on
+    # the same screen -- and it failed the command, which a read-only status
+    # must not do for something merely not installed yet.
+    skipped: str | None = None
 
     @property
     def is_noop(self) -> bool:
@@ -584,6 +591,10 @@ class VSCodeReport:
 
     @property
     def failures(self) -> tuple[str, ...]:
+        # `skipped` is not a failure: a host that is not on this machine is a
+        # thing not installed yet, and a read-only status that finds one has
+        # succeeded at its job. Only a settings file that could not be read is
+        # something wrong.
         problems = [
             f"{scope}: {plan.unreadable}"
             for scope, plan in sorted(self.settings.items())
@@ -649,7 +660,7 @@ def preview(home: Path, root: Path, mount_root: Path = WINDOWS_MOUNT_ROOT) -> VS
         if not host.available:
             report.settings[name] = SettingsPlan(
                 path=host.settings_path,
-                unreadable=f"host unavailable ({host.detail})",
+                skipped=f"host unavailable ({host.detail})",
             )
             continue
         report.settings[name] = plan_settings(host.settings_path, desired)
@@ -720,7 +731,9 @@ def apply(
         return report
     for name, host in report.hosts.items():
         settings_plan = report.settings.get(name)
-        if settings_plan is None or settings_plan.unreadable or settings_plan.is_noop:
+        if settings_plan is None or settings_plan.unreadable or settings_plan.skipped:
+            continue
+        if settings_plan.is_noop:
             continue
         desired, source_error = desired_settings(root, name)
         if source_error:
