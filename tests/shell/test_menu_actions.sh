@@ -292,6 +292,51 @@ test_token_menu_outcomes_survive_the_redraw() (
 	[[ "$(<"$removed_output")" == *'No saved token file exists.'* ]]
 )
 
+test_saved_token_can_be_checked_from_the_menu() (
+	# Saving checks what is being typed; nothing checked what was already
+	# saved, and a token that was good when it was written is exactly the thing
+	# that expires or gets revoked later. Same action, same words, as Dotfiles.
+	local token='saved_token_value_1234567890'
+	local input="$TEST_ROOT/check-saved.input" output="$TEST_ROOT/check-saved.output"
+	NO_COLOR=1
+	tui_init_colors
+	github_token_write "$token" || return 1
+
+	local rc
+	for rc in 0 1 2; do
+		printf 'c\nq\n' >"$input"
+		: >"$output"
+		(
+			eval "github_token_verify() { return $rc; }"
+			AGENTBOT_TOKEN_TTY_INPUT="$input" AGENTBOT_TOKEN_TTY_OUTPUT="$output" \
+				agentbot_token_config_menu
+		) || return 1
+		case "$rc" in
+		0) grep -Fq 'GitHub accepted the saved token.' "$output" || return 1 ;;
+		1) grep -Fq 'GitHub rejected the saved token' "$output" || return 1 ;;
+		*) grep -Fq 'Could not reach GitHub to check the saved token.' "$output" || return 1 ;;
+		esac
+		# Only the render prints an outcome, so its presence proves it was
+		# carried; and the saved token never appears to get there.
+		! grep -Fq "$token" "$output" || return 1
+	done
+
+	# Nothing saved is not an error, and asks GitHub nothing.
+	github_token_remove >/dev/null 2>&1 || true
+	printf 'c\nq\n' >"$input"
+	: >"$output"
+	(
+		github_token_verify() {
+			printf 'must not be asked\n' >>"$output"
+			return 0
+		}
+		AGENTBOT_TOKEN_TTY_INPUT="$input" AGENTBOT_TOKEN_TTY_OUTPUT="$output" \
+			agentbot_token_config_menu
+	) || return 1
+	grep -Fq 'No valid saved token to check.' "$output" || return 1
+	! grep -Fq 'must not be asked' "$output"
+)
+
 test_workspaces_routes_read_preview_and_apply() (
 	local calls="$TEST_ROOT/workspaces.calls"
 	: >"$calls"
@@ -432,6 +477,7 @@ check 'Command Lib selects and renders one detail page' test_command_lib_selects
 check 'Graphify Lib rows match supported command families' test_graphify_library_is_data_driven_and_supported
 check 'token entry is hidden and reveal is confirmed' test_token_entry_is_hidden_and_reveal_requires_confirmation
 check 'token menu outcomes survive the redraw' test_token_menu_outcomes_survive_the_redraw
+check 'the saved token can be checked against GitHub from the menu' test_saved_token_can_be_checked_from_the_menu
 check 'Workspaces routes list preview and confirmed apply' test_workspaces_routes_read_preview_and_apply
 check 'declined workspace apply performs no backend write' test_declined_workspace_apply_is_non_destructive
 check 'workspace removal prompts use the shared TTY adapter' test_workspace_removal_prompt_uses_the_shared_tty_adapter
