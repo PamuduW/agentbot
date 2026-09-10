@@ -231,12 +231,12 @@ run_repo_update_prompt() {
 	fi
 	if tty_use_output_fd; then
 		print_repo_update_table >&"$DOTFILES_TTY_OUT_FD"
-		printf '%s [y/N]: ' "$prompt" >&"$DOTFILES_TTY_OUT_FD"
+		printf '  %s [y/N]: ' "$prompt" >&"$DOTFILES_TTY_OUT_FD"
 	else
 		tty_output_available || return 1
 		tty_output="$(tty_output_path)"
 		print_repo_update_table >>"$tty_output"
-		printf '%s [y/N]: ' "$prompt" >>"$tty_output"
+		printf '  %s [y/N]: ' "$prompt" >>"$tty_output"
 	fi
 	if tty_use_input_fd; then
 		IFS= read -r answer <&"$DOTFILES_TTY_IN_FD" || true

@@ -273,8 +273,13 @@ test_repo_update_table_honors_tui_color_mode() (
 		esac
 	}
 	output="$(print_repo_update_table)"
-	[[ "$output" == *$'\033[1m\033[33mRepository update\033[0m'* ]] || return 1
-	[[ "$output" != *$'\033[38;5;208mRepository update\033[0m'* ]] || return 1
+	# The shared header, as every other section heading in either product uses:
+	# an orange `=== Title ===` over a dim breadcrumb. This was a bold yellow
+	# label, which said nothing about where the operator was, and the assertion
+	# below it used to insist it stay that way.
+	[[ "$output" == *$'\033[38;5;208m=== Repository update ==='* ]] || return 1
+	[[ "$output" == *'Agentbot › Update › Repository'* ]] || return 1
+	[[ "$output" != *$'\033[1m\033[33mRepository update\033[0m'* ]] || return 1
 	[[ "$output" == *$'\033[33mcheck\033[0m'* ]]
 )
 

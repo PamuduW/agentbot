@@ -165,9 +165,10 @@ repo_update_print_report() {
 	*) action_color="$C_YELLOW" ;;
 	esac
 
-	printf '\n'
-	tui_section 'Repository update' "$cols"
-	printf '\n'
+	# The shared header, like every other section heading in either product: an
+	# orange `=== Title ===` over a dim breadcrumb. This was a bold yellow
+	# label with nothing to say where the operator was.
+	rt_print_header 'Repository update' 'Agentbot › Update › Repository'
 	tui_table_header "$cols" component installed available action
 	if [[ "${REPO_UPDATE_DIRTY:-0}" == 1 ]]; then
 		tui_table_row "$cols" 'agentbot repo' "${branch}@${local_rev}" \
@@ -201,8 +202,8 @@ repo_update_print_declined() {
 		reset=$'\033[0m'
 	fi
 	case "$action" in
-	pull-behind) printf '\n\n%sPull declined; update stopped.%s\n' "$red" "$reset" ;;
-	*) printf '\n\n%sUpdate stopped; no downstream work was run.%s\n' "$red" "$reset" ;;
+	pull-behind) printf '\n\n  %sPull declined; update stopped.%s\n' "$red" "$reset" ;;
+	*) printf '\n\n  %sUpdate stopped; no downstream work was run.%s\n' "$red" "$reset" ;;
 	esac
 }
 
@@ -212,17 +213,17 @@ agentbot_repo_update_print_changed() {
 		green=$'\033[32m'
 		reset=$'\033[0m'
 	fi
-	printf '%sRepository fast-forward succeeded%s\n\n' "$green" "$reset"
-	printf 'Run setup again when ready.\n'
+	printf '  %sRepository fast-forward succeeded%s\n\n' "$green" "$reset"
+	printf '  Run setup again when ready.\n'
 }
 
 agentbot_repo_update_print_recovery() {
 	[[ -n "${REPO_UPDATE_RECOVERY_BRANCH:-}${REPO_UPDATE_RECOVERY_STASH:-}" ]] || return 0
-	printf 'Recovery data preserved:\n'
+	printf '  Recovery data preserved:\n'
 	[[ -n "${REPO_UPDATE_RECOVERY_BRANCH:-}" ]] &&
-		printf '  Recovery branch: %s\n' "$REPO_UPDATE_RECOVERY_BRANCH"
+		printf '    Recovery branch: %s\n' "$REPO_UPDATE_RECOVERY_BRANCH"
 	[[ -n "${REPO_UPDATE_RECOVERY_STASH:-}" ]] &&
-		printf '  Recovery stash: %s\n' "$REPO_UPDATE_RECOVERY_STASH"
+		printf '    Recovery stash: %s\n' "$REPO_UPDATE_RECOVERY_STASH"
 	return 0
 }
 
