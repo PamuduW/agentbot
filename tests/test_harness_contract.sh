@@ -76,7 +76,83 @@ test_ci_installs_full_gate_system_tools() (
 	done
 )
 
+# A test that does not run is worse than no test: it reports "ok" for work
+# nobody checked. Two ways that happens here, one of which already had.
+#
+# In Python, a second `class ReconciliationReportTests` shadowed the first, so
+# three tests written for a fix never ran and reverting the fix still passed.
+# unittest sees one class; the file contains two.
+test_no_python_test_is_shadowed() (
+	python3 - "$ROOT" <<'PY'
+import ast
+import sys
+from collections import Counter
+from pathlib import Path
+
+root = Path(sys.argv[1])
+problems = []
+for path in sorted((root / "tests").rglob("*.py")):
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    top = Counter(
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+    )
+    problems += [
+        f"{path.name}: {name} defined {count}x" for name, count in top.items() if count > 1
+    ]
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        methods = Counter(
+            member.name
+            for member in node.body
+            if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+        problems += [
+            f"{path.name}: {node.name}.{name} defined {count}x"
+            for name, count in methods.items()
+            if count > 1
+        ]
+for problem in problems:
+    print(problem, file=sys.stderr)
+sys.exit(1 if problems else 0)
+PY
+)
+
+# And in Bash, a `test_*` function that no line ever calls. These suites list
+# their cases by hand at the bottom of the file, so adding a function and
+# forgetting the line is one keystroke away.
+test_every_shell_test_is_invoked() (
+	local suite joined name orphans=''
+	while IFS= read -r suite; do
+		# Registration lines wrap, so continuations are joined before matching.
+		joined="$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$suite")"
+		while IFS= read -r name; do
+			[[ -n "$name" ]] || continue
+			grep -qE "(check|expect|expect_success|run_case|run_test|if)[[:space:]].*\b${name}\b" \
+				<<<"$joined" || orphans+=" $(basename "$suite"):${name}"
+		done < <(grep -oE '^test_[a-zA-Z0-9_]+\(\)' "$suite" | tr -d '()')
+	done < <(find "$ROOT/tests" -type f -name 'test_*.sh' ! -path "$ROOT/tests/lib/*" | sort)
+	[[ -z "$orphans" ]] || {
+		printf '   shell tests defined but never invoked:%s\n' "$orphans" >&2
+		return 1
+	}
+)
+
 test_harness_setup "$ROOT"
+
+if test_no_python_test_is_shadowed; then
+	pass "no Python test is shadowed by a duplicate definition"
+else
+	fail "no Python test is shadowed by a duplicate definition"
+fi
+
+if test_every_shell_test_is_invoked; then
+	pass "every shell test function is invoked by its suite"
+else
+	fail "every shell test function is invoked by its suite"
+fi
 
 if test_runner_lists_each_shell_suite_once; then
 	pass "full runner lists every shell suite exactly once"
