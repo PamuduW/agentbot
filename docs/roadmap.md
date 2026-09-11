@@ -302,6 +302,18 @@ Phase 5 was independent of the package-catalog and MCP work. Its completion did
 not implement Phase 4; Slice 4M is complete, while the next implementation
 slice waits for the parent workspace's cross-agent memory decision.
 
+## Known costs, measured and open
+
+| Cost | Measured | Where it is tracked |
+|---|---|---|
+| `agentbot update` clones every enabled skill source twice — once so the plan can report what would change, once to verify the apply against the revisions the plan recorded | ~32s of a ~41s command over twelve sources, 2026-09-11 | workspace roadmap item 4.5 |
+
+The second pass is not redundant: the operator confirms a plan that names
+specific revisions, and applying without re-checking them would make that
+confirmation meaningless. Whether the first pass's checkouts can be carried into
+the apply instead is a design question about the update transaction, recorded
+rather than guessed at.
+
 ## Explicitly out of scope
 
 - automatic Git staging, commits, pushes, resets, or destructive cleanup;
@@ -339,3 +351,4 @@ removed control-plane code directly into the live lifecycle.
 | 2026-09-03 | Consolidated technical documentation and moved deferred AgentOS notes into the active roadmap |
 | 2026-09-03 | Deferred Slice 4.0A until provider-neutral MCP and cross-agent memory evaluations are complete |
 | 2026-09-11 | Workspace roadmap item 4.1 finished: install gained a component selector and execution plan, the Platform submenu folded into install and status, and both products now share one presentation contract |
+| 2026-09-11 | Recorded the update transaction's double clone as a measured, open cost rather than leaving it in a commit message |
