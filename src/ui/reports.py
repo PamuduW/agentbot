@@ -788,6 +788,114 @@ def _planned_workspace_writes(report) -> int:
     )
 
 
+def _counted_names(items) -> str:
+    """`2: alpha, beta`, or `none`."""
+    names = ", ".join(str(item) for item in items)
+    return f"{len(items)}: {names}" if names else "none"
+
+
+def print_update_result(outcome) -> tuple[int, int, int]:
+    """What the update changed, one row per thing it could have changed.
+
+    This was three tables. The first had one row -- "Update | Update plan
+    applied. | ok" -- restating the heading above it and the rollup below it.
+    The second was the reconciliation, five rows of which four read "none" on
+    a run that changed nothing, under a heading naming an internal step rather
+    than anything the operator asked for. The third was the resync.
+    """
+    reconcile = outcome.reconcile
+    rows: list[tuple[str, str, str]] = []
+
+    # A run that did not apply leads with why. On the happy path there is no
+    # such row: "Update | Update plan applied. | ok" restated the heading above
+    # it and the rollup below it, which is what made this table worth
+    # reworking. A failure is the one case where the outcome says something the
+    # rows underneath cannot.
+    if not outcome.status.startswith("applied"):
+        rows.append(
+            ("Update", outcome.message or outcome.status, outcome.status)
+        )
+
+    if reconcile is not None:
+        changed = tuple(reconcile.changed_paths)
+        added = tuple(reconcile.added_skills)
+        removed = tuple(reconcile.removed_skills)
+        updated = tuple(reconcile.updated_skills)
+        touched = len(added) + len(removed) + len(updated)
+        rows.append(
+            (
+                "Skills",
+                _skill_change_detail(added, removed, updated),
+                "applied" if touched else "unchanged",
+            )
+        )
+        rows.append(
+            (
+                "Repository files",
+                _counted_names(changed),
+                "applied" if changed else "unchanged",
+            )
+        )
+
+    report = outcome.workspace_report
+    if report is not None:
+        rows.append(_workspace_row("Workspaces", getattr(report, "results", ())))
+        rows.append(_global_row(getattr(report, "global_actions", ())))
+
+    if not rows:
+        rows.append(("Update", outcome.message or outcome.status, "ok"))
+    return print_table(rows, wrap_details=True)
+
+
+def _skill_change_detail(added, removed, updated) -> str:
+    """Which skills changed, by name.
+
+    Counts would be shorter and would not answer the question the row exists
+    for: an operator reading "1 removed" still has to go and find out which.
+    """
+    parts = [
+        f"{len(added)} added: {', '.join(added)}" if added else "",
+        f"{len(removed)} removed: {', '.join(removed)}" if removed else "",
+        f"{len(updated)} updated: {', '.join(updated)}" if updated else "",
+    ]
+    written = "; ".join(part for part in parts if part)
+    return written or "no changes"
+
+
+def _kind_row(label: str, kinds: list[str], total: int) -> tuple[str, str, str]:
+    """One row from a bag of render-action kinds.
+
+    A conflict outranks everything else: it is the only one of these that needs
+    the operator, and counting it as "rewritten" -- which the first version of
+    this did -- hid the one outcome worth reporting.
+    """
+    conflicts = sum(1 for kind in kinds if kind == "conflict")
+    if conflicts:
+        return label, f"{conflicts} of {total} in conflict", "conflict"
+    written = sum(1 for kind in kinds if kind in {"create", "update"})
+    if written:
+        return label, f"{written} of {total} rewritten", "applied"
+    return label, f"{total} current", "unchanged"
+
+
+def _workspace_row(label: str, results) -> tuple[str, str, str]:
+    results = tuple(results)
+    kinds = [
+        action.kind for result in results for action in getattr(result, "actions", ())
+    ]
+    # A result can fail without producing any action at all, so its own status
+    # counts too.
+    kinds += [
+        result.status for result in results if getattr(result, "status", "") == "conflict"
+    ]
+    return _kind_row(label, kinds, len(results))
+
+
+def _global_row(actions) -> tuple[str, str, str]:
+    actions = tuple(actions)
+    return _kind_row("Global outputs", [action.kind for action in actions], len(actions))
+
+
 def print_update_plan(plan, *, command: str = "update") -> None:
     title = command.capitalize()
     # `=== Update report ===`, as the sibling product names the same screen.

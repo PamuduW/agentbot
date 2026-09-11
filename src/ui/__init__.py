@@ -23,6 +23,7 @@ from .reports import (
     print_status_summary,
     print_update_outcome,
     print_update_plan,
+    print_update_result,
     print_vscode_report,
     print_workspace_list,
     print_workspace_removed,
@@ -32,6 +33,7 @@ from .reports import (
 )
 from .table import (
     color_result,
+    format_shortcuts,
     highlight_manual_skill_name,
     print_four_column_table,
     print_header,
@@ -50,6 +52,7 @@ from .table import (
 
 __all__ = [
     "color_result",
+    "format_shortcuts",
     "highlight_manual_skill_name",
     "print_boost_status",
     "print_command_help",
@@ -74,6 +77,7 @@ __all__ = [
     "print_table_model",
     "print_update_outcome",
     "print_update_plan",
+    "print_update_result",
     "print_vscode_report",
     "print_workspace_list",
     "print_workspace_removed",

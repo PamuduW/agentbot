@@ -17,6 +17,7 @@ from .lifecycle import Lifecycle
 from .paths import AgentbotPaths, default_paths
 from .skills_installer import SkillsInstallError, parse_update_output
 from .ui import (
+    format_shortcuts,
     print_boost_status,
     print_command_help,
     print_doctor_summary,
@@ -27,15 +28,14 @@ from .ui import (
     print_install_summary,
     print_manual_skill_removal_report,
     print_output_refresh_report,
-    print_reconciliation_report,
     print_rollup,
     print_skill_prune_report,
     print_skills_report,
     print_skills_update_report,
     print_status_summary,
     print_table,
-    print_update_outcome,
     print_update_plan,
+    print_update_result,
     print_vscode_report,
     print_workspace_list,
     print_workspace_removed,
@@ -270,12 +270,12 @@ def _handle_boost(context: CommandContext) -> int:
 def _handle_update(context: CommandContext) -> int:
     args = context.args
     command = args.command
-    # The planning heading and legend come before the work, so the wait is
-    # visible rather than a blank terminal followed by a question.
-    print_header(f"Planning {command}", f"Agentbot › {command.capitalize()} › Planning")
-    log_legend()
-    print()
-    planning = InstallLog(sentinel="Plan complete")
+    # No planning phase on screen. It had a heading, a legend and three
+    # [STEP]/[OK] pairs before the report, which is four screens of scaffolding
+    # in front of one table -- and the sibling product's update goes straight to
+    # its report. The phases are still timed, because the closing summary still
+    # reports them; they just no longer narrate themselves.
+    planning = InstallLog(sentinel="Plan complete", quiet=True)
     plan = context.lifecycle.plan_update(progress=planning.stage)
     print_update_plan(plan, command=command)
     if bool(getattr(args, "dry_run", False)):
@@ -315,23 +315,9 @@ def _handle_update(context: CommandContext) -> int:
     # on three unrelated summaries, the last of which counted only the resync
     # while reading as the verdict on the whole run.
     print_header("Update result", f"Agentbot › {command.capitalize()} › Result")
-    totals = [0, 0, 0]
-
-    def tally(counts: tuple[int, int, int]) -> None:
-        for index, value in enumerate(counts):
-            totals[index] += value
-
-    tally(print_update_outcome(outcome))
-    if outcome.reconcile is not None:
-        tally(print_reconciliation_report(outcome.reconcile))
+    ok, check, miss = print_update_result(outcome)
     workspace_report = outcome.workspace_report
-    if workspace_report is not None:
-        tally(
-            print_workspace_resync_report(
-                workspace_report, include_header=False, include_rollup=False
-            )
-        )
-    print_rollup(ok=totals[0], check=totals[1], miss=totals[2])
+    print_rollup(ok=ok, check=check, miss=miss)
     # Last, after the result it describes. Planning and applying are one run to
     # the operator, so they are one summary: the ten seconds spent reading
     # twelve sources belongs in the total beside the work it was deciding
@@ -954,10 +940,15 @@ def show_install_plan(lifecycle: Lifecycle, components: tuple[str, ...] | None) 
     print_four_column_table(
         [(row.component, row.installed, row.available, row.action) for row in rows]
     )
-    changing = sum(1 for row in rows if row.changes)
     print()
-    print(f"  {len(rows) - changing} already current; {changing} to apply.")
-    _ask("[c] confirm   [e] edit   [q] back: ")
+    # The sibling product's execution-plan keys, in its own shortcut format.
+    #
+    # Its fourth key, `x confirm_forced`, is not here: forcing means bypassing
+    # "this is already present" checks, and an Agentbot install has none to
+    # bypass -- skills reconcile from the lock every time and the integrations
+    # set up idempotently. A key that did what `c` does is the defect the token
+    # screen's `[y/N/q]` was.
+    _ask(f"{format_shortcuts('c', 'confirm', 'e', 'edit', 'q', 'back_to_menu')} : ")
     try:
         with _open_update_tty_stream(
             descriptor_name="AGENTBOT_UPDATE_TTY_IN_FD",

@@ -87,7 +87,12 @@ class InstallLog:
     #: The update run reports "Update complete" for the same purpose.
     SENTINEL = "Install complete"
 
-    def __init__(self, *, sentinel: str | None = None) -> None:
+    def __init__(self, *, sentinel: str | None = None, quiet: bool = False) -> None:
+        #: Measure without narrating. The update's planning phases are timed --
+        #: the closing summary reports them -- but printing a heading, a legend
+        #: and three [STEP]/[OK] pairs in front of one table was scaffolding
+        #: rather than progress.
+        self._quiet = quiet
         self._sentinel = sentinel or self.SENTINEL
         self._open: str | None = None
         self._any = False
@@ -101,9 +106,14 @@ class InstallLog:
         self.total += elapsed
         if self._open is not None:
             self.seconds[self._open] = self.seconds.get(self._open, 0.0) + elapsed
-            log_line("OK", f"{self._open} ({duration(elapsed)})")
+            if not self._quiet:
+                log_line("OK", f"{self._open} ({duration(elapsed)})")
             self._open = None
         if message == self._sentinel:
+            return
+        if self._quiet:
+            if not message.startswith("Skipping"):
+                self._open = message
             return
         # Between stages, never above the first: the heading already separates
         # the run from what came before it. Tracked apart from the open stage,

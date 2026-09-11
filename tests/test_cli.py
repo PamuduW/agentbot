@@ -610,10 +610,14 @@ class CliTests(unittest.TestCase):
         rc, stdout, _stderr = run_cli_main(["agentbot", "update", "--yes"])
 
         self.assertEqual(0, rc)
-        self.assertIn("Reconciliation report", stdout)
-        self.assertIn("added-skill", stdout)
-        self.assertIn("removed-skill", stdout)
-        self.assertIn("updated-skill", stdout)
+        # The result table says what changed, in counts rather than a
+        # "Reconciliation report" section naming an internal step. Four rows of
+        # "none" on a run that changed nothing was the shape it replaced.
+        self.assertIn("Update result", stdout)
+        # Named, not counted: "1 removed" leaves the operator to go and find
+        # out which. The detail wraps, so the names are matched individually.
+        for name in ("added-skill", "removed-skill", "updated-skill"):
+            self.assertIn(name, stdout)
 
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")
@@ -746,10 +750,10 @@ class CliTests(unittest.TestCase):
     @patch("src.cli.Lifecycle")
     @patch("src.cli.confirm_update_plan", return_value=True)
     @patch("src.cli.print_update_plan")
-    @patch("src.cli.print_update_outcome")
+    @patch("src.cli.print_update_result")
     def test_interactive_update_applies_the_same_confirmed_plan_once(
         self,
-        _print_outcome,
+        _print_result,
         _print_plan,
         _confirm,
         lifecycle_type,
@@ -762,6 +766,9 @@ class CliTests(unittest.TestCase):
         lifecycle.plan_update.return_value = plan
         lifecycle.apply_update.return_value = UpdateOutcome("applied")
         lifecycle_type.return_value = lifecycle
+        # The result printer hands back the counts the rollup closes on, so a
+        # bare mock cannot stand in for it.
+        _print_result.return_value = (0, 0, 0)
 
         rc, _stdout, _stderr = run_cli_main(["agentbot", "update", "--interactive"])
 

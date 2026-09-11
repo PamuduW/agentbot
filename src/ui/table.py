@@ -476,6 +476,20 @@ def _color_action_cell(line: str, action: str, widths) -> str:
     return line.replace(fitted, painted, 1) if painted != fitted else line
 
 
+def format_shortcuts(*pairs: str) -> str:
+    """`c confirm   e edit   q back`, keys lit, exactly as the Bash helper draws.
+
+    Mirrors ui_format_shortcuts in scripts/lib/shared/tui/ui.sh: three spaces
+    between pairs, the key in cyan and the label plain. The two products put
+    these prompts in the same terminal, so they are the same shape.
+    """
+    if len(pairs) % 2:
+        raise ValueError("shortcuts take key/label pairs")
+    return "   ".join(
+        f"{_c(key, CYAN)} {label}" for key, label in zip(pairs[::2], pairs[1::2], strict=True)
+    )
+
+
 def print_section_block(label: str) -> None:
     print()
     print_section(label)

@@ -127,6 +127,14 @@ _tui_color_backend_stream() {
 tui_run_to_output() {
 	local -a pipeline_status
 	tui_refresh_tty_seam
+	# The child's stdout is the pipe below, so its own terminal-size probe sees
+	# a pipe and falls back to eighty columns -- every table the backend drew
+	# under the menu was eighty wide on a terminal twice that, while the
+	# sibling product's tables filled it. The width is measured here, where the
+	# terminal still is, and handed over. Exported for the call only: a local
+	# marked export reaches the children and leaves nothing behind.
+	local AGENTBOT_MENU_COLS="${AGENTBOT_MENU_COLS:-$(tui_cols)}"
+	export AGENTBOT_MENU_COLS
 	if tty_use_output_fd; then
 		"$@" 2>&1 | _tui_color_backend_stream >&"$DOTFILES_TTY_OUT_FD"
 		pipeline_status=("${PIPESTATUS[@]}")
