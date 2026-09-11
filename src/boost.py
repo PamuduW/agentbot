@@ -96,8 +96,9 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     "boost-files-optimization": True,
     # BoostGraph. Excluded: it writes MCP config and BOOSTGRAPH marker blocks
     # into CLAUDE.md and AGENTS.md, which Agentbot rewrites wholesale, so the
-    # two would overwrite each other silently. Agentbot passes --no-boostgraph
-    # on every call; pinning the flag stops the two contradicting each other.
+    # two would overwrite each other silently. This pin is now the guard that
+    # does the work: `--no-boostgraph` was passed on every call until boost
+    # v0.13 removed the flag, and passing it broke every install outright.
     "boost-graph-integration": False,
     # Runs HTML through Readability and hands the agent article Markdown for
     # `curl`/`wget` and HTML file reads. Prose pages survive that; the HTML
@@ -126,12 +127,13 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
 }
 GRAPH_FEATURE_FLAG = "boost-graph-integration"
 # Scanned in the dry-run plan as defence in depth. It is NOT the BoostGraph
-# guard and cannot be: v0.12.6 omits BoostGraph from the plan even when
+# guard and cannot be: boost omits BoostGraph from the plan even when
 # `--boostgraph` is passed explicitly, so there is no text here to match. The
-# guards that work are the `--no-boostgraph` flag every invocation passes and
-# `_forbidden_graph_evidence`, which inspects what landed on disk. Kept because
-# a later version may start disclosing it, and because it still catches a
-# disclosed repository `.boost/` write.
+# guards that work are the `boost-graph-integration` pin in BOOST_FEATURE_POLICY
+# and `_forbidden_graph_evidence`, which inspects what landed on disk. A third,
+# the `--no-boostgraph` flag, was passed on every call until boost v0.13 removed
+# it. Kept because a later version may start disclosing BoostGraph in the plan,
+# and because it still catches a disclosed repository `.boost/` write.
 _FORBIDDEN_PLAN_RE = re.compile(
     r"boost[ -]?graph|\bmcp\b|background (?:index|watch)|(?:^|[\s/])\.boost(?:/|$)",
     re.IGNORECASE | re.MULTILINE,
@@ -397,7 +399,6 @@ class BoostIntegration:
             # deliberate, recorded decision -- see docs/skills.md -- not a
             # prompt Agentbot suppressed to save time.
             "--accept-terms",
-            "--no-boostgraph",
             *(host.flag for host in selected),
         ]
         dry_run = self._runner.run(
@@ -476,7 +477,6 @@ class BoostIntegration:
                     str(current.cli_path),
                     "init",
                     "--uninstall",
-                    "--no-boostgraph",
                     host.flag,
                 ],
                 timeout_seconds=self._timeout_seconds(),

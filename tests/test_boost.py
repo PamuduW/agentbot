@@ -1,4 +1,7 @@
 import json
+import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -103,6 +106,57 @@ def patch_boost_which(*, boost: Path | str | None = None, present: tuple[str, ..
         return None
 
     return mock.patch("src.boost.shutil.which", side_effect=which)
+
+
+class BoostCliContractTests(unittest.TestCase):
+    """Every flag Agentbot passes must be one the installed boost declares.
+
+    `--no-boostgraph` was passed on every call. Boost v0.13 removed it, and on
+    an unknown flag boost falls through to running the subcommand name from
+    PATH -- so `boost init --dry-run --accept-terms --no-boostgraph --claude`
+    executed /usr/sbin/init, which answered "unrecognized option '--dry-run'".
+    Every `agentbot install` failed on that, and nothing here noticed, because
+    the suite asserts the argv Agentbot builds and never asks boost about it.
+
+    Skipped when boost is absent: this is the one check that has to talk to the
+    real binary, and the unit tests above cover the argv itself.
+    """
+
+    def _boost(self) -> str:
+        boost = shutil.which("boost")
+        if boost is None:
+            self.skipTest("boost is not installed")
+        return boost
+
+    def _declared_flags(self, boost: str) -> set[str]:
+        help_text = subprocess.run(
+            [boost, "init", "--help"], capture_output=True, text=True, timeout=30
+        ).stdout
+        return set(re.findall(r"--[a-z0-9][a-z0-9-]*", help_text))
+
+    def test_every_flag_agentbot_passes_is_one_boost_declares(self):
+        boost = self._boost()
+        declared = self._declared_flags(boost)
+        self.assertIn("--dry-run", declared, "could not read boost's flag list")
+
+        passed = {"--accept-terms", "--dry-run", "--uninstall", "--claude", "--codex", "--cursor"}
+        self.assertEqual(set(), passed - declared, "boost no longer declares these")
+
+    def test_the_flag_set_matches_what_the_code_actually_sends(self):
+        """Read off src/boost.py, so a flag added later is covered too.
+
+        The literal set above would go stale on its own; this is what keeps it
+        honest, and it is the assertion that would have caught --no-boostgraph.
+        """
+        source = Path("src/boost.py").read_text(encoding="utf-8")
+        sent = set(re.findall(r'"(--[a-z0-9][a-z0-9-]*)"', source))
+        self.assertIn("--accept-terms", sent, "the reader stopped finding flags")
+        declared = self._declared_flags(self._boost())
+        self.assertEqual(
+            set(),
+            sent - declared,
+            "src/boost.py sends a flag the installed boost does not declare",
+        )
 
 
 class BoostIntegrationTests(unittest.TestCase):
@@ -242,7 +296,6 @@ class BoostIntegrationTests(unittest.TestCase):
             str(boost),
             "init",
             "--accept-terms",
-            "--no-boostgraph",
             "--claude",
             "--codex",
             "--cursor",
@@ -317,9 +370,9 @@ class BoostIntegrationTests(unittest.TestCase):
         interactive = [call.args[0] for call in runner.run_interactive.call_args_list]
         self.assertEqual(
             [
-                [str(boost), "init", "--uninstall", "--no-boostgraph", "--claude"],
-                [str(boost), "init", "--uninstall", "--no-boostgraph", "--codex"],
-                [str(boost), "init", "--uninstall", "--no-boostgraph", "--cursor"],
+                [str(boost), "init", "--uninstall", "--claude"],
+                [str(boost), "init", "--uninstall", "--codex"],
+                [str(boost), "init", "--uninstall", "--cursor"],
             ],
             interactive,
         )
@@ -406,7 +459,7 @@ class BoostIntegrationTests(unittest.TestCase):
 
         argv = runner.run_interactive.call_args.args[0]
         self.assertEqual(
-            [str(boost), "init", "--accept-terms", "--no-boostgraph", "--cursor"],
+            [str(boost), "init", "--accept-terms", "--cursor"],
             argv,
         )
         self.assertNotIn("--claude", argv)
@@ -440,7 +493,7 @@ class BoostIntegrationTests(unittest.TestCase):
             BoostIntegration(self._paths(), runner=runner).off()
         interactive = [call.args[0] for call in runner.run_interactive.call_args_list]
         self.assertEqual(
-            [[str(boost), "init", "--uninstall", "--no-boostgraph", "--cursor"]],
+            [[str(boost), "init", "--uninstall", "--cursor"]],
             interactive,
         )
 

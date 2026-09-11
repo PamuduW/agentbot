@@ -344,11 +344,11 @@ class Diagnostics:
         )
         if GRAPH_FEATURE_FLAG in status.diverged_flags:
             message += (
-                f" {GRAPH_FEATURE_FLAG} matters most: Agentbot passes "
-                "--no-boostgraph on every call, so BoostGraph never installs "
-                "while the flag claims otherwise. Adopting it would need "
-                "renderer support first, since it writes marker blocks into "
-                "managed CLAUDE.md/AGENTS.md."
+                f" {GRAPH_FEATURE_FLAG} matters most: this pin is what keeps "
+                "BoostGraph from installing, so a divergence here is the one "
+                "that actually turns it on. Adopting it would need renderer "
+                "support first, since it writes marker blocks into managed "
+                "CLAUDE.md/AGENTS.md."
             )
         return [DoctorIssue(level="warning", scope="boost", message=message)]
 
