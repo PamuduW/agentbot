@@ -123,9 +123,22 @@ class DoctorSummaryTests(unittest.TestCase):
         standalone, _ = _capture(print_doctor_summary, issues, include_header=True)
         self.assertEqual(1, _header_lines(standalone))
 
-    def test_empty_doctor_section_does_not_repeat_the_column_header(self):
-        embedded, _ = _capture(print_doctor_summary, [], include_header=False)
-        self.assertEqual(1, _header_lines(embedded))
+    def test_a_healthy_machine_gets_no_doctor_section(self):
+        # The status table above already carries a Doctor row reading "no
+        # issues". This printed a heading over it, a "Health check" row it
+        # invented for the purpose, and a rollup counting that one row.
+        embedded, rc = _capture(print_doctor_summary, [], include_header=False)
+        self.assertEqual("", embedded.strip())
+        self.assertEqual(0, rc)
+
+    def test_the_embedded_doctor_section_opens_like_every_other_surface(self):
+        # A `── rule ──` groups sections of one table. This is a second table
+        # with its own subject, so it gets a title and a breadcrumb.
+        issues = [DoctorIssue(level="warning", scope="skills", message="a warning")]
+        embedded, _ = _capture(print_doctor_summary, issues, include_header=False)
+        self.assertIn("=== Doctor issues ===", embedded)
+        self.assertIn("Agentbot › Check Status › Doctor issues", embedded)
+        self.assertNotIn("──", embedded)
 
     def test_any_error_fails(self):
         issues = [

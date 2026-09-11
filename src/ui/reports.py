@@ -227,13 +227,22 @@ def print_status_summary(
 def print_doctor_summary(issues: list, *, include_header: bool = True) -> int:
     if include_header:
         print_header("Doctor", "Agentbot › Doctor")
-        # print_header does not emit column names; print_table must.
-        show_columns = True
     else:
-        # print_section_block already emits the column header, so asking
-        # print_table for one too printed it twice.
-        print_section_block("── Doctor issues ──")
-        show_columns = False
+        # A frame of its own, not a `── rule ──` inside the status table's.
+        # The rule form belongs to groups of one table; this is a second
+        # surface with its own subject, and every other one on screen opens
+        # with a title and a breadcrumb.
+        #
+        # Nothing at all when the machine is healthy: the status table above
+        # already carries a Doctor row saying "no issues", and this repeated it
+        # as a heading, a fabricated "Health check" row and a rollup over the
+        # one row it had just invented. The section exists to expand on a
+        # problem, so it appears when there is one.
+        if not issues:
+            return 0
+        print_header("Doctor issues", "Agentbot › Check Status › Doctor issues")
+    # print_header does not emit column names; print_table must.
+    show_columns = True
     if not issues:
         print_table(
             [("Health check", "skills + global baseline", "ok")],
