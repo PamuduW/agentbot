@@ -373,6 +373,23 @@ class BlankLineTests(unittest.TestCase):
         """The header's leading blank is the gap under the frame above it."""
         self.assertEqual("\nheader\n", self._collapsed(["\n", "header\n"]))
 
+    def test_a_trailing_blank_is_dropped(self):
+        """The menu's "Press Enter to continue:" prints its own leading blank.
+
+        That prompt comes from Bash, after this process has exited, so no
+        wrapper can see both sides. Python ended its output on a blank too and
+        the screen showed two. ui_pause is shared byte-for-byte with the sibling
+        repository, so this side stops contributing one.
+        """
+        self.assertEqual("last\n", self._collapsed(["last\n", "\n"]))
+        self.assertEqual("last\n", self._collapsed(["last\n", "\n", "\n", "  \n"]))
+
+    def test_a_blank_between_content_survives(self):
+        """Dropping trailing blanks must not drop the gaps inside."""
+        self.assertEqual(
+            "one\n\ntwo\n", self._collapsed(["one\n", "\n", "two\n", "\n"])
+        )
+
     def test_a_row_written_in_two_calls_stays_one_line(self):
         """print_table writes a row as a cell with end="" and then the rest."""
         self.assertEqual("  a | b | ok\n", self._collapsed(["  a | b | ", "ok\n"]))

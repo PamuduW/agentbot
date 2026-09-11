@@ -122,6 +122,31 @@ test_the_contract_holds_under_a_tty_too() {
 # and several close with one as well -- fine alone, wrong the moment two meet.
 # An install printed five double gaps. Checked on the rendered surface rather
 # than at the call sites, because the fault is always in the join.
+# A surface ends on its rollup, with no blank line after it.
+#
+# The menu prints "Press Enter to continue:" from Bash once this process has
+# exited, and ui_pause opens with its own blank. Python ended on one too, so the
+# screen showed two -- and no wrapper can see both sides of that boundary.
+# ui_pause is shared byte-for-byte with the sibling repository and is not ours
+# to change, so this side stops contributing one.
+test_no_surface_ends_on_a_blank_line() {
+	local surface output trailing=''
+	for surface in "${SURFACES[@]}"; do
+		# shellcheck disable=SC2086
+		output="$(
+			surface_output $surface
+			printf 'x'
+		)"
+		# The `x` keeps the shell from eating the trailing newlines that are
+		# the whole question here.
+		[[ "$output" == *$'\n\nx' ]] && trailing+=" [$surface]"
+	done
+	[[ -z "$trailing" ]] || {
+		printf '   surfaces ending on a blank line:%s\n' "$trailing" >&2
+		return 1
+	}
+}
+
 test_no_surface_doubles_a_blank_line() {
 	local surface output doubled=''
 	for surface in "${SURFACES[@]}"; do
@@ -188,6 +213,7 @@ check 'section rules appear only where a surface has groups' test_section_rules_
 check 'every result word is in the vocabulary' test_every_result_word_is_in_the_vocabulary
 check 'the rollup is the last line of every surface' test_the_rollup_is_the_last_line
 check 'no surface doubles a blank line' test_no_surface_doubles_a_blank_line
+check 'no surface ends on a blank line' test_no_surface_ends_on_a_blank_line
 
 printf '\nRan %d report-contract test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
 ((failed == 0))
