@@ -192,12 +192,15 @@ test_workspace_removal_prompt_uses_the_shared_tty_adapter() (
 	# Break caught: workspace removal writes directly to /dev/tty, bypassing the
 	# injected output path used by a caller or automated terminal session.
 	local input="$TEST_ROOT/workspace-remove.input" output="$TEST_ROOT/workspace-remove.output"
+	local path='/tmp/recorded-workspace'
 	printf 'y\n' >"$input"
 	NO_COLOR=1
 	tui_init_colors
 	AGENTBOT_TUI_INPUT="$input" AGENTBOT_TUI_OUTPUT="$output" \
-		agentbot_menu_workspaces_remove_confirm '/tmp/recorded-workspace'
-	[[ "$(<"$output")" == $'Stop managing this workspace?\n/tmp/recorded-workspace\nNo workspace files will be changed. [y/N]: ' ]]
+		agentbot_menu_workspaces_remove_confirm "$path"
+	# Three lines, all at the two-space edge: the two tui_print calls sat at
+	# column zero, and the confirm indents whatever question it is given.
+	[[ "$(<"$output")" == $'  Stop managing this workspace?\n  '"$path"$'\n  No workspace files will be changed. [y/N]: ' ]]
 )
 
 test_command_lib_selects_one_detail() (

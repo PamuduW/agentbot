@@ -160,9 +160,21 @@ tui_wait_back() {
 }
 tui_redraw_up() { menu_redraw_up "$1"; }
 
+# Every confirm asks at the left edge, whoever wrote the question.
+#
+# The indent was the caller's, and most callers did not add it: the prune
+# confirmation asked "Permanently prune 6 skills (...)?" hard against column
+# zero, under a table indented two. The sweep in tests/test_left_edge.sh reads
+# format strings and cannot see an indent that arrives in a variable, which is
+# the same blind spot the update prompt had.
+#
+# Leading whitespace is trimmed first, so the two callers that already indent
+# do not end up at four.
 tui_confirm() {
+	local prompt="$1"
+	prompt="${prompt#"${prompt%%[![:space:]]*}"}"
 	tui_refresh_tty_seam
-	ui_confirm_yes_no "$1" true
+	ui_confirm_yes_no "  $prompt" true
 }
 
 # --- Menu ---------------------------------------------------------------

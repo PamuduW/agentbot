@@ -72,7 +72,10 @@ EXEMPT = (
 
 # printf -v writes into a variable rather than to a stream. The Python side
 # is parsed instead of matched; see leading_literal below.
-SHELL_FMT = re.compile(r"(?<!-v )\bprintf\s+'((?:[^'\\]|\\.)*)'")
+# tui_print is a printf wrapper that writes to the terminal seam, so its
+# formats are screens too. Two of them sat at column zero because the sweep
+# only knew the word `printf`.
+SHELL_FMT = re.compile(r"(?<!-v )\b(?:printf|tui_print)\s+'((?:[^'\\]|\\.)*)'")
 
 
 def opens_at_column_zero(fmt: str) -> bool:

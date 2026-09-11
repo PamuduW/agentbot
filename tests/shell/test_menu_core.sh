@@ -180,7 +180,7 @@ test_refresh_preserves_agentbot_and_dotfiles_tty_overrides_for_pause_and_confirm
 		printf 'agent pause output: %q\n' "$(<"$agent_pause_out")" >&2
 		return 1
 	}
-	[[ "$(<"$agent_confirm_out")" == 'Apply changes [y/N]: ' ]] || {
+	[[ "$(<"$agent_confirm_out")" == '  Apply changes [y/N]: ' ]] || {
 		printf 'agent confirm output: %q\n' "$(<"$agent_confirm_out")" >&2
 		return 1
 	}
@@ -198,7 +198,7 @@ test_refresh_preserves_agentbot_and_dotfiles_tty_overrides_for_pause_and_confirm
 		printf 'dotfiles pause output: %q\n' "$(<"$dot_pause_out")" >&2
 		return 1
 	}
-	[[ "$(<"$dot_confirm_out")" == 'Apply changes [y/N]: ' ]] || {
+	[[ "$(<"$dot_confirm_out")" == '  Apply changes [y/N]: ' ]] || {
 		printf 'dotfiles confirm output: %q\n' "$(<"$dot_confirm_out")" >&2
 		return 1
 	}
@@ -258,7 +258,7 @@ test_token_confirm_returns_to_the_parent_tty_after_its_descriptors_close() (
 		tui_pause
 		printf "parent=%s token=%s\\n" "$(<"$2")" "$(<"$4")"
 	' _ "$parent_input" "$parent_output" "$token_input" "$token_output" "$ROOT")"
-	[[ "$output" == *'parent='$'\n  Press Enter to continue: '* && "$output" == *'token=Confirm token [y/N]: '* ]] || {
+	[[ "$output" == *'parent='$'\n  Press Enter to continue: '* && "$output" == *'token=  Confirm token [y/N]: '* ]] || {
 		printf 'token return output: %q\n' "$output" >&2
 		return 1
 	}

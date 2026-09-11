@@ -150,7 +150,7 @@ class SkillsReportTests(unittest.TestCase):
         )
 
     def test_all_installed_is_success(self):
-        text, rc = _capture(
+        text, (rc, _counts) = _capture(
             print_skills_report, [self._result("alpha")], title="Skills install"
         )
         self.assertEqual(rc, 0)
@@ -160,23 +160,23 @@ class SkillsReportTests(unittest.TestCase):
         # A partial install is a failure: the machine is left without skills
         # the user asked for, so the command must not exit 0.
         results = [self._result("alpha"), self._result("beta", returncode=1)]
-        text, rc = _capture(print_skills_report, results, title="Skills install")
+        text, (rc, _counts) = _capture(print_skills_report, results, title="Skills install")
         self.assertEqual(rc, 1)
         self.assertIn("failed", text)
 
     def test_total_failure_fails_the_command(self):
         results = [self._result("beta", returncode=1)]
-        text, rc = _capture(print_skills_report, results, title="Skills install")
+        text, (rc, _counts) = _capture(print_skills_report, results, title="Skills install")
         self.assertEqual(rc, 1)
         self.assertIn("failed", text)
 
     def test_skipped_sources_alone_are_not_a_failure(self):
         results = [self._result("alpha"), self._result("beta", skipped=True)]
-        _text, rc = _capture(print_skills_report, results, title="Skills install")
+        _text, (rc, _counts) = _capture(print_skills_report, results, title="Skills install")
         self.assertEqual(rc, 0)
 
     def test_empty_report_still_renders_a_header(self):
-        text, rc = _capture(print_skills_report, [], title="Skills install")
+        text, (rc, _counts) = _capture(print_skills_report, [], title="Skills install")
         self.assertEqual(rc, 0)
         self.assertIn("Skills install", text)
 
@@ -230,6 +230,54 @@ class ManualSkillRemovalReportTests(unittest.TestCase):
 
 
 class SkillPruneReportTests(unittest.TestCase):
+    @staticmethod
+    def _manual(*names) -> tuple:
+        return tuple(
+            PruneCandidate(
+                name=name,
+                reason="manual",
+                detail="on disk, not in the lock; user-placed",
+                directory=Path("/x") / name,
+                locked=False,
+            )
+            for name in names
+        )
+
+    def test_removed_manual_skills_are_not_also_reported_as_left_in_place(self):
+        """The menu prunes manual skills by naming them, and they go.
+
+        `manual` is every manual candidate, removed or not, so reporting it
+        after applying printed
+
+            Removed 6 skill(s): docker-patterns, ...
+            6 manual skill(s) left in place; rerun with --include-manual ...
+
+        naming the same six on both lines.
+        """
+        report = PruneReport(
+            candidates=self._manual("alpha", "beta"),
+            removed=("alpha", "beta"),
+            applied=True,
+        )
+
+        text, _rc = _capture(print_skill_prune_report, report)
+
+        self.assertIn("Removed 2 skill(s): alpha, beta", text)
+        self.assertNotIn("left in place", text)
+
+    def test_manual_skills_that_really_were_left_are_still_reported(self):
+        """The message earns its place when something actually stayed."""
+        report = PruneReport(
+            candidates=self._manual("alpha", "beta"),
+            removed=("alpha",),
+            applied=True,
+        )
+
+        text, _rc = _capture(print_skill_prune_report, report)
+
+        self.assertIn("Removed 1 skill(s): alpha", text)
+        self.assertIn("1 manual skill(s) left in place", text)
+
     def test_blocked_plan_reports_the_invalid_lock_as_an_error(self):
         """Break caught: blocked pruning is displayed as a healthy empty plan."""
         report = PruneReport(

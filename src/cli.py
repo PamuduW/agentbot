@@ -876,13 +876,27 @@ def handle_skills_remove_manual(
 
 def handle_skills_command(lifecycle: Lifecycle, skills_command: str) -> int:
     if skills_command == "install":
+        # The heading and legend go first, so the per-source [STEP] lines have
+        # something above them. They used to arrive bare, under whatever screen
+        # happened to be there -- after a prune, under the prune's own table.
+        print_header("Skills install", "Agentbot › Skills install")
+        log_legend()
+        print()
         results = lifecycle.install_skills()
         outputs = lifecycle.refresh_outputs()
-        install_rc = print_skills_report(results, title="Skills install")
-        print_output_refresh_report(
+        install_rc, (ok, check, miss) = print_skills_report(
+            results, title="Skills install", include_header=False, include_rollup=False
+        )
+        refreshed = print_output_refresh_report(
             linked=outputs.claude_linked,
             updated=outputs.claude_updated,
             skipped=outputs.claude_skipped,
+        )
+        # One rollup for both sections, at the end. The sources printed one
+        # mid-surface and the output refresh printed none, so the screen closed
+        # on a table.
+        print_rollup(
+            ok=ok + refreshed[0], check=check + refreshed[1], miss=miss + refreshed[2]
         )
         return install_rc
     if skills_command in {"update", "upgrade"}:

@@ -8,8 +8,8 @@ agentbot_menu_workspaces_confirm() {
 
 agentbot_menu_workspaces_remove_confirm() {
 	local path="$1"
-	tui_print '%sStop managing this workspace?%s\n' "$C_YELLOW" "$C_RESET"
-	tui_print '%s%s%s\n' "$C_CYAN" "$path" "$C_RESET"
+	tui_print '  %sStop managing this workspace?%s\n' "$C_YELLOW" "$C_RESET"
+	tui_print '  %s%s%s\n' "$C_CYAN" "$path" "$C_RESET"
 	tui_confirm 'No workspace files will be changed.'
 }
 

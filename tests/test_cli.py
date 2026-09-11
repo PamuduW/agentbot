@@ -465,7 +465,13 @@ class CliTests(unittest.TestCase):
                 failing_boundary.side_effect = failure
                 rc, stdout, stderr = run_cli_main(argv)
                 self.assertEqual(1, rc)
-                self.assertEqual("", stdout)
+                # No success report. Not "nothing at all": `skills install`
+                # prints its heading and legend before the work, so the
+                # per-source [STEP] lines have something above them, and a run
+                # that dies mid-way still says where it was.
+                self.assertNotIn("── Sources ──", stdout)
+                self.assertNotIn("installed successfully", stdout)
+                self.assertNotIn("look good", stdout)
                 self.assertEqual("  Error: isolated skills failure\n", stderr)
                 failing_boundary.reset_mock()
 
@@ -496,7 +502,12 @@ class CliTests(unittest.TestCase):
         rc, stdout, stderr = run_cli_main(["agentbot", "skills", "install"])
 
         self.assertEqual(1, rc)
-        self.assertEqual("", stdout)
+        # The heading is printed before the work; the report is not printed at
+        # all, which is the property this test exists for -- an install that
+        # cannot refresh its outputs must not claim the sources are in place.
+        self.assertNotIn("── Sources ──", stdout)
+        self.assertNotIn("installed successfully", stdout)
+        self.assertNotIn("look good", stdout)
         self.assertEqual("  Error: refresh failed\n", stderr)
 
     @patch("src.cli.default_paths")

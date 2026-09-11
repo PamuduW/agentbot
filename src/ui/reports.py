@@ -543,11 +543,21 @@ def print_boost_status(status) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
-def print_skills_report(results: list, *, title: str) -> int:
+def print_skills_report(
+    results: list, *, title: str, include_header: bool = True, include_rollup: bool = True
+) -> tuple[int, tuple[int, int, int]]:
+    """The installed sources. Standalone, or as a section of a larger surface.
+
+    `skills install` prints its heading before the work now, so the [STEP]
+    lines have something above them -- which means this must not print a second
+    one, and must not close on a rollup the surface has more sections to add
+    to.
+    """
     from ..skills_installer import summarize_install_results
 
     summary = summarize_install_results(results)
-    print_header(title, f"Agentbot › {title}")
+    if include_header:
+        print_header(title, f"Agentbot › {title}")
     print_section_block("── Sources ──")
     rows = _skill_source_rows(results)
 
@@ -568,11 +578,13 @@ def print_skills_report(results: list, *, title: str) -> int:
         # in a state the user did not ask for, and silently exiting 0 meant
         # `agentbot install` and `dotfiles full-update` reported success while
         # skills were missing.
-        return 1
+        return 1, (ok, check, miss)
     print(f"  {_c(f'{summary.ok} source(s) installed successfully.', GREEN)}")
-    if rows:
+    if rows and include_rollup:
         print_rollup(ok=ok, check=check, miss=miss)
-    return 0
+    # The counts as well as the status: a surface that adds sections after this
+    # one closes on a rollup covering all of them.
+    return 0, (ok, check, miss)
 
 
 def print_skills_update_report(
@@ -610,9 +622,11 @@ def print_skills_update_report(
     return 0
 
 
-def print_output_refresh_report(*, linked: int, updated: int, skipped: int) -> None:
+def print_output_refresh_report(
+    *, linked: int, updated: int, skipped: int
+) -> tuple[int, int, int]:
     print_section_block("── Output refresh ──")
-    print_table(
+    return print_table(
         [
             (
                 "Claude skill links",
@@ -994,9 +1008,13 @@ def print_skill_prune_report(report, *, include_manual: bool = False) -> int:
             print(f"  Removed {len(report.removed)} skill(s): {', '.join(report.removed)}")
         else:
             print("  Nothing removed.")
-        if report.manual and not include_manual:
+        # What is still there, not every manual candidate: the ones named on
+        # the command line have just been removed, and counting them here said
+        # so on the line directly under the one listing them as removed.
+        left = report.manual_left
+        if left and not include_manual:
             print(
-                f"  {_c(str(len(report.manual)), YELLOW)} manual skill(s) left in place; "
+                f"  {_c(str(len(left)), YELLOW)} manual skill(s) left in place; "
                 "rerun with --include-manual to remove them too."
             )
         return 0

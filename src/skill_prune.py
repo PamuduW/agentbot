@@ -62,6 +62,20 @@ class PruneReport:
     def manual(self) -> tuple[PruneCandidate, ...]:
         return tuple(item for item in self.candidates if item.reason == "manual")
 
+    @property
+    def manual_left(self) -> tuple[PruneCandidate, ...]:
+        """Manual candidates this run did not remove.
+
+        `manual` is every manual candidate, removed or not. Naming one
+        explicitly removes it even though manual skills are not removed by
+        default, so the two differ exactly when the operator asked for one by
+        name -- which is what the menu does. Reporting `manual` after applying
+        told them six skills were "left in place" on the line under the one
+        saying those same six had been removed.
+        """
+        removed = set(self.removed)
+        return tuple(item for item in self.manual if item.name not in removed)
+
 
 @dataclass(frozen=True)
 class _LockState:
