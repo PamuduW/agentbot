@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,33 +29,64 @@ CloneSource = Callable[[str, Path], None]
 RevisionReader = Callable[[Path], str]
 
 
+#: Concurrent shallow clones while building an update plan. Twelve sources
+#: cloned one after another is twelve network round-trips in a row -- about
+#: thirty seconds before the plan could be shown, and the operator was looking
+#: at nothing for all of it. They do not contend for anything but bandwidth:
+#: each clones into its own directory and git is a subprocess, so the work is
+#: waiting, not computing.
+#:
+#: Set AGENTBOT_CATALOG_WORKERS=1 to go back to one at a time.
+DEFAULT_CATALOG_WORKERS = 8
+
+
+def _catalog_workers(count: int) -> int:
+    configured = os.environ.get("AGENTBOT_CATALOG_WORKERS", "")
+    limit = int(configured) if configured.isdigit() and int(configured) > 0 else None
+    return max(1, min(limit or DEFAULT_CATALOG_WORKERS, count))
+
+
 def discover_remote_catalogs(
     config: SkillsSourcesConfig,
     *,
     clone_source: CloneSource | None = None,
     revision_reader: RevisionReader | None = None,
     runner: CommandRunner | None = None,
+    progress: Callable[[str, str], None] | None = None,
 ) -> tuple[SourceCatalog, ...]:
     command_runner = runner or CommandRunner()
     clone = clone_source or (lambda repo, path: _clone_source(repo, path, runner=command_runner))
     revision = revision_reader or (lambda path: _revision(path, runner=command_runner))
-    catalogs: list[SourceCatalog] = []
+    sources = [source for source in config.active_sources() if source.repo is not None]
+    if not sources:
+        return ()
+
     with tempfile.TemporaryDirectory(prefix="agentbot-update-plan-") as temporary:
         root = Path(temporary)
-        for source in config.active_sources():
-            if source.repo is None:
-                continue
+
+        def inspect(source) -> SourceCatalog:
             checkout = root / source.id
             clone(source.repo, checkout)
-            catalogs.append(
-                SourceCatalog(
-                    source.id,
-                    source.repo,
-                    revision(checkout),
-                    discover_checkout_skills(checkout),
-                )
+            catalog = SourceCatalog(
+                source.id,
+                source.repo,
+                revision(checkout),
+                discover_checkout_skills(checkout),
             )
-    return tuple(catalogs)
+            if progress is not None:
+                progress(source.id, source.repo)
+            return catalog
+
+        workers = _catalog_workers(len(sources))
+        if workers == 1:
+            return tuple(inspect(source) for source in sources)
+
+        # Collected by source id and reassembled in manifest order, so the plan
+        # does not depend on which clone happened to finish first.
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(inspect, source): source for source in sources}
+            found = {futures[future].id: future.result() for future in as_completed(futures)}
+        return tuple(found[source.id] for source in sources)
 
 
 @contextmanager

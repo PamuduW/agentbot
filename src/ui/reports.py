@@ -665,9 +665,36 @@ def print_workspace_removed(record) -> None:
     print("  No workspace files were changed.")
 
 
+def _planned_workspace_writes(report) -> int:
+    """Render actions that would write something, across workspaces and globals."""
+    writes = sum(
+        1
+        for result in getattr(report, "results", ())
+        for action in getattr(result, "actions", ())
+        if action.kind in {"create", "update"}
+    )
+    return writes + sum(
+        1
+        for action in getattr(report, "global_actions", ())
+        if action.kind in {"create", "update"}
+    )
+
+
 def print_update_plan(plan, *, command: str = "update") -> None:
     title = command.capitalize()
-    print_header(f"Agentbot {command}", f"Agentbot › {title}")
+    # `=== Update report ===`, as the sibling product names the same screen.
+    # This read `=== Agentbot update ===`, which is the name of the whole run
+    # rather than of the report inside it -- and the run now has a planning
+    # phase above this and an applying phase below.
+    print_header(f"{title} report", f"Agentbot › {title} › Report")
+    skill_changes = (
+        len(plan.reconcile.wildcard_additions)
+        + len(plan.reconcile.wildcard_removals)
+        + len(plan.reconcile.explicit_missing)
+        + len(plan.reconcile.manifest_changes)
+    )
+    graphify_changes = 1 if plan.graphify_action in {"setup", "refresh"} else 0
+    workspace_writes = _planned_workspace_writes(plan.workspace_report)
     rows = [
         (
             "Skills",
@@ -686,6 +713,16 @@ def print_update_plan(plan, *, command: str = "update") -> None:
         ),
     ]
     print_table(rows)
+    # A closing line, not a rollup: the sibling's report says "0 verified
+    # upgrades; 5 checks or refreshes remain." for the same reason. "All 3
+    # component(s) look good" would be a verdict on work that has not happened,
+    # and this is the last thing read before approving it.
+    changes = skill_changes + graphify_changes + workspace_writes
+    print()
+    if changes:
+        print(f"  {changes} change(s) to apply; the rest will be verified.")
+    else:
+        print("  Nothing to change; the run will verify and refresh what is already here.")
 
 
 def print_update_outcome(outcome) -> tuple[int, int, int]:

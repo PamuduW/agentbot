@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import sys
@@ -62,15 +63,37 @@ def _workspace_report_has_failures(report) -> bool:
     return any(action.kind == "conflict" for action in report.global_actions)
 
 
+def configure_output(stream: object) -> CollapseBlankLines:
+    """Line-buffered, and never two blank lines in a row.
+
+    Line buffering because the interactive update asks its question on the
+    terminal while its output goes through a pipe. The menu runs this backend
+    under tui_run_to_output, which pipes stdout through a Bash colouring loop,
+    and Python block-buffers a pipe -- so the plan table sat in an unflushed
+    buffer until the process exited while `Apply this Agentbot update plan?
+    [y/N]` went straight to the terminal on its own descriptor. The operator
+    was asked to approve a plan that had not been printed yet.
+
+    This is also why the progress lines carry flush=True. They no longer need
+    it, and keep it: an explicit flush on a progress line is not wrong, and
+    removing them would be a change with nothing behind it.
+    """
+    # Guarded rather than assumed: sys.stdout is typed TextIO, reconfigure
+    # belongs to the TextIOWrapper it usually is, and a caller may have
+    # replaced it with something else entirely.
+    if isinstance(stream, io.TextIOWrapper):
+        stream.reconfigure(line_buffering=True)
+    return CollapseBlankLines(stream)
+
+
 def main() -> int:
-    # Installed for the whole command, so no two blocks of output can put their
-    # blank lines together. See CollapseBlankLines.
-    sys.stdout = CollapseBlankLines(sys.stdout)
+    original = sys.stdout
+    sys.stdout = configure_output(original)
     try:
         return _run()
     finally:
         sys.stdout.flush()
-        sys.stdout = sys.stdout._stream
+        sys.stdout = original
 
 
 def _run() -> int:
@@ -244,7 +267,14 @@ def _handle_boost(context: CommandContext) -> int:
 def _handle_update(context: CommandContext) -> int:
     args = context.args
     command = args.command
-    plan = context.lifecycle.plan_update()
+    # The planning heading and legend come before the work, so the wait is
+    # visible rather than a blank terminal followed by a question.
+    print_header(f"Planning {command}", f"Agentbot › {command.capitalize()} › Planning")
+    log_legend()
+    print()
+    plan = context.lifecycle.plan_update(
+        progress=InstallLog(sentinel="Plan complete").stage
+    )
     print_update_plan(plan, command=command)
     if bool(getattr(args, "dry_run", False)):
         # A dry run has no prompt to close it, so it ended on the plan table.

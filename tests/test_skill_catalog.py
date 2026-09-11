@@ -4,6 +4,17 @@ from pathlib import Path
 from unittest import mock
 
 
+def _config_with_sources(ids):
+    from src.skills_sources import SkillSourceEntry, SkillsSourcesConfig
+
+    return SkillsSourcesConfig(
+        version=1,
+        agents=["codex"],
+        scope="global",
+        sources=[SkillSourceEntry(name, f"owner/{name}", ["*"]) for name in ids],
+    )
+
+
 class SkillCatalogTests(unittest.TestCase):
     def test_discovery_uses_frontmatter_name_and_folder_fallback_once(self) -> None:
         from src.skill_catalog import discover_checkout_skills, skill_name_from_file
@@ -53,6 +64,66 @@ class SkillCatalogTests(unittest.TestCase):
         self.assertEqual(("alpha",), catalogs[0].skills)
         self.assertTrue(destinations)
         self.assertTrue(all(not destination.exists() for destination in destinations))
+
+    def test_sources_are_inspected_concurrently_and_returned_in_manifest_order(self) -> None:
+        """Twelve sequential shallow clones was thirty seconds before a prompt.
+
+        They wait on the network rather than compete for anything, so they run
+        together -- but the plan must not depend on which one finished first.
+        """
+        import threading
+        import time
+
+        from src.skill_catalog import discover_remote_catalogs
+
+        config = _config_with_sources(("alpha", "beta", "gamma"))
+        overlapped = threading.Event()
+        running = []
+        lock = threading.Lock()
+
+        def clone(_repo: str, destination: Path) -> None:
+            with lock:
+                running.append(destination.name)
+                if len(running) > 1:
+                    overlapped.set()
+            # Slow enough that sequential clones could not overlap by accident.
+            time.sleep(0.2)
+            skill = destination / destination.name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# s\n", encoding="utf-8")
+            with lock:
+                running.remove(destination.name)
+
+        started = time.monotonic()
+        catalogs = discover_remote_catalogs(
+            config, clone_source=clone, revision_reader=lambda _c: "rev"
+        )
+        elapsed = time.monotonic() - started
+
+        self.assertTrue(overlapped.is_set(), "the clones did not overlap")
+        self.assertLess(elapsed, 0.6, "three 0.2s clones did not run together")
+        # Manifest order, not completion order.
+        self.assertEqual(["alpha", "beta", "gamma"], [c.source_id for c in catalogs])
+
+    def test_one_worker_still_inspects_every_source(self) -> None:
+        """AGENTBOT_CATALOG_WORKERS=1 is the way back to one at a time."""
+        import os
+        from unittest import mock
+
+        from src.skill_catalog import discover_remote_catalogs
+
+        config = _config_with_sources(("alpha", "beta"))
+
+        def clone(_repo: str, destination: Path) -> None:
+            skill = destination / "s"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# s\n", encoding="utf-8")
+
+        with mock.patch.dict(os.environ, {"AGENTBOT_CATALOG_WORKERS": "1"}):
+            catalogs = discover_remote_catalogs(
+                config, clone_source=clone, revision_reader=lambda _c: "rev"
+            )
+        self.assertEqual(["alpha", "beta"], [c.source_id for c in catalogs])
 
     def test_verified_checkouts_reject_remote_drift_before_yielding(self) -> None:
         from src.skill_catalog import (

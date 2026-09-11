@@ -766,7 +766,10 @@ class CliTests(unittest.TestCase):
         rc, _stdout, _stderr = run_cli_main(["agentbot", "update", "--interactive"])
 
         self.assertEqual(0, rc)
-        lifecycle.plan_update.assert_called_once_with()
+        # Planned once, and now with the progress hook that reports the
+        # source-catalog clones instead of leaving the terminal blank for them.
+        lifecycle.plan_update.assert_called_once()
+        self.assertEqual((), lifecycle.plan_update.call_args.args)
         # The plan is still applied exactly once, and now with the progress
         # hook that reports each phase as it starts.
         lifecycle.apply_update.assert_called_once()
@@ -930,6 +933,41 @@ class CliTests(unittest.TestCase):
         rendered = output.getvalue()
         self.assertIn("4 outside managed sources", rendered)
         self.assertNotIn("outside global lock", rendered)
+
+    def test_a_printed_line_reaches_a_pipe_without_an_explicit_flush(self) -> None:
+        """The interactive update asks its question on the terminal.
+
+        The menu runs this backend under tui_run_to_output, which pipes stdout
+        through a Bash colouring loop, and Python block-buffers a pipe -- so
+        the plan table sat unflushed until the process exited while "Apply this
+        Agentbot update plan? [y/N]" went straight to the terminal on its own
+        descriptor. The operator was asked to approve a plan that had not been
+        printed yet.
+
+        Tested on a real pipe, because that is the thing that behaves
+        differently: the same writes to a file or a terminal always arrived.
+        """
+        import os
+
+        from src.cli import configure_output
+
+        read_fd, write_fd = os.pipe()
+        self.addCleanup(os.close, read_fd)
+        writer = configure_output(os.fdopen(write_fd, "w"))
+
+        # A blank is held until something follows it, so write two lines.
+        print("  === a heading ===", file=writer)
+        print("  a row", file=writer)
+
+        # No flush, no close: exactly the state the process is in when it stops
+        # to ask a question. Read with a timeout rather than blocking, so a
+        # regression fails the suite instead of hanging it -- unflushed, there
+        # is nothing in the pipe and readline would wait forever.
+        import select
+
+        ready, _, _ = select.select([read_fd], [], [], 5)
+        self.assertTrue(ready, "nothing reached the pipe; stdout is block-buffered again")
+        self.assertEqual(b"  === a heading ===\n  a row\n", os.read(read_fd, 4096))
 
     def test_install_progress_survives_a_pipe(self) -> None:
         """The stage lines exist because an install was minutes of silence.

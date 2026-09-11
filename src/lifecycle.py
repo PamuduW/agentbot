@@ -191,14 +191,32 @@ class Lifecycle:
     def update_skills(self) -> InstallResult:
         return self._update_skills(self.paths)
 
-    def plan_update(self) -> UpdatePlan:
+    def plan_update(
+        self, *, progress: Callable[[str, float], None] | None = None
+    ) -> UpdatePlan:
         config = load_skills_sources(self.paths.skills_sources_file)
+        # Planning shallow-clones every source to see what it holds, which was
+        # about thirty seconds of silence before anything reached the screen --
+        # and then a prompt. Each phase says what it is doing first.
+        started = time.monotonic()
+
+        def stage_begins(message: str) -> None:
+            nonlocal started
+            if progress is None:
+                return
+            elapsed = time.monotonic() - started
+            started = time.monotonic()
+            progress(message, elapsed)
+
+        active = [source for source in config.active_sources() if source.repo is not None]
+        stage_begins(f"Checking {len(active)} skill source(s) for changes")
         catalogs = self._catalog_discoverer(config)
         discovered = {catalog.source_id: catalog.skills for catalog in catalogs}
         lock: dict = {}
         if self.paths.global_skill_lock.exists():
             lock = json.loads(self.paths.global_skill_lock.read_text(encoding="utf-8"))
         reconcile = build_reconcile_plan(config, discovered=discovered, lock=lock)
+        stage_begins("Reading the Graphify integration")
         graphify_status = self.graphify.status()
         if graphify_status.cli_path is None:
             graphify_action = "skip"
@@ -206,11 +224,13 @@ class Lifecycle:
             graphify_action = "refresh"
         else:
             graphify_action = "setup"
+        stage_begins("Previewing managed workspaces")
         workspace_report = (
             self._workspace_preview()
             if self._workspace_preview is not None
             else self.resync_workspaces(apply=False)
         )
+        stage_begins("Plan complete")
         return UpdatePlan(
             snapshot=self._update_snapshot(),
             reconcile=reconcile,
