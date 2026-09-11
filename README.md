@@ -30,9 +30,15 @@ cd ~/agentbot
 ```
 
 Install validates the checkout, installs enabled skill sources, refreshes
-optional Graphify and Boost integrations when their CLIs exist, renders global
-outputs, runs Doctor, and links `bin/agentbot` to `~/bin/agentbot`. Ensure
-`~/bin` is on `PATH`.
+optional Graphify and Boost integrations when their CLIs exist, reconciles the
+VS Code, Cursor-statusline and CLI-config surfaces, renders global outputs, runs
+Doctor, and links `bin/agentbot` to `~/bin/agentbot`. Ensure `~/bin` is on
+`PATH`.
+
+Those six parts are selectable. `agentbot install --menu` opens the component
+selector and an execution plan first; `--components` names a subset directly.
+Managed outputs, Doctor, and the launcher link always run. See
+[Lifecycle and updates](docs/lifecycle-and-updates.md).
 
 The repository is not copied. The installed launcher remains linked to the
 checkout that ran install. Confirm the active checkout before maintenance:
@@ -48,20 +54,31 @@ Private state is stored under
 ## Common workflows
 
 ```bash
-agentbot                         # open the interactive menu
-agentbot status                 # inspect managed state
-agentbot doctor                 # validate skills, links, and outputs
-agentbot update --dry-run       # preview repository and lifecycle changes
-agentbot update                 # confirm and apply an update
-agentbot full                   # install, then update
-agentbot boot /path/to/repo     # render and register a workspace
-agentbot workspaces             # list registered workspaces
-agentbot resync --dry-run --all # preview every registered workspace
-agentbot token                  # manage the optional private GitHub token
+agentbot                          # open the interactive menu
+agentbot status                   # inspect managed state
+agentbot doctor                   # validate skills, links, and outputs
+agentbot install --menu           # choose components, review the plan, install
+agentbot install --components L   # install a named subset, unattended
+agentbot update --dry-run         # preview repository and lifecycle changes
+agentbot update                   # confirm and apply an update
+agentbot full                     # install, then update
+agentbot boot /path/to/repo       # render and register a workspace
+agentbot workspaces               # list registered workspaces
+agentbot resync --dry-run --all   # preview every registered workspace
+agentbot token                    # manage the optional private GitHub token
+```
+
+The editor and CLI surfaces are part of an install and appear in `status`. They
+are also directly addressable:
+
+```bash
+agentbot vscode status|seed|apply     # extensions and owned settings, per host
+agentbot cursor status|statusline     # the managed Cursor CLI statusline
+agentbot cli-config status|apply      # declared Claude, Codex, Cursor keys
 ```
 
 The menu and direct CLI share the same command model and lifecycle code. Token
-input is silent, and normal output shows only a fingerprint.
+input is masked, and normal output shows only a fingerprint.
 
 ## Skills
 
@@ -107,6 +124,9 @@ See [Workspaces and rendering](docs/workspaces-and-rendering.md).
 - [Skills and integrations](docs/skills.md)
 - [Workspaces and rendering](docs/workspaces-and-rendering.md)
 - [Lifecycle and updates](docs/lifecycle-and-updates.md)
+- [VS Code](docs/vscode.md)
+- [Cursor statusline](docs/cursor-statusline.md)
+- [Agent CLI configuration](docs/cli-config.md)
 - [Validation](docs/validation.md)
 - [Roadmap](docs/roadmap.md)
 - [Archived MCP research inputs](archive/docs/README.md)

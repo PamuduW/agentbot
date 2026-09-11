@@ -5,11 +5,12 @@
 # Roadmap 4.1: Agentbot had no component selection, so bootstrap triggered
 # `agentbot install` outright and the operator got skills, Graphify and Boost as
 # one all-or-nothing decision. This is the same checkbox the Dotfiles component
-# selector uses, over the three parts of an install that are genuinely optional.
+# selector uses, over the parts of an install that are genuinely optional --
+# which grew to six when the Platform submenu was folded into install and status.
 #
-# Managed outputs and diagnostics are deliberately absent: they are the baseline
-# every install leaves behind, and an install that skipped them would report on
-# a state it had not established.
+# Managed outputs, the launcher link and diagnostics are deliberately absent:
+# they are the baseline every install leaves behind, and an install that skipped
+# them would report on a state it had not established.
 
 # The keys must match Lifecycle.SELECTABLE_COMPONENTS; tests/test_menus.py
 # pins the two lists against each other.

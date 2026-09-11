@@ -16,6 +16,10 @@ must use Agentbot and agentbot.
 | Area | Live source | Status |
 |---|---|---|
 | Agentbot CLI and menu | install.sh, bin/agentbot, scripts/menu.sh | Live |
+| Menu definitions | src/ui/menus.py plus scripts/menus/ dispatch | Live |
+| Install component selection | scripts/menus/components.sh, src/install_plan.py | Live |
+| Editor and CLI surfaces | src/vscode.py, src/cursor_statusline.py, src/cli_config.py | Live |
+| Presentation contract | workspace docs/designs/presentation/ | Live |
 | Workspace profile | agentos.yaml, src/workspace_profiles.py | Live |
 | Canonical repository policy | base/AGENTS.md | Live |
 | Claude template | base/CLAUDE.md | Live |
@@ -334,3 +338,4 @@ removed control-plane code directly into the live lifecycle.
 | 2026-08-20 | Consolidated lifecycle, diagnostics, command metadata, TUI primitives, and validation before Phase 4 implementation |
 | 2026-09-03 | Consolidated technical documentation and moved deferred AgentOS notes into the active roadmap |
 | 2026-09-03 | Deferred Slice 4.0A until provider-neutral MCP and cross-agent memory evaluations are complete |
+| 2026-09-11 | Workspace roadmap item 4.1 finished: install gained a component selector and execution plan, the Platform submenu folded into install and status, and both products now share one presentation contract |

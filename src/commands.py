@@ -45,12 +45,23 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "install",
-        "agentbot install",
+        "agentbot install [--components L] [--menu]",
         "mutating",
-        "Install skills, synchronize optional Graphify and Boost integrations, refresh outputs, run Doctor, and link Agentbot.",
-        (),
-        "May install skills and write managed global outputs and the launcher link.",
-        ("agentbot install",),
+        "Install skills, synchronize optional integrations and editor surfaces, refresh outputs, run Doctor, and link Agentbot.",
+        (
+            option(
+                "--components L",
+                "Comma-separated subset of skills, graphify, boost, vscode, cursor, cli-config.",
+                "all",
+            ),
+            option(
+                "--menu",
+                "Open the component selector and execution plan first; needs a terminal.",
+                "off",
+            ),
+        ),
+        "May install skills, reconcile editor surfaces, and write managed global outputs and the launcher link.",
+        ("agentbot install", "agentbot install --components skills,boost", "agentbot install --menu"),
         ("status", "doctor"),
         "public",
         ("install",),

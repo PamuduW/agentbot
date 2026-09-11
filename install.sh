@@ -421,7 +421,8 @@ Usage: ./install.sh <command> [args]
 
   Commands:
   install [--components L]   Install Agentbot and link its launcher;
-                             L narrows it to skills, graphify, boost
+                             L narrows it to skills, graphify, boost,
+                             vscode, cursor, cli-config
   full                       Run install, then update, in one command
   update [--dry-run|--yes]   Run the repository-first update flow
   status [--json]            Show current Agentbot state

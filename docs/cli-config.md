@@ -5,6 +5,8 @@ agentbot cli-config status   # preview; writes nothing
 agentbot cli-config apply    # merge the declared keys
 ```
 
+It is also the `cli-config` install component, and one row of `agentbot status`.
+
 Agentbot owns only the keys you declare, merged key by key into each CLI's own
 config. Everything you have not declared is left exactly as it was.
 

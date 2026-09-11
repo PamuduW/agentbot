@@ -9,6 +9,12 @@ agentbot vscode seed     # record the installed extensions into vscode.yaml
 agentbot vscode apply    # install missing extensions, merge owned settings
 ```
 
+It is also the `vscode` install component, and one row of `agentbot status`.
+This surface reached the operator only through a Platform submenu until that
+submenu was folded into install and status: a separate menu for three read-and-
+apply surfaces made "is this machine set up?" a question with two answers in two
+places.
+
 ## Two hosts, not one editor
 
 Remote-WSL splits one editor across two hosts, and they are not

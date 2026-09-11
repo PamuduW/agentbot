@@ -21,9 +21,12 @@ Useful focused checks are:
 
 ```bash
 python3 -m unittest discover -s tests
-bash tests/shell/test_cli.sh
+python3 -m unittest tests.test_cli
+bash tests/shell/test_public_commands.sh
+bash tests/test_menu_parity.sh
 ./install.sh doctor
 ```
 
-Suite names under `tests/shell/` are authoritative. Doctor is a runtime
+Suite names under `tests/` and `tests/shell/` are authoritative; list the
+directories rather than trusting a name quoted here. Doctor is a runtime
 diagnostic and does not replace the repository gate.

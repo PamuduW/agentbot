@@ -56,6 +56,10 @@ On a controlling TTY, `./install.sh` or `agentbot` with no arguments opens the
 Agentbot menu. Headless runs should use an explicit command such as
 `agentbot status` or `./install.sh doctor`.
 
+`./install.sh install` installs every component. To choose instead, use
+`agentbot install --menu` for the selector and execution plan, or name a subset
+with `agentbot install --components skills,boost`.
+
 Update skills later: `./install.sh skills update`.
 
 Active and deferred phases: [`docs/roadmap.md`](docs/roadmap.md). Historical

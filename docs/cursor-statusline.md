@@ -5,6 +5,8 @@ agentbot cursor status       # read-only
 agentbot cursor statusline   # install the managed statusline
 ```
 
+It is also the `cursor` install component, and one row of `agentbot status`.
+
 ## Investigation outcome
 
 Roadmap 4.3 opened with a gate: confirm from official sources that Cursor can

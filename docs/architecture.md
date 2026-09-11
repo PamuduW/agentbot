@@ -27,6 +27,19 @@ src/lifecycle.py
 - `src/commands.py` is the command metadata authority used by help and the TUI.
 - `src/cli.py` parses commands, composes services, and owns exit policy.
 - `src/lifecycle.py` coordinates install, update, workspace, and resync flows.
+  `SELECTABLE_COMPONENTS` names the six parts of an install a selector may
+  narrow; `PLATFORM_COMPONENTS` is the editor and CLI subset of them.
+- `src/install_plan.py` builds the plan shown between the selector and the run.
+  It reads local state only -- a plan that reached the network would make the
+  screen before the install as slow as the install.
+- `src/platform_surfaces.py` reduces VS Code, the Cursor statusline, and CLI
+  configuration to one status row each. The same rows answer `status` and the
+  install summary, which is what folding the former Platform submenu into those
+  two surfaces means in practice.
+- `src/ui/install_log.py` owns the `[STEP]`/`[OK]` progress vocabulary and the
+  timing block. Markers are coloured where they are printed rather than by a
+  relay in the menu, so they look the same from a terminal, through a pipe, and
+  inside `dotfiles full-update`.
 - `src/diagnostics.py` produces the shared Status and Doctor snapshot.
 - `scripts/lib/tui.sh` and `scripts/menus/` are presentation adapters.
 - `src/ui/menu.py` draws menu frames and `src/ui/menu_select.py` runs the
@@ -46,7 +59,7 @@ src/lifecycle.py
   for a cancelled menu), the shared Bash loop answers instead.
 
   `src/ui/menus.py` holds the menus whose entries are fixed -- main, libraries,
-  platform, workspaces, Graphify Lib -- and builds the derived ones: the Command
+  workspaces, Graphify Lib -- and builds the derived ones: the Command
   Lib lists whatever `src/commands.py` declares, so a new command appears in the
   menu with nothing else edited, and the Graphify reference menus come from
   `src/ui/graphify_lib.py`, which is where those commands are written down. `agentbot_menu_run <name>` runs one by name
