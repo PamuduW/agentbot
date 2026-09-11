@@ -617,8 +617,25 @@ def _elapsed(started: float) -> str:
     return f"{seconds // 60}m {seconds % 60:02d}s" if seconds >= 60 else f"{seconds}s"
 
 
+#: A progress line written as "[LEVEL] text", which is how the callers above
+#: build them.
+_PREFIXED = re.compile(r"^\[(?P<level>[A-Z]+)\]\s+(?P<message>.*)$", re.DOTALL)
+
+
 def _print_install_progress(message: str) -> None:
-    print(f"  {message}", flush=True)
+    """Print a progress line, coloured like every other one the run prints.
+
+    These carry their marker inside the message string, so they went through
+    the plain print below and stayed uncoloured wherever the menu's Bash relay
+    was not there to paint them -- a terminal, or a Dotfiles full update.
+    """
+    from .ui.install_log import log_line
+
+    match = _PREFIXED.match(message)
+    if match is None:
+        print(f"  {message}", flush=True)
+        return
+    log_line(match["level"], match["message"])
 
 
 def update_skills(

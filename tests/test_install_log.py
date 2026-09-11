@@ -17,6 +17,7 @@ from src.ui.install_log import (
     InstallLog,
     duration,
     log_legend,
+    log_line,
     print_timing,
 )
 
@@ -102,6 +103,58 @@ class InstallLogTests(unittest.TestCase):
         self.assertEqual("41s", duration(41.9))
         self.assertEqual("1m 05s", duration(65))
         self.assertEqual("10m 00s", duration(600))
+
+
+class MarkerColourTests(unittest.TestCase):
+    """The markers are painted here, not by the menu's relay.
+
+    They used to be coloured only by the Bash relay the menu runs this backend
+    under, so everywhere else they were plain -- a terminal, and a Dotfiles full
+    update where they sat beside that product's own coloured ones.
+    """
+
+    def _render(self, fn, *args) -> str:
+        import os
+        from unittest import mock
+
+        buffer = io.StringIO()
+        with mock.patch.dict(os.environ, {"FORCE_COLOR": "1"}), redirect_stdout(buffer):
+            fn(*args)
+        return buffer.getvalue()
+
+    def test_each_marker_carries_its_own_colour(self):
+        from src.ui.table import BOLD, CYAN, DIM, GREEN, RED
+
+        self.assertIn(BOLD + CYAN + "[STEP]", self._render(log_line, "STEP", "x"))
+        self.assertIn(BOLD + GREEN + "[OK]", self._render(log_line, "OK", "x"))
+        self.assertIn(DIM + "[SKIP]", self._render(log_line, "SKIP", "x"))
+        self.assertIn(BOLD + RED + "[FAIL]", self._render(log_line, "FAIL", "x"))
+
+    def test_an_unknown_level_is_left_alone(self):
+        self.assertEqual("  [ODD] x\n", self._render(log_line, "ODD", "x"))
+
+    def test_the_legend_colours_the_words_it_defines(self):
+        from src.ui.table import CYAN, GREEN
+
+        legend = self._render(log_legend)
+        self.assertIn(CYAN + "STEP=starting", legend)
+        self.assertIn(GREEN + "OK=completed", legend)
+
+    def test_the_installers_own_prefixed_lines_are_coloured_too(self):
+        """Those carry their marker inside the message string.
+
+        So they went through a plain print and stayed uncoloured wherever the
+        relay was not there to paint them.
+        """
+        from src.skills_installer import _print_install_progress
+        from src.ui.table import BOLD, CYAN
+
+        line = self._render(
+            _print_install_progress, "[STEP] Installing skill source: superpowers"
+        )
+        self.assertIn(BOLD + CYAN + "[STEP]", line)
+        # A line with no marker is printed as it is.
+        self.assertEqual("  plain text\n", self._render(_print_install_progress, "plain text"))
 
 
 class TimingTests(unittest.TestCase):

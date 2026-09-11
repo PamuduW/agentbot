@@ -379,6 +379,9 @@ _agentbot_now_seconds() {
 
 run_full() {
 	local stage rc restarts=0 stage_started
+	# This command restarts itself when the checkout moves, so the repository
+	# gate must not tell the operator to run setup again.
+	export REPO_UPDATE_CALLER_RESTARTS=1
 	for stage in install update; do
 		while true; do
 			rc=0

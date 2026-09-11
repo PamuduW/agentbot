@@ -15,24 +15,57 @@ the way to the terminal, so nothing here emits escapes.
 
 from __future__ import annotations
 
-from .table import ORANGE, _c
+from .table import BOLD, CYAN, DIM, GREEN, ORANGE, RED, YELLOW, _c
 
 # The same four words, in the same order, as the sibling product's legend.
+#: Marker colours, matching _log_prefix in the sibling product's logging.sh so
+#: a full update -- which prints both runs into one terminal -- marks them the
+#: same way.
+_LEVEL_COLORS = {
+    "STEP": BOLD + CYAN,
+    "OK": BOLD + GREEN,
+    "SKIP": DIM,
+    "WARN": BOLD + YELLOW,
+    "FAIL": BOLD + RED,
+    "ERR": BOLD + RED,
+    "INFO": CYAN,
+}
+#: The legend names its markers without brackets, so it is coloured word by
+#: word. A legend whose colours are missing is not a key to anything.
+_LEGEND_WORDS = (
+    ("STEP=starting", CYAN),
+    ("OK=completed", GREEN),
+    ("SKIP=already satisfied", DIM),
+    ("WARN=needs attention", YELLOW),
+)
 LEGEND = "[Legend] STEP=starting  OK=completed  SKIP=already satisfied  WARN=needs attention"
 # Forty dashes, as log_component_rule draws.
 RULE = "-" * 40
 
 
 def log_legend() -> None:
-    print(f"  {LEGEND}", flush=True)
+    legend = LEGEND
+    for word, code in _LEGEND_WORDS:
+        legend = legend.replace(word, _c(word, code), 1)
+    print(f"  {legend}", flush=True)
 
 
 def log_rule() -> None:
-    print(f"  {RULE}", flush=True)
+    print(f"  {_c(RULE, DIM)}", flush=True)
 
 
 def log_line(level: str, message: str) -> None:
-    print(f"  [{level}] {message}", flush=True)
+    """A prefixed progress line, coloured here rather than downstream.
+
+    The markers used to be painted by the Bash relay the menu runs this backend
+    under, which meant they were plain everywhere else -- including a Dotfiles
+    full update, where they sat beside that product's own coloured ones.
+    """
+    code = _LEVEL_COLORS.get(level)
+    # No code, no escapes at all: _c with an empty colour still appends a
+    # reset, which would put a stray byte on a line nothing had painted.
+    marker = _c(f"[{level}]", code) if code else f"[{level}]"
+    print(f"  {marker} {message}", flush=True)
 
 
 def duration(seconds: float) -> str:

@@ -79,6 +79,15 @@ tui_print() {
 
 _tui_color_backend_line() {
 	local line="$1" terminator="${2-$'\n'}"
+	# A line that already carries escapes was coloured by whoever wrote it, and
+	# rewriting its markers would wrap them twice. The backend paints its own
+	# now -- it has to, because this relay is only in the path under the menu,
+	# and the same lines go to a terminal and to a Dotfiles full update where
+	# nothing was painting them at all. This stays for anything still plain.
+	if [[ "$line" == *$'\033'* ]]; then
+		printf '%s%s' "$line" "$terminator"
+		return 0
+	fi
 	line="${line//\[STEP\]/${C_BOLD}${C_CYAN}[STEP]${C_RESET}}"
 	line="${line//\[OK\]/${C_BOLD}${C_GREEN}[OK]${C_RESET}}"
 	# Dim, matching the result vocabulary: a skip is a deliberate non-event.
