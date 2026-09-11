@@ -90,17 +90,28 @@ test_tui_backend_output_colors_semantic_markers_only() (
 			'  [ERR] Invalid source' \
 			'  [WARN] Source skipped' \
 			'  [INFO] Source detail' \
+			'  [SKIP] Skipping Boost integration' \
+			'  [Legend] STEP=starting  OK=completed  SKIP=already satisfied  WARN=needs attention' \
 			'  ordinary output'
 	}
 
 	AGENTBOT_TUI_OUTPUT="$output" tui_run_to_output _emit_markers
 
+	# [SKIP] is dim, matching the result vocabulary: a skip is a deliberate
+	# non-event. It was missing from the substitutions while the backend printed
+	# it for a deselected component, so the one marker meaning "nothing
+	# happened" was drawn plainest of all.
+	#
+	# The legend names the four markers without bracketing them, so it is
+	# coloured word by word -- a legend whose colours are absent is not a key.
 	expected="  ${C_BOLD}${C_CYAN}[STEP]${C_RESET} Installing source
   ${C_BOLD}${C_GREEN}[OK]${C_RESET} Source installed
   ${C_BOLD}${C_RED}[FAIL]${C_RESET} Source failed
   ${C_BOLD}${C_RED}[ERR]${C_RESET} Invalid source
   ${C_BOLD}${C_YELLOW}[WARN]${C_RESET} Source skipped
   ${C_CYAN}[INFO]${C_RESET} Source detail
+  ${C_DIM}[SKIP]${C_RESET} Skipping Boost integration
+  [Legend] ${C_CYAN}STEP=starting${C_RESET}  ${C_GREEN}OK=completed${C_RESET}  ${C_DIM}SKIP=already satisfied${C_RESET}  ${C_YELLOW}WARN=needs attention${C_RESET}
   ordinary output"
 	[[ "$(<"$output")" == "$expected" ]]
 )

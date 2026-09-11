@@ -81,10 +81,23 @@ _tui_color_backend_line() {
 	local line="$1" terminator="${2-$'\n'}"
 	line="${line//\[STEP\]/${C_BOLD}${C_CYAN}[STEP]${C_RESET}}"
 	line="${line//\[OK\]/${C_BOLD}${C_GREEN}[OK]${C_RESET}}"
+	# Dim, matching the result vocabulary: a skip is a deliberate non-event.
+	# Missing here while the backend prints [SKIP] for a deselected component,
+	# so the one marker meaning "nothing happened" was the one drawn plainest.
+	line="${line//\[SKIP\]/${C_DIM}[SKIP]${C_RESET}}"
 	line="${line//\[FAIL\]/${C_BOLD}${C_RED}[FAIL]${C_RESET}}"
 	line="${line//\[ERR\]/${C_BOLD}${C_RED}[ERR]${C_RESET}}"
 	line="${line//\[WARN\]/${C_BOLD}${C_YELLOW}[WARN]${C_RESET}}"
 	line="${line//\[INFO\]/${C_CYAN}[INFO]${C_RESET}}"
+	# The legend names the four markers without bracketing them, so the
+	# substitutions above cannot reach it. Coloured word by word instead, which
+	# is the whole point of a legend: the colour is the key.
+	if [[ "$line" == *'[Legend]'* ]]; then
+		line="${line//STEP=starting/${C_CYAN}STEP=starting${C_RESET}}"
+		line="${line//OK=completed/${C_GREEN}OK=completed${C_RESET}}"
+		line="${line//SKIP=already satisfied/${C_DIM}SKIP=already satisfied${C_RESET}}"
+		line="${line//WARN=needs attention/${C_YELLOW}WARN=needs attention${C_RESET}}"
+	fi
 	printf '%s%s' "$line" "$terminator"
 }
 
