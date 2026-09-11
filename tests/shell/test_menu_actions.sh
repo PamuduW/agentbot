@@ -429,6 +429,36 @@ test_component_selector_carries_nothing_over_from_prune() (
 	[[ -z "${MENU_CB_TOGGLE_FN:-}" && -z "${MENU_CB_DESC_FN:-}" ]]
 )
 
+test_the_plan_screen_reaches_the_backend_under_the_tui() (
+	# Shipped broken: the TUI branch ran `env ... agentbot_run_backend`, and
+	# `env` execs a program while agentbot_run_backend is a shell function --
+	# so the plan screen answered "env: 'agentbot_run_backend': No such file or
+	# directory" and never drew. The sibling call in update.sh can use `env`
+	# because it names install.sh, a real executable.
+	#
+	# The test that covered this path did not: with AGENTBOT_TUI unset it took
+	# the other branch, where there is no `env` to get wrong.
+	local calls="$TEST_ROOT/plan-tui.calls" out="$TEST_ROOT/plan-tui.out" rc=0
+	: >"$calls"
+	: >"$out"
+	agentbot_run_backend() {
+		printf '%s\n' "$*" >>"$calls"
+		# The seam the plan reads its answer through must reach the child. A
+		# descriptor when the menu has one open, a path otherwise -- one of the
+		# two, never neither, or the prompt has nothing to read.
+		printf 'seam=%s\n' \
+			"${AGENTBOT_UPDATE_TTY_IN_FD:-${AGENTBOT_UPDATE_TTY_INPUT:-none}}" >>"$calls"
+		return 10
+	}
+	AGENTBOT_TUI=1 AGENTBOT_TUI_OUTPUT="$out" \
+		_agentbot_install_plan skills,boost || rc=$?
+
+	# The operator's answer, carried back as the exit status.
+	[[ "$rc" -eq 10 ]] || return 1
+	grep -Fqx 'install --plan-only --components skills,boost' "$calls" || return 1
+	! grep -Fqx 'seam=none' "$calls"
+)
+
 test_component_selector_keeps_the_install_contracts() (
 	# The selector was written calling agentbot_run_backend directly, which went
 	# around the two things agentbot_menu_install owns: the TUI output seam and
@@ -506,6 +536,7 @@ test_component_selector_cancels_when_nothing_is_checked() (
 check 'main dispatch gives direct actions exactly one pause' test_main_dispatch_and_pause_ownership
 check 'component selector uses the sibling compact layout' test_component_selector_matches_the_sibling_layout
 check 'component selector carries nothing over from prune' test_component_selector_carries_nothing_over_from_prune
+check 'the plan screen reaches the backend under the TUI' test_the_plan_screen_reaches_the_backend_under_the_tui
 check 'component selector keeps the install contracts' test_component_selector_keeps_the_install_contracts
 check 'component selector asks about the repository first' test_component_selector_asks_about_the_repository_first
 check 'component selector cancels when nothing is checked' test_component_selector_cancels_when_nothing_is_checked

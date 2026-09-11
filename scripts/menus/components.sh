@@ -96,10 +96,17 @@ _agentbot_install_plan() {
 	local selection="$1" rc=0
 	if [[ -n "${AGENTBOT_TUI:-}" ]]; then
 		tui_refresh_tty_seam
-		tui_run_to_output env \
-			AGENTBOT_UPDATE_TTY_INPUT="$DOTFILES_TTY_INPUT" \
+		# Prefix assignments, not `env`: agentbot_run_backend is a shell
+		# function, and `env` execs a program -- so this said
+		# "env: 'agentbot_run_backend': No such file or directory" and the
+		# plan screen never drew. The sibling call in update.sh can use `env`
+		# because it names install.sh, a real executable. Bash exports a
+		# prefix assignment for the duration of the call, so the Python child
+		# still inherits the descriptors it reads the answer from.
+		AGENTBOT_UPDATE_TTY_INPUT="$DOTFILES_TTY_INPUT" \
 			AGENTBOT_UPDATE_TTY_IN_FD="$DOTFILES_TTY_IN_FD" \
-			agentbot_run_backend install --plan-only --components "$selection" || rc=$?
+			tui_run_to_output agentbot_run_backend install --plan-only \
+			--components "$selection" || rc=$?
 	else
 		agentbot_run_backend install --plan-only --components "$selection" || rc=$?
 	fi
