@@ -34,9 +34,12 @@ from src.ui import (
 )
 from src.ui.reports import integration_result, workspace_action_result
 from src.ui.table import (
+    CollapseBlankLines,
     _table_widths,
+    print_header,
     print_note,
     print_rollup,
+    print_section_block,
     print_table,
     result_class,
     strip_ansi,
@@ -348,6 +351,61 @@ class NoteTests(unittest.TestCase):
     def test_a_short_note_is_one_line(self):
         text, _ = _capture(print_note, "all good")
         self.assertEqual(["  all good"], [x for x in text.splitlines() if x.strip()])
+
+
+class BlankLineTests(unittest.TestCase):
+    """No two blank lines in a row, anywhere a command prints."""
+
+    def _collapsed(self, chunks) -> str:
+        buffer = io.StringIO()
+        writer = CollapseBlankLines(buffer)
+        for chunk in chunks:
+            writer.write(chunk)
+        writer.flush()
+        return buffer.getvalue()
+
+    def test_a_run_of_blanks_becomes_one(self):
+        self.assertEqual(
+            "one\n\ntwo\n", self._collapsed(["one\n", "\n", "\n", "   \n", "two\n"])
+        )
+
+    def test_an_opening_blank_is_kept(self):
+        """The header's leading blank is the gap under the frame above it."""
+        self.assertEqual("\nheader\n", self._collapsed(["\n", "header\n"]))
+
+    def test_a_row_written_in_two_calls_stays_one_line(self):
+        """print_table writes a row as a cell with end="" and then the rest."""
+        self.assertEqual("  a | b | ok\n", self._collapsed(["  a | b | ", "ok\n"]))
+
+    def test_a_partial_line_survives_a_flush(self):
+        buffer = io.StringIO()
+        writer = CollapseBlankLines(buffer)
+        writer.write("no newline yet")
+        writer.flush()
+        self.assertEqual("no newline yet", buffer.getvalue())
+
+    def test_the_wrapper_answers_isatty_for_the_stream_it_wraps(self):
+        """use_color() and the installer's progress gate both ask."""
+        buffer = io.StringIO()
+        self.assertEqual(buffer.isatty(), CollapseBlankLines(buffer).isatty())
+
+    def test_stacked_report_blocks_leave_one_gap(self):
+        """Two blocks meeting is where the doubles came from.
+
+        Each block opens with a blank so it separates itself from what came
+        before, and several close with one too. An install printed five double
+        gaps: after the last progress line, between a heading and its first
+        section, and after every rollup a heading or section followed.
+        """
+        buffer = io.StringIO()
+        writer = CollapseBlankLines(buffer)
+        with redirect_stdout(writer):
+            print_rollup(ok=1, check=0, miss=0)
+            print_header("Graphify", "Agentbot › Graphify")
+            print_section_block("── Sources ──")
+        writer.flush()
+        rendered = strip_ansi(buffer.getvalue())
+        self.assertNotIn("\n\n\n", rendered)
 
 
 class RollupTests(unittest.TestCase):

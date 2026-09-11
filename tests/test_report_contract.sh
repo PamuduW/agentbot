@@ -116,6 +116,29 @@ test_the_contract_holds_under_a_tty_too() {
 # in the output, so graphify and boost status could print theirs and then keep
 # talking -- and graphify's two disagreed, "5 ok, 1 need attention." above
 # "Graphify CLI and Agent Skills integration are ready."
+# No surface prints two blank lines in a row.
+#
+# Every block opens with a blank so it separates itself from what came before,
+# and several close with one as well -- fine alone, wrong the moment two meet.
+# An install printed five double gaps. Checked on the rendered surface rather
+# than at the call sites, because the fault is always in the join.
+test_no_surface_doubles_a_blank_line() {
+	local surface output doubled=''
+	for surface in "${SURFACES[@]}"; do
+		# shellcheck disable=SC2086
+		output="$(surface_output $surface)"
+		# cat -s squeezes runs of blank lines to one; if that changes the line
+		# count, there was a run.
+		if [[ "$(wc -l <<<"$output")" != "$(cat -s <<<"$output" | wc -l)" ]]; then
+			doubled+=" [$surface]"
+		fi
+	done
+	[[ -z "$doubled" ]] || {
+		printf '   surfaces with a double blank line:%s\n' "$doubled" >&2
+		return 1
+	}
+}
+
 test_the_rollup_is_the_last_line() {
 	local surface output last wrong=''
 	for surface in "${SURFACES[@]}"; do
@@ -164,6 +187,7 @@ check 'every public surface closes with a rollup' test_every_surface_closes_with
 check 'section rules appear only where a surface has groups' test_section_rules_only_where_there_are_groups
 check 'every result word is in the vocabulary' test_every_result_word_is_in_the_vocabulary
 check 'the rollup is the last line of every surface' test_the_rollup_is_the_last_line
+check 'no surface doubles a blank line' test_no_surface_doubles_a_blank_line
 
 printf '\nRan %d report-contract test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
 ((failed == 0))

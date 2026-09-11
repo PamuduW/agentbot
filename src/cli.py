@@ -40,6 +40,7 @@ from .ui import (
     print_workspace_resync_report,
 )
 from .ui.install_log import InstallLog, log_legend
+from .ui.table import CollapseBlankLines
 from .workspace_render import WORKSPACE_TARGETS
 
 ARCHIVED_COMMANDS = frozenset(
@@ -62,6 +63,17 @@ def _workspace_report_has_failures(report) -> bool:
 
 
 def main() -> int:
+    # Installed for the whole command, so no two blocks of output can put their
+    # blank lines together. See CollapseBlankLines.
+    sys.stdout = CollapseBlankLines(sys.stdout)
+    try:
+        return _run()
+    finally:
+        sys.stdout.flush()
+        sys.stdout = sys.stdout._stream
+
+
+def _run() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
@@ -829,7 +841,6 @@ def run_agentbot_install(
         progress=InstallLog().stage,
         components=components,
     )
-    print()
     skills_rc = print_skills_report(list(outcome.skills), title="Skills install")
     print_output_refresh_report(
         linked=outcome.outputs.claude_linked,

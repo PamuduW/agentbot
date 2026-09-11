@@ -125,6 +125,66 @@ def shorten_detail(text: str, *, max_len: int | None = None) -> str:
     return compact
 
 
+class CollapseBlankLines:
+    """A stdout wrapper that never writes two blank lines in a row.
+
+    Every block here opens with a blank line so it separates itself from
+    whatever came before, and several close with one as well. That is fine in
+    isolation and wrong the moment two blocks meet: an install printed five
+    double gaps, between the last progress line and the first report, between a
+    heading and its first section, and after every rollup that a heading or a
+    section followed.
+
+    Fixing it at the call sites means every printer knowing what the printer
+    before it emitted, and a new adjacency is a new chance to get it wrong.
+    Doing it here makes the single blank structural.
+
+    Writes are buffered to line boundaries because print_table writes a row in
+    two calls, the first with `end=""`.
+    """
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+        self._pending = ""
+        # False, so output that opens on a blank line keeps it: the header's
+        # leading blank is the gap under the menu frame above it.
+        self._last_blank = False
+
+    def write(self, text: str) -> int:
+        self._pending += text
+        while "\n" in self._pending:
+            line, _, self._pending = self._pending.partition("\n")
+            blank = not line.strip()
+            if blank and self._last_blank:
+                continue
+            self._stream.write(line + "\n")
+            self._last_blank = blank
+        return len(text)
+
+    def flush(self) -> None:
+        if self._pending:
+            self._stream.write(self._pending)
+            self._pending = ""
+            self._last_blank = False
+        self._stream.flush()
+
+    # Delegated because callers ask: use_color() and the skills installer's
+    # progress gate both test isatty().
+    def isatty(self) -> bool:
+        return self._stream.isatty()
+
+    def fileno(self) -> int:
+        return self._stream.fileno()
+
+    @property
+    def encoding(self) -> str:
+        return self._stream.encoding
+
+    def writelines(self, lines) -> None:
+        for line in lines:
+            self.write(line)
+
+
 def print_header(title: str, breadcrumb: str = "") -> None:
     width = terminal_columns() - 2
     print()
