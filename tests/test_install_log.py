@@ -135,13 +135,7 @@ class TimingTests(unittest.TestCase):
     def test_nothing_measured_prints_nothing(self):
         self.assertEqual([], self._timing({}, 0.0))
 
-    def test_the_run_records_every_phase_and_the_setup_before_the_first(self):
-        """The total covers work no phase owns, or it is not the total.
-
-        An apply spends most of its time re-cloning sources before the first
-        named phase begins; unnamed, that showed up only as the gap between the
-        heading and the rows under it.
-        """
+    def test_the_run_records_every_phase(self):
         log = InstallLog()
         for message, elapsed in _A_RUN:
             log.stage(message, elapsed)
@@ -155,9 +149,33 @@ class TimingTests(unittest.TestCase):
             log.seconds,
         )
         self.assertAlmostEqual(sum(elapsed for _, elapsed in _A_RUN), log.total)
-        # Skipping Boost closed nothing, so it owns no time and the run still
-        # accounts for the moment it took.
-        self.assertGreater(log.total, sum(log.seconds.values()))
+
+    def test_the_total_covers_work_no_phase_owns(self):
+        """Or it is not the total.
+
+        An apply spends most of its time re-cloning sources before the first
+        named phase begins; unnamed, that showed up only as the gap between the
+        heading and the rows under it.
+
+        Stated as the exact size of the gap rather than as total > sum. The
+        earlier fixture left nothing unowned, so the two were equal in exact
+        arithmetic and the inequality held here only on the rounding crumb that
+        summing in a different order happened to leave. CI summed it the other
+        way and got 43.7 against 43.7.
+        """
+        log = InstallLog()
+        log.stage("Installing skill sources", 0.0)
+        # Closes the skills phase, and opens a skip that will close nothing.
+        log.stage("Skipping Boost integration", 30.0)
+        # Follows the skip, so these five seconds belong to no phase at all.
+        log.stage("Running diagnostics", 5.0)
+        log.stage("Install complete", 2.0)
+
+        self.assertEqual(
+            {"Installing skill sources": 30.0, "Running diagnostics": 2.0}, log.seconds
+        )
+        self.assertAlmostEqual(37.0, log.total)
+        self.assertAlmostEqual(5.0, log.total - sum(log.seconds.values()))
 
 
 if __name__ == "__main__":
