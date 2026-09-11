@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -20,6 +21,7 @@ from src.graphify import GraphifyStatus
 from src.models import UpdatePlan, UpdateSnapshot
 from src.paths import default_paths
 from src.skill_reconcile import SkillReconcilePlan
+from src.ui.table import strip_ansi
 from src.workspace_service import WorkspaceReport, WorkspaceResult
 
 
@@ -210,9 +212,39 @@ class HandlerTests(unittest.TestCase):
     def test_update_dry_run_stops_before_applying(self):
         context = _context(command="update", dry_run=True, interactive=False, confirm=False)
         context.lifecycle.plan_update.return_value = _plan()
-        with redirect_stdout(io.StringIO()):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
             self.assertEqual(cli._handle_update(context), 0)
         context.lifecycle.apply_update.assert_not_called()
+        # A dry run has no prompt to close it, so it ended on the plan table.
+        self.assertIn("Dry run: nothing was changed.", buffer.getvalue())
+
+    def test_an_applied_update_opens_the_work_under_its_own_heading(self):
+        """The [STEP] lines started directly under the plan table.
+
+        The table the operator had just approved and the run that followed read
+        as one block. And the result closed on three separate summaries, the
+        last of which counted only the resync while reading as the verdict on
+        the whole update.
+        """
+        from src.models import UpdateOutcome
+
+        context = _context(command="update", dry_run=False, interactive=False, confirm=True)
+        context.lifecycle.plan_update.return_value = _plan()
+        context.lifecycle.apply_update.return_value = UpdateOutcome(
+            "applied", "Update plan applied."
+        )
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            cli._handle_update(context)
+        rendered = strip_ansi(buffer.getvalue())
+
+        self.assertIn("=== Applying update ===", rendered)
+        self.assertIn("[Legend]", rendered)
+        self.assertIn("=== Update result ===", rendered)
+        # One heading for the result, not a second one inside it.
+        self.assertNotIn("=== Workspace Resync ===", rendered)
+        self.assertEqual(1, len(re.findall(r"\d+ ok|All \d+ component", rendered)))
 
     def test_update_requires_confirmation_for_source_owned_changes(self):
         context = _context(command="update", dry_run=False, interactive=False, confirm=False)

@@ -527,10 +527,10 @@ def _counted(items) -> str:
     return f"{len(items)}: {names}" if names else "none"
 
 
-def print_reconciliation_report(result) -> None:
+def print_reconciliation_report(result) -> tuple[int, int, int]:
     """Render the final source-owned reconciliation outcome as a compact table."""
     print_section_block("── Reconciliation report ──")
-    print_table(
+    return print_table(
         [
             # `applied-with-local-changes` is twenty-six characters and this
             # column is ten, so the row read `applied-w…`. The status is the
@@ -548,7 +548,6 @@ def print_reconciliation_report(result) -> None:
         show_header=False,
         wrap_details=True,
     )
-    print()
 
 
 def print_workspace_report(result) -> None:
@@ -577,8 +576,18 @@ def print_workspace_report(result) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
-def print_workspace_resync_report(report) -> None:
-    print_header("Workspace Resync", "Agentbot › Workspace Resync")
+def print_workspace_resync_report(
+    report, *, include_header: bool = True, include_rollup: bool = True
+) -> tuple[int, int, int]:
+    """Render a resync, standalone or as part of a larger surface.
+
+    `agentbot resync` is its own surface and keeps both. The update run embeds
+    it, where a second `=== Workspace Resync ===` in the middle of the result
+    split one outcome into two screens, and a rollup counting only the resync
+    read as the rollup for the whole update.
+    """
+    if include_header:
+        print_header("Workspace Resync", "Agentbot › Workspace Resync")
     print_section_block("── Workspaces ──")
     rows: list[tuple[str, str, str]] = []
     for result in report.results:
@@ -622,7 +631,9 @@ def print_workspace_resync_report(report) -> None:
         print("  No global outputs planned.")
     # One rollup for both groups: the reader is asking whether this resync needs
     # them, and that question has one answer per surface, not one per section.
-    print_rollup(ok=ok, check=check, miss=miss)
+    if include_rollup:
+        print_rollup(ok=ok, check=check, miss=miss)
+    return ok, check, miss
 
 
 def print_workspace_list(records) -> None:
@@ -677,10 +688,16 @@ def print_update_plan(plan, *, command: str = "update") -> None:
     print_table(rows)
 
 
-def print_update_outcome(outcome) -> None:
+def print_update_outcome(outcome) -> tuple[int, int, int]:
     result = "ok" if outcome.status in {"applied", "applied-with-local-changes"} else outcome.status
-    print_table([("Update", outcome.message or outcome.status, result)], wrap_details=True)
-    print()
+    # Labelled, because an unlabelled table under a heading that already has
+    # sections below it reads as output that lost its heading.
+    print_section_block("── Outcome ──")
+    return print_table(
+        [("Update", outcome.message or outcome.status, result)],
+        show_header=False,
+        wrap_details=True,
+    )
 
 
 def print_skill_prune_report(report, *, include_manual: bool = False) -> int:

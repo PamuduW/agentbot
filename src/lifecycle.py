@@ -219,30 +219,59 @@ class Lifecycle:
             source_catalogs=catalogs,
         )
 
-    def apply_update(self, plan: UpdatePlan) -> UpdateOutcome:
+    def apply_update(
+        self,
+        plan: UpdatePlan,
+        *,
+        progress: Callable[[str, float], None] | None = None,
+    ) -> UpdateOutcome:
         if self._update_snapshot() != plan.snapshot:
             return UpdateOutcome(
                 "stale-plan",
                 "Managed state changed after preview; preview again before applying.",
             )
         if self._update_applier is None:
-            return self._apply_planned_update(plan)
+            return self._apply_planned_update(plan, progress=progress)
         return self._update_applier(plan)
 
-    def _apply_planned_update(self, plan: UpdatePlan) -> UpdateOutcome:
+    def _apply_planned_update(
+        self,
+        plan: UpdatePlan,
+        *,
+        progress: Callable[[str, float], None] | None = None,
+    ) -> UpdateOutcome:
         config = load_skills_sources(self.paths.skills_sources_file)
+        # The same shape install reports: each call names the phase starting and
+        # how long the one before it took. An apply was four phases of silence
+        # punctuated only by the skills installer's own per-source lines, so
+        # everything after the skills went unreported.
+        started = time.monotonic()
+
+        def stage_begins(message: str) -> None:
+            nonlocal started
+            if progress is None:
+                return
+            elapsed = time.monotonic() - started
+            started = time.monotonic()
+            progress(message, elapsed)
+
         try:
             with self._checkout_provider(config, plan.source_catalogs) as checkouts:
                 stage: dict[str, object] = {}
 
                 def validate_transaction() -> None:
+                    stage_begins("Reconciling skill sources")
                     self._planned_installer(self.paths, checkouts)
                     graphify = self.graphify.status()
                     if plan.graphify_action in {"setup", "refresh"}:
+                        stage_begins("Refreshing Graphify integration")
                         graphify = self.graphify.setup()
                         if graphify.state == "broken":
                             raise RuntimeError(f"Graphify: {graphify.message}")
+                    else:
+                        stage_begins("Skipping Graphify integration")
                     stage["graphify"] = graphify
+                    stage_begins("Refreshing managed workspaces")
                     workspace_report = self.resync_workspaces(apply=True)
                     if any(
                         result.status in {"conflict", "failed"}
@@ -252,6 +281,7 @@ class Lifecycle:
                     ):
                         raise RuntimeError("managed workspace or global output refresh failed")
                     stage["workspace_report"] = workspace_report
+                    stage_begins("Running diagnostics")
                     diagnostics = self.diagnostics.collect()
                     errors = [
                         issue for issue in diagnostics.issues if issue.level.lower() == "error"
@@ -262,6 +292,7 @@ class Lifecycle:
                             + "; ".join(issue.message for issue in errors)
                         )
                     stage["diagnostics"] = diagnostics
+                    stage_begins("Update complete")
 
                 reconcile = self._reconcile_applier(
                     self.paths,

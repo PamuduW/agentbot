@@ -446,6 +446,46 @@ class RollupTests(unittest.TestCase):
         self.assertEqual("  Nothing to report.", last)
 
 
+class EmbeddedResyncTests(unittest.TestCase):
+    """The resync renders standalone or inside a larger surface.
+
+    `agentbot resync` is its own screen and keeps its heading and its rollup.
+    The update run embeds it, where a second `=== Workspace Resync ===` in the
+    middle of the result split one outcome across two screens, and a rollup
+    counting only the resync read as the verdict on the whole update.
+    """
+
+    @staticmethod
+    def _report() -> WorkspaceReport:
+        return WorkspaceReport(
+            results=(
+                WorkspaceResult(
+                    path=Path("/tmp/ws"), status="applied", actions=(), message="done"
+                ),
+            ),
+            global_actions=(),
+        )
+
+    def test_standalone_keeps_its_heading_and_rollup(self):
+        text, _ = _capture(print_workspace_resync_report, self._report())
+        rendered = strip_ansi(text)
+        self.assertIn("=== Workspace Resync ===", rendered)
+        self.assertRegex(rendered, r"(\d+ ok|All \d+ component)")
+
+    def test_embedded_drops_both_and_returns_its_counts(self):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            counts = print_workspace_resync_report(
+                self._report(), include_header=False, include_rollup=False
+            )
+        rendered = strip_ansi(buffer.getvalue())
+        self.assertNotIn("=== Workspace Resync ===", rendered)
+        self.assertNotRegex(rendered, r"(\d+ ok|All \d+ component)")
+        # Handed back so the surface that embedded it can close on one rollup.
+        self.assertEqual(3, len(counts))
+        self.assertEqual(1, sum(counts))
+
+
 class WorkspaceActionResultTests(unittest.TestCase):
     """Every render-action kind the type declares, in both run modes.
 

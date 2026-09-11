@@ -247,6 +247,13 @@ def _handle_update(context: CommandContext) -> int:
     plan = context.lifecycle.plan_update()
     print_update_plan(plan, command=command)
     if bool(getattr(args, "dry_run", False)):
+        # A dry run has no prompt to close it, so it ended on the plan table.
+        # The sibling product closes its own with a sentence for the same
+        # reason; a rollup would be the wrong shape, since a plan is not a
+        # health check and "All 3 component(s) look good" says nothing true
+        # about work that has not happened.
+        print()
+        print("  Dry run: nothing was changed.")
         return 0
     if bool(getattr(args, "interactive", False)):
         if not confirm_update_plan():
@@ -260,13 +267,41 @@ def _handle_update(context: CommandContext) -> int:
         print("  confirmation_required: rerun with --yes to apply this plan")
         return 0
 
-    outcome = context.lifecycle.apply_update(plan)
-    print_update_outcome(outcome)
+    # The work phase opens with its own heading and legend, as the sibling
+    # product's `=== Upgrade ===` does. The [STEP] lines used to start directly
+    # under the plan table, so the table the operator had just approved and the
+    # run that followed it read as one block.
+    title = f"Applying {command}"
+    print_header(title, f"Agentbot › {command.capitalize()} › Applying")
+    log_legend()
+    print()
+    outcome = context.lifecycle.apply_update(plan, progress=InstallLog(
+        sentinel="Update complete"
+    ).stage)
+
+    # One result block, closing on one rollup. The outcome, the reconciliation
+    # and the resync each used to print their own, and the resync brought a
+    # second `=== Workspace Resync ===` heading with it -- so one update ended
+    # on three unrelated summaries, the last of which counted only the resync
+    # while reading as the verdict on the whole run.
+    print_header("Update result", f"Agentbot › {command.capitalize()} › Result")
+    totals = [0, 0, 0]
+
+    def tally(counts: tuple[int, int, int]) -> None:
+        for index, value in enumerate(counts):
+            totals[index] += value
+
+    tally(print_update_outcome(outcome))
     if outcome.reconcile is not None:
-        print_reconciliation_report(outcome.reconcile)
+        tally(print_reconciliation_report(outcome.reconcile))
     workspace_report = outcome.workspace_report
     if workspace_report is not None:
-        print_workspace_resync_report(workspace_report)
+        tally(
+            print_workspace_resync_report(
+                workspace_report, include_header=False, include_rollup=False
+            )
+        )
+    print_rollup(ok=totals[0], check=totals[1], miss=totals[2])
     if outcome.status not in {"applied", "applied-with-local-changes"}:
         return 1
     return 1 if _workspace_report_has_failures(workspace_report) else 0

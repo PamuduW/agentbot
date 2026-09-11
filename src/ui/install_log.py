@@ -47,9 +47,11 @@ class InstallLog:
     """
 
     #: Lifecycle's final call, which closes the last stage and opens nothing.
+    #: The update run reports "Update complete" for the same purpose.
     SENTINEL = "Install complete"
 
-    def __init__(self) -> None:
+    def __init__(self, *, sentinel: str | None = None) -> None:
+        self._sentinel = sentinel or self.SENTINEL
         self._open: str | None = None
         self._any = False
 
@@ -57,7 +59,7 @@ class InstallLog:
         if self._open is not None:
             log_line("OK", f"{self._open} ({duration(elapsed)})")
             self._open = None
-        if message == self.SENTINEL:
+        if message == self._sentinel:
             return
         # Between stages, never above the first: the heading already separates
         # the run from what came before it. Tracked apart from the open stage,

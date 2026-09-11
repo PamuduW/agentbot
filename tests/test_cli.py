@@ -722,7 +722,10 @@ class CliTests(unittest.TestCase):
         self.assertIn("Agentbot › Upgrade", stdout)
         self.assertIn("updated-skill", stdout)
         self.assertIn("removed-skill", stdout)
-        service.apply_update.assert_called_once_with(service.plan_update.return_value)
+        service.apply_update.assert_called_once()
+        self.assertEqual(
+            (service.plan_update.return_value,), service.apply_update.call_args.args
+        )
 
     def test_parser_accepts_upgrade_alias(self) -> None:
         from src.cli import build_parser
@@ -764,7 +767,10 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(0, rc)
         lifecycle.plan_update.assert_called_once_with()
-        lifecycle.apply_update.assert_called_once_with(plan)
+        # The plan is still applied exactly once, and now with the progress
+        # hook that reports each phase as it starts.
+        lifecycle.apply_update.assert_called_once()
+        self.assertEqual((plan,), lifecycle.apply_update.call_args.args)
 
     def test_parser_accepts_graphify_status_and_setup(self) -> None:
         from src.cli import build_parser
