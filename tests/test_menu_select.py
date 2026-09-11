@@ -15,6 +15,7 @@ different, and that difference is the thing worth testing.
 
 from __future__ import annotations
 
+import io
 import os
 import pty
 import threading
@@ -109,6 +110,47 @@ class MenuSelectTests(unittest.TestCase):
         self.assertEqual(choice, "status")
         choice, _ = self._run([DOWN, DOWN, DOWN, DOWN, DOWN, ENTER])
         self.assertEqual(choice, "quit")
+
+    def test_ctrl_c_cancels_instead_of_printing_a_stack_trace(self) -> None:
+        """Ctrl-C dumped a traceback across the operator's terminal.
+
+        KeyboardInterrupt is a BaseException, so the `except Exception` that
+        turns a fault into "menu unavailable" never saw it. Catching it there
+        would have been wrong too: that path exits 3, meaning "fall back to the
+        Bash loop", and someone pressing Ctrl-C is not asking for a different
+        menu. It is a cancel, which is exit 1 -- the same answer `q` gives.
+
+        The key map's `\x03` never fires for this. The reader uses cbreak,
+        which leaves ISIG on, so the terminal turns Ctrl-C into SIGINT rather
+        than delivering the byte.
+        """
+        import sys
+        from unittest import mock
+
+        from src.ui import menu_select
+
+        errors = io.StringIO()
+        with mock.patch.object(menu_select, "run", side_effect=KeyboardInterrupt()), \
+             mock.patch.object(sys, "stderr", errors):
+            rc = menu_select.main(["--menu", "main", "--cols", "80"])
+
+        self.assertEqual(1, rc)
+        self.assertEqual("", errors.getvalue())
+
+    def test_a_real_fault_still_falls_back_to_the_bash_loop(self) -> None:
+        """The other half: exit 3, one line, no stack trace."""
+        import sys
+        from unittest import mock
+
+        from src.ui import menu_select
+
+        errors = io.StringIO()
+        with mock.patch.object(menu_select, "run", side_effect=RuntimeError("no terminal")), \
+             mock.patch.object(sys, "stderr", errors):
+            rc = menu_select.main(["--menu", "main", "--cols", "80"])
+
+        self.assertEqual(3, rc)
+        self.assertIn("menu unavailable: no terminal", errors.getvalue())
 
     def test_q_cancels_and_returns_nothing(self) -> None:
         choice, _ = self._run([b"q"])

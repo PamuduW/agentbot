@@ -444,6 +444,23 @@ def main(argv: list[str] | None = None) -> int:
             print(",".join(str(flag) for flag in selection))
             return 0
         choice = run(spec)
+    except KeyboardInterrupt:
+        # Ctrl-C is a cancel, and cancelling is exit 1 -- the same answer `q`
+        # gives, so the menu closes the way it does for every other way out.
+        #
+        # It is not caught by the handler below: KeyboardInterrupt is a
+        # BaseException, so `except Exception` let it through to become a stack
+        # trace across the operator's terminal. Being caught there would have
+        # been wrong anyway -- exit 3 means "fall back to the Bash loop", and
+        # an operator pressing Ctrl-C is not asking for a different menu.
+        #
+        # The key mapping's `\x03` never fires for this: the reader uses
+        # cbreak, which leaves ISIG on, so the terminal turns Ctrl-C into
+        # SIGINT rather than delivering the byte. Both paths mean cancel.
+        #
+        # The terminal mode and the cursor are already restored by the `finally`
+        # inside run(), which a KeyboardInterrupt runs on its way out.
+        return 1
     except Exception as error:
         # One line, not a stack trace: exit 3 means "use the Bash loop", the
         # caller does exactly that, and a traceback in the middle of a menu is
