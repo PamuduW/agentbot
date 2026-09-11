@@ -393,7 +393,51 @@ test_full_runs_install_then_update_with_one_restart_budget() (
 	[[ "$rc" -eq 23 && ! -s "$events" ]]
 )
 
+test_full_reports_each_stage_to_a_caller_that_asks() (
+	# `agentbot full` is one command to whoever ran it, so a Dotfiles full
+	# update could only time it as one section while both halves printed their
+	# own timing. One "<label> <seconds>" line per stage, written only when
+	# AGENTBOT_TIMING_FILE names somewhere to write.
+	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
+	local file="$TEST_ROOT/full-timing.txt"
+	: >"$file"
+	run_install() { :; }
+	check_skills_deps() { :; }
+	run_update_backend_as() { :; }
+
+	AGENTBOT_TIMING_FILE="$file" run_full >/dev/null 2>&1 || return 1
+	# Both stages, in the order they ran, whatever they measured.
+	[[ "$(awk '{print $1}' "$file" | tr '\n' ' ')" == 'install update ' ]] || return 1
+	awk '{print $2}' "$file" | grep -qvE '^[0-9]+$' && return 1
+
+	# Unset, nothing is written and the run is unchanged.
+	: >"$file"
+	run_full >/dev/null 2>&1 || return 1
+	[[ ! -s "$file" ]]
+)
+
+test_a_restarted_stage_reports_the_attempt_that_finished() (
+	# A repository change restarts the stage. The abandoned attempt's clock is
+	# not the stage's.
+	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
+	local file="$TEST_ROOT/full-restart-timing.txt" attempts=0
+	: >"$file"
+	run_install() {
+		attempts=$((attempts + 1))
+		((attempts == 1)) && return 2
+		return 0
+	}
+	check_skills_deps() { :; }
+	run_update_backend_as() { :; }
+
+	AGENTBOT_TIMING_FILE="$file" run_full >/dev/null 2>&1 || return 1
+	# One install line, not two: the restart wrote nothing.
+	[[ "$(grep -c '^install ' "$file")" -eq 1 ]]
+)
+
 check 'full runs install then update with a one-restart budget' test_full_runs_install_then_update_with_one_restart_budget
+check 'full reports each stage to a caller that asks' test_full_reports_each_stage_to_a_caller_that_asks
+check 'a restarted stage reports the attempt that finished' test_a_restarted_stage_reports_the_attempt_that_finished
 check 'repo gate short-circuits stopped and changed-repository states' test_repo_gate_short_circuits_unsafe_states
 check 'dirty update reports changes and remote history before blocking backend work' test_dirty_state_reports_changes_remote_history_and_blocks_backend
 check 'dirty current repository reports verified current and stops' test_dirty_current_reports_verified_current_and_stops

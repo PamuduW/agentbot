@@ -361,11 +361,28 @@ run_update_backend_as() {
 # only extra rule is the restart budget: a repository change may legitimately
 # happen once (the checkout moved forward and this process is running the old
 # code), so the stage is retried from the new checkout exactly once.
+# Per-stage wall clock, for a caller that is sequencing this run.
+#
+# `agentbot full` is one command to whoever invoked it, so a Dotfiles full
+# update could only time it as one section -- while both halves report their own
+# timing on screen. AGENTBOT_TIMING_FILE is the channel: one "<label> <seconds>"
+# line per stage, appended. Unset, nothing is written and nothing changes.
+agentbot_record_timing() {
+	[[ -n "${AGENTBOT_TIMING_FILE:-}" ]] || return 0
+	printf '%s %s\n' "$1" "$2" >>"$AGENTBOT_TIMING_FILE" 2>/dev/null || true
+	return 0
+}
+
+_agentbot_now_seconds() {
+	printf '%s\n' "${EPOCHSECONDS:-$(date +%s)}"
+}
+
 run_full() {
-	local stage rc restarts=0
+	local stage rc restarts=0 stage_started
 	for stage in install update; do
 		while true; do
 			rc=0
+			stage_started="$(_agentbot_now_seconds)"
 			case "$stage" in
 			install) run_install || rc=$? ;;
 			update)
@@ -373,6 +390,11 @@ run_full() {
 				run_update_backend_as update --yes || rc=$?
 				;;
 			esac
+			# Recorded on the attempt that finished it, so a restart does not
+			# report the abandoned attempt's clock as the stage's.
+			((rc == 0)) &&
+				agentbot_record_timing "$stage" \
+					"$(($(_agentbot_now_seconds) - stage_started))"
 			case "$rc" in
 			0) break ;;
 			2)

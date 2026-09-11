@@ -178,8 +178,13 @@ agentbot_repo_update_print_changed() {
 		green=$'\033[32m'
 		reset=$'\033[0m'
 	fi
-	printf '  %sRepository fast-forward succeeded%s\n\n' "$green" "$reset"
-	printf '  Run setup again when ready.\n'
+	printf '  %sRepository fast-forward succeeded%s\n' "$green" "$reset"
+	# The advice is for an operator who has to act. A run being sequenced by
+	# something else restarts itself, so telling them to run setup again is
+	# both wrong and the loudest line on that part of the screen.
+	if ! declare -F bootstrap_quiet >/dev/null 2>&1 || ! bootstrap_quiet; then
+		printf '\n  Run setup again when ready.\n'
+	fi
 }
 
 agentbot_repo_update_print_recovery() {
