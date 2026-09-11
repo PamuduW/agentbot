@@ -39,7 +39,7 @@ from .ui import (
     print_workspace_report,
     print_workspace_resync_report,
 )
-from .ui.install_log import InstallLog, log_legend
+from .ui.install_log import InstallLog, log_legend, print_timing
 from .ui.table import CollapseBlankLines
 from .workspace_render import WORKSPACE_TARGETS
 
@@ -271,9 +271,8 @@ def _handle_update(context: CommandContext) -> int:
     print_header(f"Planning {command}", f"Agentbot › {command.capitalize()} › Planning")
     log_legend()
     print()
-    plan = context.lifecycle.plan_update(
-        progress=InstallLog(sentinel="Plan complete").stage
-    )
+    planning = InstallLog(sentinel="Plan complete")
+    plan = context.lifecycle.plan_update(progress=planning.stage)
     print_update_plan(plan, command=command)
     if bool(getattr(args, "dry_run", False)):
         # A dry run has no prompt to close it, so it ended on the plan table.
@@ -304,9 +303,16 @@ def _handle_update(context: CommandContext) -> int:
     print_header(title, f"Agentbot › {command.capitalize()} › Applying")
     log_legend()
     print()
-    outcome = context.lifecycle.apply_update(plan, progress=InstallLog(
-        sentinel="Update complete"
-    ).stage)
+    applying = InstallLog(sentinel="Update complete")
+    outcome = context.lifecycle.apply_update(plan, progress=applying.stage)
+    # Planning and applying are one run to the operator, so they are one
+    # summary: the eight seconds spent reading twelve sources belongs in the
+    # total beside the work it was deciding about.
+    print_timing(
+        command.capitalize(),
+        {**planning.seconds, **applying.seconds},
+        planning.total + applying.total,
+    )
 
     # One result block, closing on one rollup. The outcome, the reconciliation
     # and the resync each used to print their own, and the resync brought a
@@ -707,6 +713,31 @@ def _open_update_tty_stream(*, descriptor_name: str, path_name: str, mode: str):
     return open(path, mode, encoding="utf-8")
 
 
+#: Marks a line the menu's relay must print without its trailing newline. See
+#: _TUI_KEEP_CURSOR in scripts/lib/tui.sh.
+_KEEP_CURSOR = "\x17"
+
+
+def _ask(question: str) -> None:
+    """Write a question at the left edge and leave the cursor beside it.
+
+    Under the menu, stdout is piped through a Bash relay that reads whole
+    lines, so a question with no trailing newline would sit unread in it until
+    the process exited. The line is terminated for the relay and marked, and
+    the relay drops the newline again. Without the relay stdout is the
+    terminal, where simply not writing a newline does the same thing.
+
+    The indent belongs here rather than to each caller: passed in, it is inside
+    a variable, and the sweep in tests/test_left_edge.sh reads format strings.
+    It cannot see an indent it is not shown, and was right not to trust one.
+    """
+    if os.environ.get("AGENTBOT_TUI"):
+        print(f"  {question}{_KEEP_CURSOR}")
+    else:
+        print(f"  {question}", end="")
+    sys.stdout.flush()
+
+
 def confirm_update_plan() -> bool:
     """Ask on the same stream the report was printed to, and read the terminal.
 
@@ -726,8 +757,7 @@ def confirm_update_plan() -> bool:
     descriptor: stdin belongs to the pipeline, not to the operator.
     """
     print()
-    print("  Apply this Agentbot update plan? [y/N]")
-    sys.stdout.flush()
+    _ask("Apply this Agentbot update plan? [y/N]: ")
     with _open_update_tty_stream(
         descriptor_name="AGENTBOT_UPDATE_TTY_IN_FD",
         path_name="AGENTBOT_UPDATE_TTY_INPUT",
@@ -909,10 +939,9 @@ def run_agentbot_install(
     # and [OK] lines with no cursor control, so a pipe degrades cleanly rather
     # than losing them -- and the piped case is `dotfiles full-update`, which is
     # where the silence this progress exists to fix was longest.
-    outcome = lifecycle.install(
-        progress=InstallLog().stage,
-        components=components,
-    )
+    log = InstallLog()
+    outcome = lifecycle.install(progress=log.stage, components=components)
+    print_timing("Install", log.seconds, log.total)
     skills_rc = print_skills_report(list(outcome.skills), title="Skills install")
     print_output_refresh_report(
         linked=outcome.outputs.claude_linked,

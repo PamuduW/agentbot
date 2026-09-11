@@ -101,10 +101,25 @@ _tui_color_backend_line() {
 	printf '%s%s' "$line" "$terminator"
 }
 
+# A backend line that must not end in a newline, marked because it cannot
+# simply omit one.
+#
+# The relay below reads whole lines, so a question written without a trailing
+# newline would sit in it until the process exited -- which is how the update
+# prompt ended up on its own line, with the operator's answer at column zero.
+# The backend terminates the line so the relay sees it immediately, and marks
+# it so the relay drops the newline again on the way out. The cursor stays
+# beside the question.
+_TUI_KEEP_CURSOR=$'\x17'
+
 _tui_color_backend_stream() {
 	local line=''
 	while IFS= read -r line; do
-		_tui_color_backend_line "$line" $'\n'
+		if [[ "$line" == *"$_TUI_KEEP_CURSOR" ]]; then
+			_tui_color_backend_line "${line%"$_TUI_KEEP_CURSOR"}" ''
+		else
+			_tui_color_backend_line "$line" $'\n'
+		fi
 	done
 	[[ -z "$line" ]] || _tui_color_backend_line "$line" ''
 }

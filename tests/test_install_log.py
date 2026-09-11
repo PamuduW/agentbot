@@ -11,7 +11,14 @@ import unittest
 from contextlib import redirect_stdout
 from itertools import pairwise
 
-from src.ui.install_log import RULE, InstallLog, duration, log_legend
+from src.ui.install_log import (
+    RULE,
+    SLOWEST_ROWS,
+    InstallLog,
+    duration,
+    log_legend,
+    print_timing,
+)
 
 #: What Lifecycle.install hands the progress callback, in order. Each call names
 #: the stage starting and how long the previous one took.
@@ -95,6 +102,62 @@ class InstallLogTests(unittest.TestCase):
         self.assertEqual("41s", duration(41.9))
         self.assertEqual("1m 05s", duration(65))
         self.assertEqual("10m 00s", duration(600))
+
+
+class TimingTests(unittest.TestCase):
+    """The block the sibling product closes its install with.
+
+    A full update prints both products' runs into one terminal, so the two say
+    this the same way or the screen reads as two conventions.
+    """
+
+    def _timing(self, seconds, total) -> list[str]:
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            print_timing("Install", seconds, total)
+        return [line for line in buffer.getvalue().splitlines() if line.strip()]
+
+    def test_the_heading_names_the_total_and_the_rows_are_slowest_first(self):
+        lines = self._timing({"slow": 41.0, "quick": 3.0, "middle": 9.0}, 53.0)
+        self.assertEqual("  Install took 0m 53s. Slowest phases:", lines[0])
+        self.assertEqual(
+            ["     0m 41s  slow", "     0m 09s  middle", "     0m 03s  quick"], lines[1:]
+        )
+
+    def test_a_phase_that_rounds_to_nothing_says_nothing(self):
+        lines = self._timing({"real": 2.0, "instant": 0.4}, 3.0)
+        self.assertEqual(["  Install took 0m 03s. Slowest phases:", "     0m 02s  real"], lines)
+
+    def test_the_list_is_capped(self):
+        seconds = {f"phase {index}": float(20 - index) for index in range(12)}
+        self.assertEqual(SLOWEST_ROWS, len(self._timing(seconds, 200.0)) - 1)
+
+    def test_nothing_measured_prints_nothing(self):
+        self.assertEqual([], self._timing({}, 0.0))
+
+    def test_the_run_records_every_phase_and_the_setup_before_the_first(self):
+        """The total covers work no phase owns, or it is not the total.
+
+        An apply spends most of its time re-cloning sources before the first
+        named phase begins; unnamed, that showed up only as the gap between the
+        heading and the rows under it.
+        """
+        log = InstallLog()
+        for message, elapsed in _A_RUN:
+            log.stage(message, elapsed)
+        self.assertEqual(
+            {
+                "Installing skill sources": 41.4,
+                "Refreshing Graphify integration": 0.2,
+                "Refreshing managed outputs": 0.9,
+                "Running diagnostics": 1.2,
+            },
+            log.seconds,
+        )
+        self.assertAlmostEqual(sum(elapsed for _, elapsed in _A_RUN), log.total)
+        # Skipping Boost closed nothing, so it owns no time and the run still
+        # accounts for the moment it took.
+        self.assertGreater(log.total, sum(log.seconds.values()))
 
 
 if __name__ == "__main__":

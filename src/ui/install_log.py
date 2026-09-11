@@ -15,6 +15,8 @@ the way to the terminal, so nothing here emits escapes.
 
 from __future__ import annotations
 
+from .table import ORANGE, _c
+
 # The same four words, in the same order, as the sibling product's legend.
 LEGEND = "[Legend] STEP=starting  OK=completed  SKIP=already satisfied  WARN=needs attention"
 # Forty dashes, as log_component_rule draws.
@@ -39,6 +41,41 @@ def duration(seconds: float) -> str:
     return f"{whole // 60}m {whole % 60:02d}s" if whole >= 60 else f"{whole}s"
 
 
+def clock(seconds: float) -> str:
+    """`0m 41s`, always both units.
+
+    The timing block writes every row this way so a column of them lines up and
+    compares; `duration` above drops the minutes when there are none, which
+    reads better mid-sentence and worse in a column.
+    """
+    whole = int(seconds)
+    return f"{whole // 60}m {whole % 60:02d}s"
+
+
+#: How many rows the slowest-first list shows. Enough to tell a network-bound
+#: phase from a slow one without turning a summary into a profile.
+SLOWEST_ROWS = 6
+
+
+def print_timing(label: str, seconds: dict[str, float], total: float) -> None:
+    """`<label> took 0m 19s. Slowest phases:` and the slowest handful.
+
+    The shape the sibling product closes its install with, so a full update --
+    which prints both products' runs into one terminal -- reads as one report
+    rather than two conventions.
+    """
+    if not seconds:
+        return
+    print()
+    print(f"  {_c(f'{label} took {clock(total)}. Slowest phases:', ORANGE)}")
+    ranked = sorted(seconds.items(), key=lambda item: item[1], reverse=True)
+    for name, elapsed in ranked[:SLOWEST_ROWS]:
+        # Whole seconds, so a phase that rounds to nothing says nothing.
+        if int(elapsed) <= 0:
+            continue
+        print(f"    {clock(elapsed):>7}  {name}")
+
+
 class InstallLog:
     """Opens a stage on `[STEP]` and closes the same stage by name on `[OK]`.
 
@@ -54,9 +91,16 @@ class InstallLog:
         self._sentinel = sentinel or self.SENTINEL
         self._open: str | None = None
         self._any = False
+        #: Wall-clock per named phase, and for the whole run. The total counts
+        #: the setup before the first phase too, which belongs to the run even
+        #: though no phase owns it.
+        self.seconds: dict[str, float] = {}
+        self.total = 0.0
 
     def stage(self, message: str, elapsed: float) -> None:
+        self.total += elapsed
         if self._open is not None:
+            self.seconds[self._open] = self.seconds.get(self._open, 0.0) + elapsed
             log_line("OK", f"{self._open} ({duration(elapsed)})")
             self._open = None
         if message == self._sentinel:

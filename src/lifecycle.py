@@ -276,6 +276,12 @@ class Lifecycle:
             progress(message, elapsed)
 
         try:
+            # Named, because it is usually the longest thing an apply does and
+            # it was the one part no phase owned: the provider re-clones every
+            # source and verifies each against the revision the plan recorded.
+            # Unnamed, it showed up only as the gap between the total and the
+            # phases that were listed.
+            stage_begins("Verifying source checkouts")
             with self._checkout_provider(config, plan.source_catalogs) as checkouts:
                 stage: dict[str, object] = {}
 
