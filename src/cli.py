@@ -6,7 +6,6 @@ import json
 import os
 import sys
 from collections.abc import Callable
-from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -709,25 +708,33 @@ def _open_update_tty_stream(*, descriptor_name: str, path_name: str, mode: str):
 
 
 def confirm_update_plan() -> bool:
-    with ExitStack() as streams:
-        output_stream = streams.enter_context(
-            _open_update_tty_stream(
-                descriptor_name="AGENTBOT_UPDATE_TTY_OUT_FD",
-                path_name="AGENTBOT_UPDATE_TTY_OUTPUT",
-                mode="a",
-            )
-        )
-        output_stream.write("\nApply this Agentbot update plan? [y/N] ")
-        output_stream.flush()
-        input_stream = streams.enter_context(
-            _open_update_tty_stream(
-                descriptor_name="AGENTBOT_UPDATE_TTY_IN_FD",
-                path_name="AGENTBOT_UPDATE_TTY_INPUT",
-                mode="r",
-            )
-        )
+    """Ask on the same stream the report was printed to, and read the terminal.
+
+    The question used to be written straight to the terminal descriptor while
+    the report went to stdout. Under the menu those are not the same path:
+    tui_run_to_output pipes stdout through a Bash relay that re-reads it line by
+    line, and the relay lags. The question overtook the report it was asking
+    about and landed inside it, between a heading and its breadcrumb.
+
+    Printed to stdout it cannot overtake anything, because one stream carries
+    both in order. It ends with a newline for the same reason the relay needs
+    one: `while IFS= read -r line` holds a partial line until end of input, so
+    a question with the cursor left on its own line would not appear until the
+    process had already exited.
+
+    The answer still comes from the terminal, which is the point of the
+    descriptor: stdin belongs to the pipeline, not to the operator.
+    """
+    print()
+    print("  Apply this Agentbot update plan? [y/N]")
+    sys.stdout.flush()
+    with _open_update_tty_stream(
+        descriptor_name="AGENTBOT_UPDATE_TTY_IN_FD",
+        path_name="AGENTBOT_UPDATE_TTY_INPUT",
+        mode="r",
+    ) as input_stream:
         answer = input_stream.readline().strip()
-        return answer.lower() in {"y", "yes"}
+    return answer.lower() in {"y", "yes"}
 
 
 def parse_workspace_targets(value: str | None) -> tuple[str, ...] | None:

@@ -183,7 +183,9 @@ EOF
 	exec {AGENTBOT_TUI_IN_FD}<&-
 	exec {AGENTBOT_TUI_OUT_FD}>&-
 	[[ "$rc" -eq 0 ]] || return 1
-	[[ "$(<"$output")" == *'Apply this Agentbot update plan? [y/N] '* && "$(<"$output")" == *'Update cancelled.'* ]]
+	# Both the question and the outcome reach the operator through the menu's
+	# output seam, which is where the backend's stdout is relayed to.
+	[[ "$(<"$output")" == *'Apply this Agentbot update plan? [y/N]'* && "$(<"$output")" == *'Update cancelled.'* ]]
 )
 
 test_workspace_removal_prompt_uses_the_shared_tty_adapter() (

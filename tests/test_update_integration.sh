@@ -255,8 +255,19 @@ if not confirm_update_plan():
 	exec {AGENTBOT_UPDATE_TTY_IN_FD}<&-
 	exec {AGENTBOT_UPDATE_TTY_OUT_FD}>&-
 	[[ "$rc" -eq 0 && ! -s "$errors" ]] || return 1
-	[[ "$(<"$output")" == *'Apply this Agentbot update plan? [y/N] '* ]]
-	[[ "$(<"$TEST_ROOT/current-plan.stdout")" == *'Update cancelled.'* ]]
+	# The question goes to stdout, with the report, and the answer still comes
+	# from the terminal descriptor. Written to the terminal instead, it raced
+	# the report: under the menu, stdout is piped through a Bash relay that
+	# re-reads it line by line, and the question overtook the report it was
+	# asking about -- landing between a heading and its breadcrumb.
+	local plan_output
+	plan_output="$(<"$TEST_ROOT/current-plan.stdout")"
+	[[ "$plan_output" == *'Apply this Agentbot update plan? [y/N]'* ]] || return 1
+	[[ "$plan_output" == *'Update cancelled.'* ]] || return 1
+	# Asked after the report is printed, never inside it.
+	[[ "${plan_output#*'=== Update report ==='}" == *'Apply this Agentbot update plan?'* ]] || return 1
+	# Nothing of the question is left on the terminal stream.
+	[[ "$(<"$output")" != *'Apply this Agentbot update plan?'* ]]
 )
 
 test_repo_update_table_honors_tui_color_mode() (
