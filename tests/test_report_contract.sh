@@ -40,6 +40,15 @@ surface_output_tty() {
 		"$ROOT/bin/agentbot" "$@" 2>&1
 }
 
+# What a rollup looks like, in one place.
+#
+# This was written out at each of the three places that look for one, and the
+# copies went stale: `Nothing to report.` was added for a surface with no
+# counted rows and none of them learned it. Every surface on a developer's
+# machine has rows, so the gate passed locally and CI -- a bare machine, where
+# cli-config, vscode and workspaces find nothing at all -- failed on all three.
+ROLLUP='([0-9]+ ok|All [0-9]+ component|Nothing to report\.)'
+
 # Read-only surfaces only: this must never mutate the machine it runs on.
 SURFACES=(
 	'status'
@@ -58,7 +67,7 @@ test_every_surface_closes_with_a_rollup() {
 	for surface in "${SURFACES[@]}"; do
 		# shellcheck disable=SC2086  # Surfaces carry their subcommand.
 		output="$(surface_output $surface)"
-		grep -qE '^  ([0-9]+ ok|All [0-9]+ component)' <<<"$output" ||
+		grep -qE "^  $ROLLUP" <<<"$output" ||
 			missing+=" [$surface]"
 	done
 	[[ -z "$missing" ]] || {
@@ -88,7 +97,7 @@ test_the_contract_holds_under_a_tty_too() {
 	for surface in "${SURFACES[@]}"; do
 		# shellcheck disable=SC2086
 		output="$(surface_output_tty $surface)"
-		grep -qE '[0-9]+ ok|All [0-9]+ component' <<<"$output" || missing+=" [$surface]"
+		grep -qE "$ROLLUP" <<<"$output" || missing+=" [$surface]"
 		# Colour is the thing a TTY changes, so its absence here would mean the
 		# interactive path is silently rendering the piped output.
 		[[ "$output" == *$'\033'* ]] || uncoloured+=" [$surface]"
@@ -147,6 +156,29 @@ test_no_surface_ends_on_a_blank_line() {
 	}
 }
 
+# The same contract on a machine with nothing installed.
+#
+# A developer's machine has every integration present, so every surface has
+# rows and the empty case never renders. CI's does not, and three surfaces --
+# cli-config, vscode, workspaces -- find nothing there at all. That is where
+# the `Nothing to report.` rollup appears, and it is how a rollup form the
+# checks above did not know reached main: the gate passed locally on every run.
+test_the_contract_holds_on_a_bare_machine() {
+	local surface output last home missing=''
+	home="$(mktemp -d)"
+	for surface in "${SURFACES[@]}"; do
+		# shellcheck disable=SC2086
+		output="$(HOME="$home" XDG_CONFIG_HOME="$home/.config" surface_output $surface)"
+		last="$(grep -v '^[[:space:]]*$' <<<"$output" | tail -1)"
+		grep -qE "^  $ROLLUP" <<<"$last" || missing+=" [$surface: ${last# }]"
+	done
+	rm -rf -- "$home"
+	[[ -z "$missing" ]] || {
+		printf '   surfaces not closing on a rollup with nothing installed:%s\n' "$missing" >&2
+		return 1
+	}
+}
+
 test_no_surface_doubles_a_blank_line() {
 	local surface output doubled=''
 	for surface in "${SURFACES[@]}"; do
@@ -170,7 +202,7 @@ test_the_rollup_is_the_last_line() {
 		# shellcheck disable=SC2086
 		output="$(surface_output $surface)"
 		last="$(grep -v '^[[:space:]]*$' <<<"$output" | tail -1)"
-		grep -qE '^  ([0-9]+ ok|All [0-9]+ component)' <<<"$last" ||
+		grep -qE "^  $ROLLUP" <<<"$last" ||
 			wrong+=" [$surface: ${last# }]"
 	done
 	[[ -z "$wrong" ]] || {
@@ -214,6 +246,7 @@ check 'every result word is in the vocabulary' test_every_result_word_is_in_the_
 check 'the rollup is the last line of every surface' test_the_rollup_is_the_last_line
 check 'no surface doubles a blank line' test_no_surface_doubles_a_blank_line
 check 'no surface ends on a blank line' test_no_surface_ends_on_a_blank_line
+check 'the contract holds on a bare machine' test_the_contract_holds_on_a_bare_machine
 
 printf '\nRan %d report-contract test(s); %d failure(s).\n' "$((passed + failed))" "$failed"
 ((failed == 0))
