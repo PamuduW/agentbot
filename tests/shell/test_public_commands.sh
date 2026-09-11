@@ -87,6 +87,55 @@ test_dispatch_matrix() (
 	[[ "$(<"$calls")" == $'menu\nbackend:status\nbackend:install\nbackend:doctor\ntoken\nbackend:graphify status\nbackend:update\nbackend:boot --cursor /tmp/project\nbackend:workspace /tmp/project\nbackend:workspaces\nbackend:resync --all' ]]
 )
 
+test_install_menu_routes_to_the_component_selector() (
+	# Break caught: the only way to reach the selector was the main menu, so a
+	# caller that had already decided on an install had to hand the operator
+	# Check Status, Prune Skills and Quit alongside it.
+	AGENTBOT_SOURCE_ONLY=1 source "$AGENTBOT"
+	local calls="$TEST_ROOT/install-menu.calls"
+	: >"$calls"
+	agentbot_has_tty() { return 0; }
+	agentbot_run_backend() {
+		printf 'backend:%s\n' "$*" >>"$calls"
+	}
+	agentbot_load_menu() { AGENTBOT_MENU_LOADED=1; }
+	tui_init_colors() { :; }
+	tui_clear() { :; }
+	agentbot_menu_components() { printf 'selector\n' >>"$calls"; }
+	agentbot_main install --menu || exit 1
+	agentbot_main install --components skills || exit 1
+	[[ "$(<"$calls")" == $'selector\nbackend:install --components skills' ]]
+)
+
+test_install_menu_reports_a_cancelled_selection_distinctly() (
+	# Backing out installs nothing. A caller sequencing this must be able to
+	# tell that from a completed install, or it records a phase that never ran.
+	AGENTBOT_SOURCE_ONLY=1 source "$AGENTBOT"
+	agentbot_has_tty() { return 0; }
+	agentbot_load_menu() { AGENTBOT_MENU_LOADED=1; }
+	tui_init_colors() { :; }
+	tui_clear() { :; }
+	agentbot_menu_components() { AGENTBOT_INSTALL_SELECTION_CANCELLED=true; }
+	local rc=0
+	agentbot_main install --menu || rc=$?
+	[[ "$rc" -eq "$AGENTBOT_INSTALL_MENU_CANCELLED_RC" ]] || exit 1
+
+	agentbot_menu_components() {
+		AGENTBOT_INSTALL_SELECTION_CANCELLED=true
+		return 2
+	}
+	rc=0
+	agentbot_main install --menu || rc=$?
+	# A moved checkout outranks the flag: the caller has to restart, not skip.
+	[[ "$rc" -eq 2 ]]
+)
+
+test_install_menu_needs_a_terminal() (
+	local output rc=0
+	output="$(AGENTBOT_TTY=0 "$AGENTBOT" install --menu 2>&1)" || rc=$?
+	[[ "$rc" -ne 0 && "$output" == *'needs a controlling TTY'* ]]
+)
+
 test_token_route_loads_existing_menu() (
 	AGENTBOT_SOURCE_ONLY=1 source "$AGENTBOT"
 	local calls="$TEST_ROOT/token-route.calls"
@@ -375,6 +424,9 @@ check 'symlink invocation resolves the owning repository' test_symlink_resolves_
 check 'public dispatcher preserves commands and exit statuses' test_dispatch_matrix
 check 'every public command in the help index has a launcher route' test_every_public_command_reaches_a_route
 check 'token command opens the existing token menu' test_token_route_loads_existing_menu
+check 'install --menu routes to the component selector' test_install_menu_routes_to_the_component_selector
+check 'install --menu reports a cancelled selection distinctly' test_install_menu_reports_a_cancelled_selection_distinctly
+check 'install --menu needs a terminal' test_install_menu_needs_a_terminal
 check 'install.sh forwards public commands unchanged' test_install_forwards_public_commands
 check 'install.sh forwards a component selection' test_install_forwards_a_component_selection
 check 'boot selectors render safely and invalid input is atomic' test_boot_selectors_and_atomic_validation

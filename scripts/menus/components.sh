@@ -134,11 +134,19 @@ agentbot_menu_components() {
 	# selection does not have to leave the menu and start again.
 	while true; do
 		_agentbot_components_prepare
-		agentbot_checkbox_run || return 0
+		# Backing out is not a failure inside the menu -- the operator lands
+		# back on it. It is also not an install, which a caller driving this
+		# screen on its own has to be able to tell apart from one; the flag is
+		# how, and the menu ignores it.
+		agentbot_checkbox_run || {
+			AGENTBOT_INSTALL_SELECTION_CANCELLED=true
+			return 0
+		}
 
 		selection="$(agentbot_components_selection)"
 		if [[ -z "$selection" ]]; then
 			printf '  %sNothing selected; install cancelled.%s\n' "${C_DIM:-}" "${C_RESET:-}"
+			AGENTBOT_INSTALL_SELECTION_CANCELLED=true
 			return 0
 		fi
 
@@ -150,7 +158,10 @@ agentbot_menu_components() {
 			plan_rc=0
 			continue
 			;;
-		*) return 0 ;;
+		*)
+			AGENTBOT_INSTALL_SELECTION_CANCELLED=true
+			return 0
+			;;
 		esac
 	done
 

@@ -42,6 +42,35 @@ agentbot_run_token() {
 	agentbot_load_menu
 	agentbot_token_config_menu
 }
+
+# capability: install-menu
+#
+# The component selector, the execution plan, and the install run -- the three
+# screens the main menu's Install entry drives -- reachable without the main
+# menu. A caller that has already decided the operator is installing Agentbot
+# -- the Dotfiles bootstrap does -- needs that sequence, not a menu offering Check
+# Status, Prune Skills and Quit alongside it.
+#
+# AGENTBOT_TUI is what the menu loop exports, and the selector reads it to pick
+# its output seam; setting it here is what makes the standalone entry draw the
+# same screens. No trailing pause: the caller continues straight into its next
+# step, and a keypress between them buys nothing.
+AGENTBOT_INSTALL_MENU_CANCELLED_RC=4
+agentbot_run_install_menu() {
+	local rc=0
+	agentbot_load_menu
+	export AGENTBOT_TUI=1
+	tui_init_colors
+	AGENTBOT_INSTALL_SELECTION_CANCELLED=false
+	tui_clear
+	agentbot_menu_components || rc=$?
+	# Quitting the selector is a legitimate answer, but it is not an install.
+	# Reported distinctly so a caller does not record a phase that never ran.
+	if ((rc == 0)) && [[ "${AGENTBOT_INSTALL_SELECTION_CANCELLED:-false}" == true ]]; then
+		return "$AGENTBOT_INSTALL_MENU_CANCELLED_RC"
+	fi
+	return "$rc"
+}
 agentbot_run_backend() { "$AGENTBOT_HOME/install.sh" "$@"; }
 
 agentbot_usage() {
@@ -57,7 +86,17 @@ agentbot_main() {
 			agentbot_run_menu
 		else agentbot_die 'No usable controlling TTY. Use agentbot help or an explicit command such as agentbot install.'; fi
 		;;
-	status | install | full | doctor) agentbot_run_backend "$command" "$@" ;;
+	install)
+		if [[ "${1:-}" == --menu ]]; then
+			shift
+			agentbot_has_tty ||
+				agentbot_die 'agentbot install --menu needs a controlling TTY. Use agentbot install.'
+			agentbot_run_install_menu "$@"
+		else
+			agentbot_run_backend install "$@"
+		fi
+		;;
+	status | full | doctor) agentbot_run_backend "$command" "$@" ;;
 	boot) agentbot_run_backend "$command" "$@" ;;
 	workspace | workspaces | resync) agentbot_run_backend "$command" "$@" ;;
 	graphify | boost) agentbot_run_backend "$command" "$@" ;;
