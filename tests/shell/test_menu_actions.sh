@@ -379,34 +379,6 @@ test_failed_actions_are_red() (
 	[[ "$rc" -eq 17 && "$output" == *$'\033[31mAction failed (exit 17).\033[0m'* ]]
 )
 
-test_platform_menu_owns_its_pause() (
-	# Platform pauses after every action inside its own loop but never said so,
-	# so the parent added a second one: leaving with `q` cost two keystrokes,
-	# the second on a screen the operator had already left. Every other submenu
-	# that pauses for itself declares it; this one was missed.
-	local calls="$TEST_ROOT/platform-pause.calls"
-	: >"$calls"
-	local opened=''
-	local index=0
-	local -a choices=(platform quit)
-	agentbot_menu_run() {
-		if [[ "${1:-}" == platform ]]; then
-			# One action, then `q` -- which the runner reports as a cancel.
-			[[ -n "$opened" ]] && return 1
-			opened=1
-			MENU_SIMPLE_RESULT='vscode-status'
-			return 0
-		fi
-		MENU_SIMPLE_RESULT="${choices[$index]}"
-		index=$((index + 1))
-	}
-	tui_clear() { :; }
-	tui_pause() { printf 'pause\n' >>"$calls"; }
-	agentbot_run_backend() { printf 'backend:%s\n' "$*" >>"$calls"; }
-	agentbot_menu_loop
-	[[ "$(<"$calls")" == $'backend:vscode status\npause' ]]
-)
-
 test_undeclared_submenu_still_gets_a_parent_pause() (
 	local calls="$TEST_ROOT/undeclared-pause.calls"
 	: >"$calls"
@@ -450,7 +422,7 @@ test_component_selector_carries_nothing_over_from_prune() (
 
 	_agentbot_components_prepare
 
-	[[ "${#MENU_CB_DESCS[@]}" -eq 3 ]] || return 1
+	[[ "${#MENU_CB_DESCS[@]}" -eq "${#AGENTBOT_COMPONENT_KEYS[@]}" ]] || return 1
 	[[ "${MENU_CB_DESCS[*]}" != *prune* ]] || return 1
 	# The hooks matter more than the text: left set, they force the checkbox
 	# onto the Bash fallback loop and call Prune's callbacks on a toggle here.
@@ -548,7 +520,6 @@ check 'Workspaces routes list preview and confirmed apply' test_workspaces_route
 check 'declined workspace apply performs no backend write' test_declined_workspace_apply_is_non_destructive
 check 'workspace removal prompts use the shared TTY adapter' test_workspace_removal_prompt_uses_the_shared_tty_adapter
 check 'failed menu actions use the shared red treatment' test_failed_actions_are_red
-check 'the Platform submenu owns its own pause' test_platform_menu_owns_its_pause
 
 test_harness_verify_safety || failed=$((failed + 1))
 printf '\nRan %d menu-action test(s); %d failure(s).\n' "$((passed + failed))" "$failed"

@@ -110,6 +110,11 @@ class LifecycleTests(unittest.TestCase):
                 "Refreshing Graphify integration",
                 "Configuring Boost integration",
                 "Refreshing managed outputs",
+                # The editor and CLI surfaces, which were a Platform submenu
+                # until they became install components.
+                "Refreshing VS Code",
+                "Refreshing the Cursor statusline",
+                "Refreshing CLI configuration",
                 "Running diagnostics",
                 # Closes off the last stage, so its duration is reported too.
                 "Install complete",

@@ -138,6 +138,7 @@ def print_status_summary(
     manual_skill_count: int = 0,
     doctor_issue_count: int = 0,
     repo_root: Path | str | None = None,
+    platform: tuple = (),
 ) -> None:
     manifest_detail = "skills.sources.yaml"
     if enabled_sources >= 0 and skills_sources_exists:
@@ -211,6 +212,10 @@ def print_status_summary(
                     # check is bounded and degrades to "unchecked" rather than
                     # hanging on a slow or absent network.
                     _repo_row(repo_root),
+                    # The editor and CLI surfaces, which had a Platform submenu
+                    # of their own -- so the one screen that answers "is this
+                    # machine set up" was silent about three parts of it.
+                    *((row.label, row.detail, row.result) for row in platform),
                 ),
             ),
         ),
@@ -330,18 +335,124 @@ def workspace_action_result(kind: str, *, applied: bool) -> str:
     return table.get(kind, "check")
 
 
+#: Integration states an install should expand rather than summarise. Anything
+#: else is one row saying it is fine; these are the ones worth the detail.
+_EXPAND_STATES = {"broken", "forbidden", "unsafe-config", "conflict", "partial"}
+
+
+def _integration_rows(label: str, status, rows) -> list[tuple[str, str, str]]:
+    """One row, plus the detail rows indented under it when it needs looking at.
+
+    An install printed the whole Graphify table and the whole Boost table every
+    time, healthy or not -- forty lines saying nothing was wrong. Reduced to a
+    line each, and expanded only when the state is one somebody has to act on.
+    """
+    summary = (label, status.state, integration_result(status.state))
+    if status.state not in _EXPAND_STATES:
+        return [summary]
+    return [summary, *((f"    {name}", detail, result) for name, detail, result in rows)]
+
+
+def print_install_summary(outcome) -> tuple[int, int, int]:
+    """Everything an install did, in one table.
+
+    It used to print five: a skills report with its own rollup, an output
+    refresh, a full Graphify table, a full Boost table and the doctor. Four of
+    them said "all good" in their own heading with their own rollup, so the one
+    thing the operator wanted -- did this work -- was five answers in five
+    places.
+    """
+    print_header("Install summary", "Agentbot › Install › Summary")
+    rows: list[tuple[str, str, str]] = [*_skill_source_rows(outcome.skills)]
+    rows.append(
+        (
+            "Claude skill links",
+            f"{outcome.outputs.claude_linked} linked, "
+            f"{outcome.outputs.claude_updated} updated, "
+            f"{outcome.outputs.claude_skipped} skipped",
+            "ok",
+        )
+    )
+    rows.extend(_integration_rows("Graphify", outcome.graphify, _graphify_rows(outcome.graphify)))
+    rows.extend(_integration_rows("Boost", outcome.boost, _boost_rows(outcome.boost)))
+    for surface in outcome.platform:
+        rows.append((surface.label, surface.detail, surface.result))
+    # Truncated, not wrapped: a summary is one line per thing, and a wrapped
+    # repository name turned twenty rows into thirty-odd. The command behind
+    # each row is where the untruncated detail lives.
+    return print_table(rows)
+
+
+def _graphify_rows(status) -> list[tuple[str, str, str]]:
+    """The detail rows, without the State row the summary supplies itself."""
+    cli_detail = str(status.cli_path) if status.cli_path else "not installed"
+    return [
+        ("CLI", cli_detail, "ok" if status.cli_path else "missing"),
+        ("CLI version", status.cli_version or "—", "ok" if status.cli_version else "check"),
+        (
+            "Agent Skills",
+            str(status.skill_path),
+            "ok" if status.skill_path.is_file() else "missing",
+        ),
+        ("Codex", status.codex_state, "ok" if status.codex_state == "linked" else "check"),
+        ("Claude", status.claude_state, "ok" if status.claude_state == "linked" else "check"),
+    ]
+
+
+def _skill_source_rows(results) -> list[tuple[str, str, str]]:
+    """One row per source: what it is, where it came from, how it went."""
+    from ..skills_installer import InstallResult
+
+    rows: list[tuple[str, str, str]] = []
+    for result in results:
+        if not isinstance(result, InstallResult):
+            continue
+        if result.skipped:
+            rows.append((result.source_id, "—", "skipped"))
+            continue
+        repo = result.command[4] if len(result.command) > 4 else ""
+        if result.returncode == 0:
+            rows.append((result.source_id, repo, "ok"))
+            continue
+        detail = shorten_detail(result.stderr or result.stdout or f"exit {result.returncode}")
+        rows.append((result.source_id, detail, "failed"))
+    return rows
+
+
+def print_install_closing_line(*, ok: int, check: int, miss: int) -> None:
+    """How the install went, in the sibling product's words and colours.
+
+    "Install finished — N component(s) look good." there, and the same here, so
+    a full update that prints both runs into one terminal closes each half the
+    same way.
+    """
+    print()
+    if check == 0 and miss == 0:
+        print(f"  {_c(f'Install finished — {ok} component(s) look good.', GREEN)}")
+    else:
+        needing = check + miss
+        print(f"  {_c(f'Install finished — {ok} ok, {needing} need attention.', YELLOW)}")
+    print()
+
+
+def skills_report_status(results: list) -> int:
+    """The exit status the skills half of an install contributes.
+
+    Was a side effect of printing the skills table. The table is part of the
+    summary now, and the status is still the command's, so it is asked for
+    rather than produced in passing.
+    """
+    from ..skills_installer import summarize_install_results
+
+    return 0 if summarize_install_results(results).failed == 0 else 1
+
+
 def print_graphify_status(status) -> None:
     """Render the Graphify integration state without performing repairs."""
     print_header("Graphify", "Agentbot › Graphify")
-    cli_detail = str(status.cli_path) if status.cli_path else "not installed"
-    skill_detail = str(status.skill_path)
     rows = [
         ("State", status.state, integration_result(status.state)),
-        ("CLI", cli_detail, "ok" if status.cli_path else "missing"),
-        ("CLI version", status.cli_version or "—", "ok" if status.cli_version else "check"),
-        ("Agent Skills", skill_detail, "ok" if status.skill_path.is_file() else "missing"),
-        ("Codex", status.codex_state, "ok" if status.codex_state == "linked" else "check"),
-        ("Claude", status.claude_state, "ok" if status.claude_state == "linked" else "check"),
+        *_graphify_rows(status),
     ]
     ok, check, miss = print_table(rows)
     # The message explains; the rollup concludes. Printed after it, the message
@@ -354,11 +465,9 @@ def print_graphify_status(status) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
-def print_boost_status(status) -> None:
-    """Render Boost CLI, safety, and Claude/Codex/Cursor integration state."""
-    print_header("Boost", "Agentbot › Boost")
+def _boost_rows(status) -> list[tuple[str, str, str]]:
+    """The detail rows, without the State row the summary supplies itself."""
     rows = [
-        ("State", status.state, integration_result(status.state)),
         (
             "CLI",
             str(status.cli_path) if status.cli_path else "not installed",
@@ -412,6 +521,16 @@ def print_boost_status(status) -> None:
                 "error",
             )
         )
+    return rows
+
+
+def print_boost_status(status) -> None:
+    """Render Boost CLI, safety, and Claude/Codex/Cursor integration state."""
+    print_header("Boost", "Agentbot › Boost")
+    rows = [
+        ("State", status.state, integration_result(status.state)),
+        *_boost_rows(status),
+    ]
     ok, check, miss = print_table(rows)
     # The message explains; the rollup concludes. Printed after it, the message
     # was the last thing on the screen, so the one line the contract puts at the
@@ -424,24 +543,12 @@ def print_boost_status(status) -> None:
 
 
 def print_skills_report(results: list, *, title: str) -> int:
-    from ..skills_installer import InstallResult, summarize_install_results
+    from ..skills_installer import summarize_install_results
 
     summary = summarize_install_results(results)
     print_header(title, f"Agentbot › {title}")
     print_section_block("── Sources ──")
-    rows: list[tuple[str, str, str]] = []
-    for result in results:
-        if not isinstance(result, InstallResult):
-            continue
-        if result.skipped:
-            rows.append((result.source_id, "—", "skipped"))
-            continue
-        repo = result.command[4] if len(result.command) > 4 else ""
-        if result.returncode == 0:
-            rows.append((result.source_id, repo, "ok"))
-            continue
-        detail = shorten_detail(result.stderr or result.stdout or f"exit {result.returncode}")
-        rows.append((result.source_id, detail, "failed"))
+    rows = _skill_source_rows(results)
 
     if rows:
         ok, check, miss = print_table(rows, show_header=False)

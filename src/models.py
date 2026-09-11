@@ -62,6 +62,22 @@ class InstallOutcome:
     boost: BoostStatus
     outputs: OutputRefreshOutcome
     diagnostics: DiagnosticsSnapshot
+    # The editor and CLI surfaces, which used to be reachable only from a
+    # Platform submenu of their own. They are install components now, so their
+    # state is part of what an install reports rather than somewhere else to
+    # go and look. Optional because a run that did not select them still
+    # reports on them, and a caller building an outcome by hand need not.
+    platform: tuple[PlatformOutcome, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlatformOutcome:
+    """One editor or CLI surface, as an install leaves it."""
+
+    key: str
+    label: str
+    detail: str
+    result: str
 
 
 @dataclass(frozen=True)

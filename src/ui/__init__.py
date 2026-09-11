@@ -12,6 +12,8 @@ from .reports import (
     print_command_help,
     print_doctor_summary,
     print_graphify_status,
+    print_install_closing_line,
+    print_install_summary,
     print_manual_skill_removal_report,
     print_output_refresh_report,
     print_reconciliation_report,
@@ -26,6 +28,7 @@ from .reports import (
     print_workspace_removed,
     print_workspace_report,
     print_workspace_resync_report,
+    skills_report_status,
 )
 from .table import (
     color_result,
@@ -52,6 +55,8 @@ __all__ = [
     "print_doctor_summary",
     "print_graphify_status",
     "print_header",
+    "print_install_closing_line",
+    "print_install_summary",
     "print_manual_skill_removal_report",
     "print_output_refresh_report",
     "print_reconciliation_report",
@@ -73,6 +78,7 @@ __all__ = [
     "print_workspace_report",
     "print_workspace_resync_report",
     "shorten_detail",
+    "skills_report_status",
     "strip_ansi",
     "table_rows",
     "terminal_columns",

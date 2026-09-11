@@ -1007,7 +1007,13 @@ class CliTests(unittest.TestCase):
         from src.cli import build_parser
         from src.lifecycle import Lifecycle
 
-        self.assertEqual(("skills", "graphify", "boost"), Lifecycle.SELECTABLE_COMPONENTS)
+        # The three editor and CLI surfaces joined the set when the Platform
+        # submenu was folded in, so an install can leave them untouched only by
+        # being told to.
+        self.assertEqual(
+            ("skills", "graphify", "boost", "vscode", "cursor", "cli-config"),
+            Lifecycle.SELECTABLE_COMPONENTS,
+        )
 
         args = build_parser().parse_args(["install", "--components", "skills,boost"])
         self.assertEqual("skills,boost", args.components)

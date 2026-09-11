@@ -11,16 +11,24 @@
 # every install leaves behind, and an install that skipped them would report on
 # a state it had not established.
 
-AGENTBOT_COMPONENT_KEYS=(skills graphify boost)
+# The keys must match Lifecycle.SELECTABLE_COMPONENTS; tests/test_menus.py
+# pins the two lists against each other.
+AGENTBOT_COMPONENT_KEYS=(skills graphify boost vscode cursor cli-config)
 AGENTBOT_COMPONENT_LABELS=(
 	'Skills'
 	'Graphify integration'
 	'Boost integration'
+	'VS Code'
+	'Cursor statusline'
+	'CLI config'
 )
 AGENTBOT_COMPONENT_DESCS=(
 	'Install and update the skills named in skills.sources.yaml.'
 	'Refresh the Graphify CLI and Agent Skills integration.'
 	'Configure Boost for Claude, Codex, and Cursor.'
+	'Install the selected extensions and merge owned settings for each host.'
+	'Install the managed Cursor CLI statusline.'
+	'Merge the declared Claude, Codex, and Cursor configuration keys.'
 )
 
 _agentbot_components_prepare() {

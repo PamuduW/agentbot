@@ -22,6 +22,8 @@ from .ui import (
     print_doctor_summary,
     print_graphify_status,
     print_header,
+    print_install_closing_line,
+    print_install_summary,
     print_manual_skill_removal_report,
     print_output_refresh_report,
     print_reconciliation_report,
@@ -38,6 +40,7 @@ from .ui import (
     print_workspace_removed,
     print_workspace_report,
     print_workspace_resync_report,
+    skills_report_status,
 )
 from .ui.install_log import InstallLog, log_legend, print_timing
 from .ui.table import CollapseBlankLines
@@ -305,15 +308,6 @@ def _handle_update(context: CommandContext) -> int:
     print()
     applying = InstallLog(sentinel="Update complete")
     outcome = context.lifecycle.apply_update(plan, progress=applying.stage)
-    # Planning and applying are one run to the operator, so they are one
-    # summary: the eight seconds spent reading twelve sources belongs in the
-    # total beside the work it was deciding about.
-    print_timing(
-        command.capitalize(),
-        {**planning.seconds, **applying.seconds},
-        planning.total + applying.total,
-    )
-
     # One result block, closing on one rollup. The outcome, the reconciliation
     # and the resync each used to print their own, and the resync brought a
     # second `=== Workspace Resync ===` heading with it -- so one update ended
@@ -337,6 +331,15 @@ def _handle_update(context: CommandContext) -> int:
             )
         )
     print_rollup(ok=totals[0], check=totals[1], miss=totals[2])
+    # Last, after the result it describes. Planning and applying are one run to
+    # the operator, so they are one summary: the ten seconds spent reading
+    # twelve sources belongs in the total beside the work it was deciding
+    # about.
+    print_timing(
+        command.capitalize(),
+        {**planning.seconds, **applying.seconds},
+        planning.total + applying.total,
+    )
     if outcome.status not in {"applied", "applied-with-local-changes"}:
         return 1
     return 1 if _workspace_report_has_failures(workspace_report) else 0
@@ -922,14 +925,10 @@ def run_agentbot_install(
     lifecycle: Lifecycle, paths: AgentbotPaths, *, components: tuple[str, ...] | None = None
 ) -> int:
     print_header("Install Agentbot", "Agentbot › Install Agentbot")
-    if components is not None:
-        skipped = [c for c in lifecycle.SELECTABLE_COMPONENTS if c not in components]
-        print(f"  Selected: {', '.join(components) or 'nothing'}")
-        if skipped:
-            print(f"  Skipping: {', '.join(skipped)}")
-        # The selection is about what was asked for; the legend is about the run
-        # that follows. A blank keeps them from reading as one block.
-        print()
+    # No "Selected:" line. The selector said what was chosen a moment ago, the
+    # plan screen said it again with what each one would do, and the run below
+    # opens every component with a [STEP] naming it -- so this said it a fourth
+    # time to an operator who had just pressed confirm.
     # The key to the prefixes below, as the sibling product prints under its own
     # install heading. Without it [STEP] and [OK] are markers the reader is left
     # to infer.
@@ -941,19 +940,15 @@ def run_agentbot_install(
     # where the silence this progress exists to fix was longest.
     log = InstallLog()
     outcome = lifecycle.install(progress=log.stage, components=components)
-    print_timing("Install", log.seconds, log.total)
-    skills_rc = print_skills_report(list(outcome.skills), title="Skills install")
-    print_output_refresh_report(
-        linked=outcome.outputs.claude_linked,
-        updated=outcome.outputs.claude_updated,
-        skipped=outcome.outputs.claude_skipped,
-    )
-    if outcome.graphify.cli_path is not None or outcome.graphify.state == "broken":
-        print_graphify_status(outcome.graphify)
-    if outcome.boost.cli_path is not None or outcome.boost.state == "broken":
-        print_boost_status(outcome.boost)
+
+    # One table for everything the run did, then the doctor, then the time.
+    ok, check, miss = print_install_summary(outcome)
+    print_install_closing_line(ok=ok, check=check, miss=miss)
     doctor_rc = print_doctor_summary(list(outcome.diagnostics.issues))
-    print(f"  AGENTBOT_HOME={paths.root.resolve()}")
+    # Last, after the report it describes -- the same place the sibling
+    # product's install puts it.
+    print_timing("Install", log.seconds, log.total)
+    skills_rc = skills_report_status(list(outcome.skills))
     if skills_rc != 0:
         return skills_rc
     if outcome.graphify.state == "broken":
@@ -978,6 +973,25 @@ def print_skills_doctor(diagnostics: Diagnostics) -> int:
     return 1 if errors else 0
 
 
+def _platform_status_rows(diagnostics: Diagnostics) -> tuple:
+    """The editor and CLI surfaces, read but never written.
+
+    Status is read-only, so each is inspected with apply=False -- the same
+    call the install makes for a component the operator did not select.
+    """
+    from .command_runner import CommandRunner
+    from .platform_surfaces import surface_outcome
+
+    paths = getattr(diagnostics, "paths", None)
+    if paths is None:
+        return ()
+    runner = CommandRunner()
+    return tuple(
+        surface_outcome(key, label, paths, runner, apply=False)
+        for key, label, _phase in Lifecycle.PLATFORM_COMPONENTS
+    )
+
+
 def print_status(diagnostics: Diagnostics, *, include_issues: bool = False) -> int:
     snapshot = diagnostics.collect()
     print_status_summary(
@@ -994,6 +1008,7 @@ def print_status(diagnostics: Diagnostics, *, include_issues: bool = False) -> i
         # The checkout Diagnostics was built against, so status reports on the
         # repository it actually inspected rather than the process's cwd.
         repo_root=getattr(getattr(diagnostics, 'paths', None), 'root', None),
+        platform=_platform_status_rows(diagnostics),
     )
     if include_issues:
         return print_doctor_summary(list(snapshot.issues), include_header=False)

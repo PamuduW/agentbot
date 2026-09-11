@@ -48,7 +48,6 @@ MENUS: dict[str, Menu] = {
             "Prune Skills",
             "GitHub Token Config",
             "Workspaces",
-            "Platform",
             "Libraries",
             "Quit",
         ),
@@ -59,14 +58,13 @@ MENUS: dict[str, Menu] = {
             "prune-skills",
             "token",
             "workspaces",
-            "platform",
             "libraries",
             "quit",
         ),
         descs=(
-            "Check the installed Agentbot components and baseline.\n"
+            "Check the installed Agentbot components, editors, and baseline.\n"
             "Read-only status; no updates or writes are performed.",
-            "Choose what to set up, then install: skills, Graphify, Boost.\n"
+            "Choose what to set up, then install: skills, integrations, editors.\n"
             "Managed outputs, Doctor and the launcher link always run.",
             "Update the repository, reconcile skills, and refresh workspaces plus global outputs.\n"
             "A preview and explicit confirmation are required before mutation.",
@@ -76,8 +74,6 @@ MENUS: dict[str, Menu] = {
             "The token is stored outside this repository.",
             "List, preview, and resync locally registered workspaces.\n"
             "Apply actions require explicit confirmation.",
-            "Manage VS Code extensions and settings, the Cursor statusline, and the agent CLI configs.\n"
-            "Previews are read-only; every apply confirms first.",
             "Open the Agentbot and Graphify command reference libraries.\n"
             "Read-only command and safety information.",
             "Exit the Agentbot menu.\nReturn to the calling process.",
@@ -93,44 +89,6 @@ MENUS: dict[str, Menu] = {
             "Use this as the local command reference.",
             "Show Graphify assistant and shell commands plus safety boundaries.\n"
             "Read-only; Install and Update own generic skill synchronization.",
-        ),
-    ),
-    "platform": Menu(
-        title="Platform",
-        breadcrumb="Agentbot › Platform",
-        labels=(
-            "VS Code status",
-            "VS Code seed",
-            "VS Code apply",
-            "Cursor statusline status",
-            "Cursor statusline install",
-            "CLI config status",
-            "CLI config apply",
-        ),
-        keys=(
-            "vscode-status",
-            "vscode-seed",
-            "vscode-apply",
-            "cursor-status",
-            "cursor-install",
-            "cli-config-status",
-            "cli-config-apply",
-        ),
-        descs=(
-            "Preview the selected extensions and owned settings for each host.\n"
-            "Read-only; writes nothing.",
-            "Record the currently installed extensions into vscode.yaml.\n"
-            "Writes the manifest in this repository, not your editor.",
-            "Install missing extensions and merge owned settings into each host.\n"
-            "Backs each settings file up first. Requires confirmation.",
-            "Report whether the managed Cursor statusline is installed and current.\n"
-            "Read-only; writes nothing.",
-            "Install the managed statusline and point the Cursor CLI at it.\n"
-            "Writes ~/.cursor and the statusLine block. Requires confirmation.",
-            "Preview the declared Claude, Codex, and Cursor CLI configuration keys.\n"
-            "Read-only; writes nothing.",
-            "Merge the declared keys into each CLI config, rolling back on failure.\n"
-            "Backs each config up first. Requires confirmation.",
         ),
     ),
     "workspaces": Menu(

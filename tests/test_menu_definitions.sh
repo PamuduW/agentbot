@@ -79,7 +79,6 @@ while IFS='|' read -r name dispatch loop_keys; do
 done <<'MENUS'
 main|agentbot_menu_dispatch|quit
 libraries|agentbot_menu_libraries_dispatch|back quit
-platform|agentbot_menu_platform_dispatch|back
 workspaces|agentbot_menu_workspaces_dispatch|back
 MENUS
 

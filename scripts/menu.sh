@@ -22,8 +22,6 @@ source "$_AGENTBOT_MENU_DIR/menus/workspaces.sh"
 source "$_AGENTBOT_MENU_DIR/menus/command_lib.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/graphify.sh"
-# shellcheck source=scripts/menus/platform.sh
-source "$_AGENTBOT_MENU_DIR/menus/platform.sh"
 # shellcheck source=scripts/menus/components.sh
 source "$_AGENTBOT_MENU_DIR/menus/components.sh"
 # shellcheck disable=SC1091
@@ -42,7 +40,6 @@ agentbot_menu_dispatch() {
 	prune-skills) agentbot_menu_prune_skills || rc=$? ;;
 	token) agentbot_menu_token || rc=$? ;;
 	workspaces) agentbot_menu_workspaces || rc=$? ;;
-	platform) agentbot_menu_platform || rc=$? ;;
 	libraries) agentbot_menu_libraries || rc=$? ;;
 	*)
 		printf 'Unknown Agentbot menu action: %s\n' "$choice" >&2

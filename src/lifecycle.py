@@ -16,6 +16,7 @@ from .models import (
     DiagnosticsSnapshot,
     InstallOutcome,
     OutputRefreshOutcome,
+    PlatformOutcome,
     UpdateOutcome,
     UpdatePlan,
     UpdateSnapshot,
@@ -117,7 +118,24 @@ class Lifecycle:
     #: not here on purpose: they are the baseline every install leaves behind,
     #: and an install that skipped them would report on a state it had not
     #: established.
-    SELECTABLE_COMPONENTS = ("skills", "graphify", "boost")
+    SELECTABLE_COMPONENTS = (
+        "skills",
+        "graphify",
+        "boost",
+        "vscode",
+        "cursor",
+        "cli-config",
+    )
+
+    #: The editor and CLI surfaces, each with the phase name the run reports and
+    #: the label its rows carry. They had a Platform submenu of their own, which
+    #: meant an install could leave the machine's editor configuration untouched
+    #: and say nothing about it.
+    PLATFORM_COMPONENTS = (
+        ("vscode", "VS Code", "Refreshing VS Code"),
+        ("cursor", "Cursor statusline", "Refreshing the Cursor statusline"),
+        ("cli-config", "CLI config", "Refreshing CLI configuration"),
+    )
 
     def install(
         self,
@@ -177,10 +195,37 @@ class Lifecycle:
 
         stage("Refreshing managed outputs")
         outputs = self.refresh_outputs()
+
+        platform: list[PlatformOutcome] = []
+        for key, label, phase in self.PLATFORM_COMPONENTS:
+            if key in selected:
+                stage(phase)
+                platform.append(self._apply_platform(key, label))
+            else:
+                # Inspected, never configured -- the same rule Graphify and
+                # Boost follow. Declining to set a surface up is not a reason
+                # to stop reporting what it is currently doing.
+                stage(f"Skipping {label}")
+                platform.append(self._read_platform(key, label))
+
         stage("Running diagnostics")
         diagnostics = self.diagnostics.collect()
         stage("Install complete")
-        return InstallOutcome(skills, graphify, boost, outputs, diagnostics)
+        return InstallOutcome(
+            skills, graphify, boost, outputs, diagnostics, tuple(platform)
+        )
+
+    def _apply_platform(self, key: str, label: str) -> PlatformOutcome:
+        """Reconcile one surface and describe what it left."""
+        return self._platform_outcome(key, label, apply=True)
+
+    def _read_platform(self, key: str, label: str) -> PlatformOutcome:
+        return self._platform_outcome(key, label, apply=False)
+
+    def _platform_outcome(self, key: str, label: str, *, apply: bool) -> PlatformOutcome:
+        from .platform_surfaces import surface_outcome
+
+        return surface_outcome(key, label, self.paths, self._command_runner, apply=apply)
 
     def render_global(self) -> None:
         self._render_global(self.paths)

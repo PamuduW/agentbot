@@ -18,10 +18,13 @@ test_main_menu_snapshot() {
 	_agentbot_menu_setup
 	output="$(AGENTBOT_TUI=1 tui_menu_draw 0 80 | strip_ansi_stream)"
 	[[ "$output" == *$'=== Agentbot ===\n  Agentbot'* ]] || return 1
-	[[ "$output" == *'1. Check Status'* && "$output" == *'9. Quit'* ]] || return 1
+	# Eight entries, not nine: Platform's seven actions became install
+	# components and status rows, so the submenu that held them is gone.
+	[[ "$output" == *'1. Check Status'* && "$output" == *'8. Quit'* ]] || return 1
 	[[ "$output" == *'Prune Skills'* && "$output" == *'GitHub Token Config'* ]] || return 1
-	[[ "$output" == *'Platform'* && "$output" == *'Libraries'* ]] || return 1
-	[[ "$output" == *'Check the installed Agentbot components and baseline.'* ]]
+	[[ "$output" != *'Platform'* ]] || return 1
+	[[ "$output" == *'Libraries'* ]] || return 1
+	[[ "$output" == *'Check the installed Agentbot components, editors, and baseline.'* ]]
 }
 
 test_width_and_palette_snapshots() (
@@ -275,32 +278,32 @@ test_menu_arrays_stay_aligned() {
 	((${#MENU_SIMPLE_LABELS[@]} == ${#MENU_SIMPLE_DESCS[@]}))
 }
 
-test_every_platform_action_reaches_its_backend_command() (
-	# The three platform features existed only as CLI commands with nothing that
-	# could reach them. Each menu key must dispatch, and each mutating one must
-	# not run when the confirmation is declined.
-	local calls=""
-	agentbot_run_backend() { calls+="$* | "; }
-	tui_confirm() { return 0; }
+test_every_platform_surface_is_an_install_component() (
+	# The three used to be a Platform submenu of seven entries, so an install
+	# could finish having left the machine's editor configuration untouched and
+	# say nothing about it. They are install components now: the selector offers
+	# them, and Lifecycle installs whatever the selector returns.
 	local key
-	agentbot_menu_load platform || return 1
-	for key in "${MENU_SIMPLE_KEYS[@]}"; do
-		[[ "$key" == back ]] && continue
-		agentbot_menu_platform_dispatch "$key" >/dev/null || return 1
+	_agentbot_components_prepare
+	for key in vscode cursor cli-config; do
+		[[ " ${AGENTBOT_COMPONENT_KEYS[*]} " == *" $key "* ]] || return 1
 	done
-	[[ "$calls" == 'vscode status | vscode seed | vscode apply | cursor status | cursor statusline | cli-config status | cli-config apply | ' ]] || return 1
-
-	calls=""
-	tui_confirm() { return 1; }
-	for key in vscode-apply cursor-install cli-config-apply; do
-		agentbot_menu_platform_dispatch "$key" >/dev/null || return 1
+	# Every key the selector offers must be one the backend knows, or a chosen
+	# component would be silently dropped.
+	local known
+	known="$(cd "$ROOT" && python3 -c 'from src.lifecycle import Lifecycle
+print(" ".join(Lifecycle.SELECTABLE_COMPONENTS))')" || return 1
+	for key in "${AGENTBOT_COMPONENT_KEYS[@]}"; do
+		[[ " $known " == *" $key "* ]] || return 1
 	done
-	[[ -z "$calls" ]]
+	# And the labels and descriptions stay aligned with the keys.
+	((${#AGENTBOT_COMPONENT_KEYS[@]} == ${#AGENTBOT_COMPONENT_LABELS[@]})) || return 1
+	((${#AGENTBOT_COMPONENT_KEYS[@]} == ${#AGENTBOT_COMPONENT_DESCS[@]}))
 )
 
 check 'main menu snapshot uses the unified labels and breadcrumb' test_main_menu_snapshot
 check 'menu label, key, and description arrays stay aligned' test_menu_arrays_stay_aligned
-check 'every platform action reaches its backend command' test_every_platform_action_reaches_its_backend_command
+check 'every platform surface is an install component' test_every_platform_surface_is_an_install_component
 check 'TUI frames fit 48, 80, and 120 columns with the shared palette' test_width_and_palette_snapshots
 check 'menu redraw frames clear stale tails and preserve height' test_draw_clears_line_tails_and_matches_frame_height
 check 'shortcut tokens use the shared cyan treatment' test_shortcuts_use_cyan_tokens
