@@ -937,16 +937,19 @@ class CliTests(unittest.TestCase):
         import io
         from unittest.mock import patch
 
-        from src.cli import _install_stage
+        from src.ui.install_log import InstallLog
 
         captured = io.StringIO()
+        log = InstallLog()
         with patch("sys.stdout", captured):
-            _install_stage("Installing skill sources", 0.0)
-            _install_stage("Refreshing managed outputs", 63.0)
+            log.stage("Installing skill sources", 0.0)
+            log.stage("Refreshing managed outputs", 63.0)
         rendered = captured.getvalue()
 
         self.assertIn("[STEP] Installing skill sources", rendered)
-        self.assertIn("[OK] took 1m 03s", rendered)
+        # The completion names the stage it closes; it used to read
+        # "[OK] took 1m 03s", a duration attached to nothing.
+        self.assertIn("[OK] Installing skill sources (1m 03s)", rendered)
         self.assertNotIn("\033", rendered)
         self.assertNotIn("\r", rendered)
 

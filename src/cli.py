@@ -39,6 +39,7 @@ from .ui import (
     print_workspace_report,
     print_workspace_resync_report,
 )
+from .ui.install_log import InstallLog, log_legend
 from .workspace_render import WORKSPACE_TARGETS
 
 ARCHIVED_COMMANDS = frozenset(
@@ -803,15 +804,6 @@ def print_skills_error(error: Exception) -> int:
     return 1
 
 
-def _install_stage(message: str, elapsed: float) -> None:
-    # The first call reports the setup before any stage, which is near zero;
-    # every later one closes off the stage named in the previous line.
-    if elapsed >= 1:
-        print(f"  [OK] took {int(elapsed) // 60}m {int(elapsed) % 60:02d}s", flush=True)
-    if message != "Install complete":
-        print(f"  [STEP] {message}", flush=True)
-
-
 def run_agentbot_install(
     lifecycle: Lifecycle, paths: AgentbotPaths, *, components: tuple[str, ...] | None = None
 ) -> int:
@@ -821,15 +813,23 @@ def run_agentbot_install(
         print(f"  Selected: {', '.join(components) or 'nothing'}")
         if skipped:
             print(f"  Skipping: {', '.join(skipped)}")
+        # The selection is about what was asked for; the legend is about the run
+        # that follows. A blank keeps them from reading as one block.
         print()
+    # The key to the prefixes below, as the sibling product prints under its own
+    # install heading. Without it [STEP] and [OK] are markers the reader is left
+    # to infer.
+    log_legend()
+    print()
     # Emitted whether or not anyone is watching live. These are plain [STEP]
     # and [OK] lines with no cursor control, so a pipe degrades cleanly rather
     # than losing them -- and the piped case is `dotfiles full-update`, which is
     # where the silence this progress exists to fix was longest.
     outcome = lifecycle.install(
-        progress=_install_stage,
+        progress=InstallLog().stage,
         components=components,
     )
+    print()
     skills_rc = print_skills_report(list(outcome.skills), title="Skills install")
     print_output_refresh_report(
         linked=outcome.outputs.claude_linked,

@@ -421,6 +421,40 @@ test_undeclared_submenu_still_gets_a_parent_pause() (
 	[[ "$(<"$calls")" == $'libraries\npause' ]]
 )
 check 'Status uses one diagnostics snapshot' test_status_uses_one_diagnostics_snapshot
+test_component_selector_matches_the_sibling_layout() (
+	# The wide layout reserves sixteen columns for a status these rows do not
+	# have, and draws the `·` separators around the gap:
+	#
+	#   >  1. [x] ·                  · Skills
+	#
+	# The sibling product's component selector is compact and has always been.
+	_agentbot_components_prepare
+	[[ "${MENU_CB_COMPACT:-}" == true ]] || return 1
+
+	# And the descriptions existed from the day this menu was added but were
+	# never handed to the renderer, so the footer under the selection was blank.
+	[[ "${#MENU_CB_DESCS[@]}" -eq "${#AGENTBOT_COMPONENT_KEYS[@]}" ]] || return 1
+	[[ "${MENU_CB_DESCS[0]}" == "${AGENTBOT_COMPONENT_DESCS[0]}" ]]
+)
+
+test_component_selector_carries_nothing_over_from_prune() (
+	# Prune Skills fills MENU_CB_DESCS and this menu did not clear it, so
+	# opening Install straight after Prune put prune descriptions under the
+	# component rows -- and four of them against three labels, so the footer
+	# named the wrong thing for every row.
+	MENU_CB_DESCS=('prune one' 'prune two' 'prune three' 'prune four')
+	MENU_CB_TOGGLE_FN=_prune_toggle
+	MENU_CB_DESC_FN=_prune_desc
+
+	_agentbot_components_prepare
+
+	[[ "${#MENU_CB_DESCS[@]}" -eq 3 ]] || return 1
+	[[ "${MENU_CB_DESCS[*]}" != *prune* ]] || return 1
+	# The hooks matter more than the text: left set, they force the checkbox
+	# onto the Bash fallback loop and call Prune's callbacks on a toggle here.
+	[[ -z "${MENU_CB_TOGGLE_FN:-}" && -z "${MENU_CB_DESC_FN:-}" ]]
+)
+
 test_component_selector_keeps_the_install_contracts() (
 	# The selector was written calling agentbot_run_backend directly, which went
 	# around the two things agentbot_menu_install owns: the TUI output seam and
@@ -491,6 +525,8 @@ test_component_selector_cancels_when_nothing_is_checked() (
 )
 
 check 'main dispatch gives direct actions exactly one pause' test_main_dispatch_and_pause_ownership
+check 'component selector uses the sibling compact layout' test_component_selector_matches_the_sibling_layout
+check 'component selector carries nothing over from prune' test_component_selector_carries_nothing_over_from_prune
 check 'component selector keeps the install contracts' test_component_selector_keeps_the_install_contracts
 check 'component selector asks about the repository first' test_component_selector_asks_about_the_repository_first
 check 'component selector cancels when nothing is checked' test_component_selector_cancels_when_nothing_is_checked

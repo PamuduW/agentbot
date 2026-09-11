@@ -252,6 +252,11 @@ class BoostIntegrationTests(unittest.TestCase):
                 self.calls.append(list(argv))
                 if argv[-1] == "version":
                     return CommandResult(0, stdout="boost v0.12.6\n")
+                if "--dry-run" not in argv:
+                    # The apply, which setup captures now rather than running
+                    # interactively.
+                    self.interactive_calls.append(list(argv))
+                    return self._install()
                 return CommandResult(
                     0,
                     stdout=(
@@ -261,8 +266,7 @@ class BoostIntegrationTests(unittest.TestCase):
                     ),
                 )
 
-            def run_interactive(self, argv, **_kwargs):
-                self.interactive_calls.append(list(argv))
+            def _install(self, *_args, **_kwargs):
                 (paths.claude_home / "hooks").mkdir(parents=True)
                 (paths.claude_home / "hooks/boost-hook-claude.sh").write_text("hook\n")
                 (paths.claude_home / "rules").mkdir(parents=True)
@@ -446,18 +450,26 @@ class BoostIntegrationTests(unittest.TestCase):
         def run(argv, **_kwargs):
             if argv[-1] == "version":
                 return CommandResult(0, stdout="boost v0.12.6\n")
+            # The apply, which setup now captures rather than running
+            # interactively -- see the comment on that call.
+            if "--dry-run" not in argv:
+                self._install_cursor_files()
+                return CommandResult(0)
             return CommandResult(0, stdout="Cursor global hooks.json\n")
 
-        def run_interactive(argv, **_kwargs):
-            self._install_cursor_files()
-            return CommandResult(0)
-
         runner.run.side_effect = run
-        runner.run_interactive.side_effect = run_interactive
         with patch_boost_which(boost=boost, present=("agent",)):
             status = BoostIntegration(paths, runner=runner).setup()
 
-        argv = runner.run_interactive.call_args.args[0]
+        # The last run() is the status probe that follows; the apply is the one
+        # carrying the target flags.
+        applies = [
+            call.args[0]
+            for call in runner.run.call_args_list
+            if "init" in call.args[0] and "--dry-run" not in call.args[0]
+        ]
+        self.assertEqual(1, len(applies))
+        argv = applies[0]
         self.assertEqual(
             [str(boost), "init", "--accept-terms", "--cursor"],
             argv,

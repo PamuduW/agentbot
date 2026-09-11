@@ -431,7 +431,14 @@ class BoostIntegration:
                     + " targets."
                 ),
             )
-        result = self._runner.run_interactive(
+        # Captured, not interactive. `--accept-terms` is passed precisely so
+        # there is no prompt to keep a terminal for, and the dry run above
+        # already proves the non-interactive path works. Two things follow:
+        # boost's success banner stops landing at column zero in the middle of
+        # an install's prefixed lines, and a failure can finally say why --
+        # run_interactive returns the exit code and nothing else, so this
+        # reported "Boost setup failed: exit code 1" with no reason attached.
+        result = self._runner.run(
             base,
             timeout_seconds=self._timeout_seconds(),
         )

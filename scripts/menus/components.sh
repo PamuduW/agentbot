@@ -25,10 +25,20 @@ AGENTBOT_COMPONENT_DESCS=(
 
 _agentbot_components_prepare() {
 	local i
-	declare -g -a MENU_CB_LABELS=() MENU_CB_STATUS=() MENU_CB_CHECKED=()
+	# MENU_CB_DESCS is declared here too, and that is not tidiness: Prune Skills
+	# fills it and this menu did not clear it, so opening Install straight after
+	# Prune showed prune descriptions under the component rows -- four of them
+	# against three labels. The callback hooks go the same way, for the same
+	# reason prune_skills.sh unsets them.
+	declare -g -a MENU_CB_LABELS=() MENU_CB_STATUS=() MENU_CB_CHECKED=() MENU_CB_DESCS=()
+	unset MENU_CB_TOGGLE_FN MENU_CB_ALL_FN MENU_CB_NONE_FN MENU_CB_DESC_FN
 	for i in "${!AGENTBOT_COMPONENT_KEYS[@]}"; do
 		MENU_CB_LABELS[i]="${AGENTBOT_COMPONENT_LABELS[$i]}"
 		MENU_CB_STATUS[i]=''
+		# Written since this menu was added and never shown: the descriptions
+		# existed in AGENTBOT_COMPONENT_DESCS and were never handed to the
+		# renderer, so the footer under the selection was blank.
+		MENU_CB_DESCS[i]="${AGENTBOT_COMPONENT_DESCS[$i]}"
 		# Everything on by default: the previous behaviour was to install all
 		# three, so an operator who just presses Enter gets what they had.
 		MENU_CB_CHECKED[i]=1
@@ -36,6 +46,10 @@ _agentbot_components_prepare() {
 	MENU_CB_TITLE='Install Agentbot'
 	MENU_CB_BREADCRUMB='Agentbot › Install Agentbot'
 	MENU_CB_HINT='Up/Down navigate   Space toggle   a all   n none   Enter confirm   q back'
+	# Compact, as the sibling product's component selector is. The wide layout
+	# reserves sixteen columns for a status none of these rows has, and draws
+	# the `·` separators around the gap: `>  1. [x] ·                  · Skills`.
+	MENU_CB_COMPACT=true
 	MENU_CB_STATUS_MESSAGE=''
 }
 

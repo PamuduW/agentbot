@@ -605,7 +605,10 @@ def install_skills(
         # `skills add` has no exclusion flag, so apply the manifest's exclusions
         # here -- before the Claude and Codex bridges run.
         for name in enforce_exclusions(paths, config):
-            _print_install_progress(f"excluded by manifest, removed: {name}")
+            # Prefixed like everything else this run prints. It was the one
+            # unmarked line in a column of [STEP] and [OK], which read as
+            # output that had escaped rather than as a step's result.
+            _print_install_progress(f"[OK] Excluded by manifest, removed: {name}")
     return results
 
 
