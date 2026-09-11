@@ -408,6 +408,74 @@ def print_note(text: str) -> None:
         print(f"  {line}")
 
 
+def print_four_column_table(
+    rows: list[tuple[str, str, str, str]],
+    *,
+    headers: tuple[str, str, str, str] = ("component", "installed", "available", "action"),
+) -> tuple[int, int, int]:
+    """The plan and report layout, in the same widths the Bash renderer uses.
+
+    The layout comes from the shared module rather than from a formula here, so
+    a `dotfiles full-update` -- which prints both products' tables into one
+    terminal -- lines them up. The action column is coloured by the action
+    vocabulary, which says what will *happen*, not by the result vocabulary,
+    which says what something *is*: `current` is green in one and yellow in the
+    other, and this column means the first.
+    """
+    widths = _shared.four_column_widths(max(MINIMUM_COLUMNS, terminal_columns()))
+    columns, rule = _shared.format_four_column_header(widths, headers)
+    print(_c(columns, BOLD))
+    print(_c(rule, DIM))
+    ok = check = miss = 0
+    for cells in rows:
+        line = _shared.format_four_column_row(widths, cells)
+        print(_color_action_cell(line, cells[3], widths))
+        match result_class(cells[3]):
+            case "ok" | "info":
+                ok += 1
+            case "missing":
+                miss += 1
+            case "skipped":
+                continue
+            case _:
+                check += 1
+    return ok, check, miss
+
+
+#: What will happen, as opposed to what something is. `current` is green here
+#: and yellow in the result vocabulary, which is why the two are separate.
+ACTION_GREEN = {"up to date", "skip", "current", "verified current", "none"}
+ACTION_YELLOW = {"refresh", "continue", "check", "unchecked", "reconcile", "configure"}
+ACTION_CYAN = {"verified", "install", "apply", "merge"}
+
+
+def color_action(action: str) -> str:
+    key = action.strip().lower()
+    if key in ACTION_GREEN:
+        return _c(action, GREEN)
+    if key in ACTION_CYAN:
+        return _c(action, CYAN)
+    if key in ACTION_YELLOW or key.startswith(("upgrade", "replace", "refresh")):
+        return _c(action, YELLOW)
+    if key.startswith("latest "):
+        return _c(action, DIM)
+    return action
+
+
+def _color_action_cell(line: str, action: str, widths) -> str:
+    """Paint the last cell in place, leaving the padding uncoloured.
+
+    The row is built by the shared layout so both renderers agree byte for
+    byte; colour goes on afterwards, over the text only, or the padding would
+    carry escape bytes the width maths never counted.
+    """
+    fitted = _shared.fit_line(action, widths[3])
+    if not fitted:
+        return line
+    painted = color_action(fitted)
+    return line.replace(fitted, painted, 1) if painted != fitted else line
+
+
 def print_section_block(label: str) -> None:
     print()
     print_section(label)

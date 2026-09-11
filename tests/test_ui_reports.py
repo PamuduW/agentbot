@@ -7,6 +7,7 @@ code its command propagates, so a wrong branch here is a wrong exit status.
 from __future__ import annotations
 
 import io
+import os
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -34,8 +35,13 @@ from src.ui import (
 )
 from src.ui.reports import integration_result, workspace_action_result
 from src.ui.table import (
+    DIM,
+    GREEN,
+    YELLOW,
     CollapseBlankLines,
     _table_widths,
+    color_action,
+    print_four_column_table,
     print_header,
     print_note,
     print_rollup,
@@ -423,6 +429,49 @@ class BlankLineTests(unittest.TestCase):
         writer.flush()
         rendered = strip_ansi(buffer.getvalue())
         self.assertNotIn("\n\n\n", rendered)
+
+
+class FourColumnTests(unittest.TestCase):
+    """The plan and report layout, shared with the Bash renderer's widths."""
+
+    def _render(self, rows) -> list[str]:
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            counts = print_four_column_table(rows)
+        return [strip_ansi(line) for line in buffer.getvalue().splitlines()], counts
+
+    def test_every_line_is_the_terminal_width(self):
+        """Header, rule and rows, as the three-column table already guarantees."""
+        lines, _ = self._render([("Skills", "62", "12 source(s)", "reconcile")])
+        self.assertEqual(1, len({len(line) for line in lines}), lines)
+
+    def test_the_action_column_is_counted_not_the_detail(self):
+        """The last column says what will happen, and that is what a rollup of
+        this table would be counting."""
+        _, counts = self._render(
+            [
+                ("Skills", "62", "none", "up to date"),
+                ("Graphify", "0.9.58", "—", "refresh"),
+            ]
+        )
+        self.assertEqual((1, 1, 0), counts)
+
+    def test_actions_use_the_action_vocabulary_not_the_result_one(self):
+        """`current` is green as an action and yellow as a result.
+
+        Two vocabularies on purpose: one says what something *is*, the other
+        what will *happen* to it.
+        """
+        # Forced here rather than left to the environment: the rest of this
+        # file asserts on plain text, and a suite-wide FORCE_COLOR would break
+        # every one of those instead.
+        with mock.patch.dict(os.environ, {"FORCE_COLOR": "1"}):
+            self.assertIn(GREEN, color_action("up to date"))
+            self.assertIn(YELLOW, color_action("refresh"))
+            self.assertIn(DIM, color_action("latest unchecked"))
+            # And a word neither vocabulary knows is left alone rather than
+            # guessed at.
+            self.assertEqual("invented", color_action("invented"))
 
 
 class RollupTests(unittest.TestCase):

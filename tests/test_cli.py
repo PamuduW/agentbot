@@ -1092,11 +1092,17 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(0, rc)
         # Counting a padded literal pinned one column split; the guarantee is
-        # that the report carries exactly one table header, at any width.
+        # that the report carries exactly one table header, at any width. Four
+        # columns since the report took the sibling product's shape: three
+        # could only say "preview" three times, which told the operator the
+        # screen they were looking at was a preview.
         header_lines = [
             line
             for line in stdout.splitlines()
-            if re.match(r"^\s*component\s+\|\s*detail\s+\|\s*result\s*$", line)
+            if re.match(
+                r"^\s*component\s+\|\s*installed\s+\|\s*available\s+\|\s*action\s*$",
+                line,
+            )
         ]
         self.assertEqual(1, len(header_lines))
 

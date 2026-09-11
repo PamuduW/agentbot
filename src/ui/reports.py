@@ -17,6 +17,7 @@ from .table import (
     YELLOW,
     _c,
     highlight_manual_skill_name,
+    print_four_column_table,
     print_header,
     print_note,
     print_rollup,
@@ -802,34 +803,41 @@ def print_update_plan(plan, *, command: str = "update") -> None:
     )
     graphify_changes = 1 if plan.graphify_action in {"setup", "refresh"} else 0
     workspace_writes = _planned_workspace_writes(plan.workspace_report)
+    # Four columns, as the sibling product's update report has: what is here,
+    # what is available, and what approving this will do to it. Three columns
+    # could only say "preview" three times, which told the operator the screen
+    # they were already looking at was a preview.
     rows = [
         (
             "Skills",
-            (
-                f"{len(plan.reconcile.wildcard_additions)} add, "
-                f"{len(plan.reconcile.wildcard_removals)} remove, "
-                f"{len(plan.reconcile.explicit_missing)} missing"
-            ),
-            "preview",
+            f"{len(plan.source_catalogs)} source(s) read",
+            f"{skill_changes} change(s)" if skill_changes else "none",
+            "reconcile" if skill_changes else "up to date",
         ),
-        ("Graphify", plan.graphify_action, "preview"),
+        (
+            "Graphify",
+            plan.graphify_action,
+            "—",
+            plan.graphify_action if graphify_changes else "skip",
+        ),
         (
             "Workspaces",
-            f"{len(plan.workspace_report.results)} registered result(s)",
-            "preview",
+            f"{len(plan.workspace_report.results)} registered",
+            f"{workspace_writes} to write" if workspace_writes else "none",
+            "refresh" if workspace_writes else "up to date",
         ),
     ]
-    print_table(rows)
+    print_four_column_table(rows)
     # A closing line, not a rollup: the sibling's report says "0 verified
     # upgrades; 5 checks or refreshes remain." for the same reason. "All 3
     # component(s) look good" would be a verdict on work that has not happened,
     # and this is the last thing read before approving it.
+    # The sibling's report closes on "0 verified upgrades; 5 checks or refreshes
+    # remain." -- a count of what approving it will do, not a health verdict.
     changes = skill_changes + graphify_changes + workspace_writes
+    verified = 3 - sum(1 for count in (skill_changes, graphify_changes, workspace_writes) if count)
     print()
-    if changes:
-        print(f"  {changes} change(s) to apply; the rest will be verified.")
-    else:
-        print("  Nothing to change; the run will verify and refresh what is already here.")
+    print(f"  {verified} already current; {changes} change(s) on apply.")
 
 
 def print_update_outcome(outcome) -> tuple[int, int, int]:

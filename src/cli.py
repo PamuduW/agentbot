@@ -20,6 +20,7 @@ from .ui import (
     print_boost_status,
     print_command_help,
     print_doctor_summary,
+    print_four_column_table,
     print_graphify_status,
     print_header,
     print_install_closing_line,
@@ -448,6 +449,8 @@ def _handle_install(context: CommandContext) -> int:
             known = ", ".join(known_components)
             raise SystemExit(f"unknown component(s): {', '.join(unknown)} (known: {known})")
         components = wanted
+    if bool(getattr(context.args, "plan_only", False)):
+        return show_install_plan(context.lifecycle, components)
     return run_agentbot_install(context.lifecycle, context.paths, components=components)
 
 
@@ -518,8 +521,16 @@ def build_parser() -> argparse.ArgumentParser:
     install_parser.add_argument(
         "--components",
         default="",
-        help="Comma-separated subset to set up: skills, graphify, boost. "
-        "Omit for all of them.",
+        help="Comma-separated subset to set up: skills, graphify, boost, "
+        "vscode, cursor, cli-config. Omit for all of them.",
+    )
+    install_parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        dest="plan_only",
+        # The menu's screen between the selector and the run. Prints what each
+        # chosen component would do and asks; the exit status is the answer.
+        help=argparse.SUPPRESS,
     )
     status_parser = subparsers.add_parser("status", help="Show skills and global render status")
     status_output = status_parser.add_mutually_exclusive_group()
@@ -919,6 +930,52 @@ def handle_skills_command(lifecycle: Lifecycle, skills_command: str) -> int:
 def print_skills_error(error: Exception) -> int:
     print(f"  Error: {error}", file=sys.stderr)
     return 1
+
+
+#: What the operator chose on the plan screen, as an exit status. The menu is
+#: Bash and the plan is Python, so the answer has to cross a process boundary;
+#: these are the three ways out of that screen.
+PLAN_CONFIRM = 0
+PLAN_EDIT = 10
+PLAN_BACK = 11
+
+
+def show_install_plan(lifecycle: Lifecycle, components: tuple[str, ...] | None) -> int:
+    """What the selected components would do, then confirm, edit or back.
+
+    Between the selector and the run, as the sibling product's execution plan
+    is. The selector says what was chosen; this says what choosing it means.
+    """
+    from .install_plan import build_install_plan
+
+    chosen = components if components is not None else lifecycle.SELECTABLE_COMPONENTS
+    rows = build_install_plan(lifecycle, tuple(chosen))
+    print_header("Install plan", "Agentbot › Install › Plan")
+    print_four_column_table(
+        [(row.component, row.installed, row.available, row.action) for row in rows]
+    )
+    changing = sum(1 for row in rows if row.changes)
+    print()
+    print(f"  {len(rows) - changing} already current; {changing} to apply.")
+    _ask("[c] confirm   [e] edit   [q] back: ")
+    try:
+        with _open_update_tty_stream(
+            descriptor_name="AGENTBOT_UPDATE_TTY_IN_FD",
+            path_name="AGENTBOT_UPDATE_TTY_INPUT",
+            mode="r",
+        ) as stream:
+            answer = stream.readline().strip().lower()
+    except OSError:
+        # No terminal to ask: an unattended run has already chosen by invoking
+        # the install, and stopping to wait for an answer nobody can give would
+        # hang it. The plan above is still printed, so the log says what ran.
+        print()
+        return PLAN_CONFIRM
+    if answer in {"c", "confirm", ""}:
+        return PLAN_CONFIRM
+    if answer in {"e", "edit"}:
+        return PLAN_EDIT
+    return PLAN_BACK
 
 
 def run_agentbot_install(

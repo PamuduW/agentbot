@@ -33,6 +33,7 @@ from .reports import (
 from .table import (
     color_result,
     highlight_manual_skill_name,
+    print_four_column_table,
     print_header,
     print_rollup,
     print_section,
@@ -53,6 +54,7 @@ __all__ = [
     "print_boost_status",
     "print_command_help",
     "print_doctor_summary",
+    "print_four_column_table",
     "print_graphify_status",
     "print_header",
     "print_install_closing_line",

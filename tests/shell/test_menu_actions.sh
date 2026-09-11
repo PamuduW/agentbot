@@ -441,15 +441,20 @@ test_component_selector_keeps_the_install_contracts() (
 	agentbot_run_backend() {
 		printf '%s\n' "$*" >>"$calls"
 		[[ "$*" == 'install' ]] && return 0
+		# The plan screen confirms; the run then reports a repository change,
+		# which is the contract under test.
+		[[ "$*" == install\ --plan-only* ]] && return 0
 		return 3
 	}
 	agentbot_checkbox_run() {
-		MENU_CB_CHECKED=(1 0 1)
+		MENU_CB_CHECKED=(1 0 1 0 0 0)
 		return 0
 	}
+	tui_clear() { :; }
 	agentbot_menu_components >/dev/null 2>&1 || rc=$?
 
-	[[ "$(<"$calls")" == $'install\ninstall --components skills,boost' ]] || return 1
+	# Gate, plan, run -- the plan sits between the selector and the install now.
+	[[ "$(<"$calls")" == $'install\ninstall --plan-only --components skills,boost\ninstall --components skills,boost' ]] || return 1
 	[[ "$rc" -eq 0 ]]
 )
 

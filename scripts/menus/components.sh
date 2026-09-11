@@ -89,8 +89,25 @@ _agentbot_menu_components_repo_gate() {
 	return "$rc"
 }
 
+# The plan screen, drawn by the backend because it holds the state each row
+# reports. Its exit status is the operator's answer: 0 confirm, 10 edit,
+# anything else back.
+_agentbot_install_plan() {
+	local selection="$1" rc=0
+	if [[ -n "${AGENTBOT_TUI:-}" ]]; then
+		tui_refresh_tty_seam
+		tui_run_to_output env \
+			AGENTBOT_UPDATE_TTY_INPUT="$DOTFILES_TTY_INPUT" \
+			AGENTBOT_UPDATE_TTY_IN_FD="$DOTFILES_TTY_IN_FD" \
+			agentbot_run_backend install --plan-only --components "$selection" || rc=$?
+	else
+		agentbot_run_backend install --plan-only --components "$selection" || rc=$?
+	fi
+	return "$rc"
+}
+
 agentbot_menu_components() {
-	local selection rc=0
+	local selection rc=0 plan_rc=0
 
 	# 2 is "the checkout moved": the caller restarts into the new code, and the
 	# selector must not open on the old one. 3 is a declined pull under the TUI,
@@ -104,14 +121,31 @@ agentbot_menu_components() {
 	*) return "$rc" ;;
 	esac
 
-	_agentbot_components_prepare
-	agentbot_checkbox_run || return 0
+	# Selector, then the plan, then the run -- the sibling product's shape. The
+	# plan's `edit` comes back here, so the two screens are a loop rather than
+	# a one-way street: an operator who sees the plan and wants a different
+	# selection does not have to leave the menu and start again.
+	while true; do
+		_agentbot_components_prepare
+		agentbot_checkbox_run || return 0
 
-	selection="$(agentbot_components_selection)"
-	if [[ -z "$selection" ]]; then
-		printf '  %sNothing selected; install cancelled.%s\n' "${C_DIM:-}" "${C_RESET:-}"
-		return 0
-	fi
+		selection="$(agentbot_components_selection)"
+		if [[ -z "$selection" ]]; then
+			printf '  %sNothing selected; install cancelled.%s\n' "${C_DIM:-}" "${C_RESET:-}"
+			return 0
+		fi
+
+		tui_clear
+		_agentbot_install_plan "$selection" || plan_rc=$?
+		case "${plan_rc:-0}" in
+		0) break ;;
+		10)
+			plan_rc=0
+			continue
+			;;
+		*) return 0 ;;
+		esac
+	done
 
 	# Through agentbot_menu_install, not around it: that function owns the TUI
 	# output seam and the exit-3 repository-change contract, and calling the
