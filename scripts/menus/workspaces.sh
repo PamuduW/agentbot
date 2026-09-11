@@ -31,7 +31,10 @@ agentbot_menu_workspaces_remove_recorded() {
 		fi
 
 		if ((${#recorded_paths[@]} == 0)); then
-			printf '  %sNo recorded workspaces to remove.%s\n' "$C_DIM" "$C_RESET"
+			# The backend's own screen, for the same reason the empty prune
+			# uses it: a heading, a breadcrumb and a rollup, rather than one
+			# bare line with nothing to say where the operator is.
+			tui_run_to_output agentbot_run_backend workspaces
 			tui_pause
 			return 0
 		fi

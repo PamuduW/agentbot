@@ -113,6 +113,27 @@ test_prune_skill_menu_does_nothing_when_no_skill_is_checked() (
 	[[ ! -s "$calls" ]]
 )
 
+test_an_empty_result_is_a_screen_not_a_line() (
+	# "No prunable skills found." with no heading, no breadcrumb and no rollup:
+	# the one outcome that needs no decision from the operator was the only one
+	# with no screen. Both menus ask the backend, which already draws it.
+	local calls="$TEST_ROOT/empty-screens.calls"
+	: >"$calls"
+	# Both go through the relay, which needs somewhere to write or it returns
+	# before running the command at all.
+	local AGENTBOT_TUI_OUTPUT="$TEST_ROOT/empty-screens.out"
+	: >"$AGENTBOT_TUI_OUTPUT"
+	agentbot_run_backend() { printf '%s\n' "$*" >>"$calls"; }
+	tui_pause() { :; }
+
+	_agentbot_load_prune_candidates() { AGENTBOT_PRUNE_SKILLS=(); }
+	agentbot_menu_prune_skills >/dev/null 2>&1 || return 1
+	agentbot_menu_workspaces_remove_recorded >/dev/null 2>&1 || return 1
+
+	# The prune screen, then the paths probe, then the workspaces screen.
+	[[ "$(<"$calls")" == $'skills prune\nworkspaces --paths0\nworkspaces' ]]
+)
+
 test_prune_skill_menu_propagates_discovery_failure() (
 	# Break caught: `! command` overwrites the backend status, turning a failed
 	# candidate query into a successful and misleading empty list.
@@ -545,6 +566,7 @@ check 'component selector asks about the repository first' test_component_select
 check 'component selector cancels when nothing is checked' test_component_selector_cancels_when_nothing_is_checked
 check 'prune skill menu removes only checked names and refreshes agents' test_prune_skill_menu_removes_only_checked_names_and_refreshes_agents
 check 'prune skill menu leaves state unchanged when nothing is checked' test_prune_skill_menu_does_nothing_when_no_skill_is_checked
+check 'an empty result is a screen, not a line' test_an_empty_result_is_a_screen_not_a_line
 check 'prune skill menu propagates candidate discovery failures' test_prune_skill_menu_propagates_discovery_failure
 check 'a submenu that does not declare pause ownership still gets one' test_undeclared_submenu_still_gets_a_parent_pause
 check 'repository changes reach the outer menu without a stale pause' test_repository_change_reaches_the_outer_menu_without_pause

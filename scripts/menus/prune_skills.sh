@@ -30,7 +30,12 @@ agentbot_menu_prune_skills() {
 
 	_agentbot_load_prune_candidates || return $?
 	if ((${#AGENTBOT_PRUNE_SKILLS[@]} == 0)); then
-		printf '  %sNo prunable skills found.%s\n' "${C_DIM:-}" "${C_RESET:-}"
+		# The backend already draws this screen: the heading, the breadcrumb,
+		# a row saying every installed skill has an active source, and a
+		# rollup. The menu printed one bare line instead -- no heading, and
+		# nothing to say where the operator was -- so the one outcome that
+		# needs no decision was the only one with no screen.
+		tui_run_to_output agentbot_run_backend skills prune
 		return 0
 	fi
 
