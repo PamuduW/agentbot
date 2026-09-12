@@ -302,17 +302,28 @@ Phase 5 was independent of the package-catalog and MCP work. Its completion did
 not implement Phase 4; Slice 4M is complete, while the next implementation
 slice waits for the parent workspace's cross-agent memory decision.
 
-## Known costs, measured and open
+## Known costs, measured
 
-| Cost | Measured | Where it is tracked |
-|---|---|---|
-| `agentbot update` clones every enabled skill source twice — once so the plan can report what would change, once to verify the apply against the revisions the plan recorded | ~32s of a ~41s command over twelve sources, 2026-09-11 | workspace roadmap item 4.5 |
+`agentbot update` clones every enabled skill source twice: once so the plan can
+report what would change, once to verify the apply against the revisions the
+plan recorded.
 
-The second pass is not redundant: the operator confirms a plan that names
-specific revisions, and applying without re-checking them would make that
-confirmation meaningless. Whether the first pass's checkouts can be carried into
-the apply instead is a design question about the update transaction, recorded
-rather than guessed at.
+| | Plan | Verify | Total |
+|---|---|---|---|
+| Before 2026-09-12 | 9.3s | 23.2s | 32.5s |
+| After | 8.4–10.6s | 8.1–8.9s | 17.3–18.7s |
+
+Twelve sources. The gap was not the second clone: it was that the plan's pass
+ran through a worker pool and the apply's was a serial loop over the same
+sources. Both go through one helper now.
+
+What remains is one clone pass, which is the cost of the verification itself —
+reading reality is how the apply checks the plan against it. Carrying the plan's
+checkouts into the apply would remove the second pass entirely, but that is a
+change of contract rather than a speed fix: it would install exactly what was
+previewed instead of aborting when upstream moved. Both are defensible; they are
+not the same promise, and the second should be chosen deliberately rather than
+arrived at while optimising. Tracked as workspace roadmap item 4.5.
 
 ## Explicitly out of scope
 
@@ -352,3 +363,4 @@ removed control-plane code directly into the live lifecycle.
 | 2026-09-03 | Deferred Slice 4.0A until provider-neutral MCP and cross-agent memory evaluations are complete |
 | 2026-09-11 | Workspace roadmap item 4.1 finished: install gained a component selector and execution plan, the Platform submenu folded into install and status, and both products now share one presentation contract |
 | 2026-09-11 | Recorded the update transaction's double clone as a measured, open cost rather than leaving it in a commit message |
+| 2026-09-12 | Halved the update's source-clone cost by running the apply's pass concurrently, as the plan's already was (32.5s to ~18s over twelve sources) |
