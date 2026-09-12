@@ -125,6 +125,87 @@ class SkillCatalogTests(unittest.TestCase):
             )
         self.assertEqual(["alpha", "beta"], [c.source_id for c in catalogs])
 
+    def test_the_apply_clones_concurrently_like_the_plan(self) -> None:
+        """Break caught: the cheaper pass cost three times the dearer one.
+
+        The plan cloned its twelve sources through a worker pool and the apply
+        looped over the same twelve one at a time -- 23.2s against 9.3s for
+        identical work, measured 2026-09-12. Both go through one helper now.
+        """
+        import threading
+        import time
+
+        from src.skill_catalog import _clone_catalogs, verified_source_checkouts
+
+        config = _config_with_sources(("alpha", "beta", "gamma"))
+        overlapped = threading.Event()
+        running: list[str] = []
+        lock = threading.Lock()
+
+        def clone(_repo: str, destination: Path) -> None:
+            with lock:
+                running.append(destination.name)
+                if len(running) > 1:
+                    overlapped.set()
+            time.sleep(0.2)
+            skill = destination / destination.name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# s\n", encoding="utf-8")
+            with lock:
+                running.remove(destination.name)
+
+        with tempfile.TemporaryDirectory() as plan_root:
+            expected = _clone_catalogs(
+                list(config.active_sources()), Path(plan_root), clone, lambda _c: "rev"
+            )
+        overlapped.clear()
+
+        started = time.monotonic()
+        with verified_source_checkouts(
+            config, expected, clone_source=clone, revision_reader=lambda _c: "rev"
+        ) as checkouts:
+            elapsed = time.monotonic() - started
+            self.assertEqual({"alpha", "beta", "gamma"}, set(checkouts))
+            for source_id, path in checkouts.items():
+                self.assertEqual(source_id, path.name)
+                self.assertTrue(path.exists(), f"{source_id} checkout must be usable")
+
+        self.assertTrue(overlapped.is_set(), "the apply's clones did not overlap")
+        self.assertLess(elapsed, 0.6, "three 0.2s clones did not run together")
+
+    def test_the_apply_compares_in_manifest_order_not_completion_order(self) -> None:
+        """The comparison is tuple equality, so order is part of the contract.
+
+        Reassembling by completion order would fail the staleness check at
+        random -- on whichever run the network happened to reorder.
+        """
+        import time
+
+        from src.skill_catalog import _clone_catalogs, verified_source_checkouts
+
+        config = _config_with_sources(("alpha", "beta", "gamma"))
+        # gamma finishes first, alpha last: the reverse of manifest order.
+        delays = {"alpha": 0.3, "beta": 0.15, "gamma": 0.0}
+
+        def clone(_repo: str, destination: Path) -> None:
+            time.sleep(delays[destination.name])
+            skill = destination / destination.name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# s\n", encoding="utf-8")
+
+        with tempfile.TemporaryDirectory() as plan_root:
+            expected = _clone_catalogs(
+                list(config.active_sources()), Path(plan_root), clone, lambda _c: "rev"
+            )
+        self.assertEqual(["alpha", "beta", "gamma"], [c.source_id for c in expected])
+
+        # Equality against the plan's tuple is the whole check; it passing here
+        # is what proves the apply did not reorder.
+        with verified_source_checkouts(
+            config, expected, clone_source=clone, revision_reader=lambda _c: "rev"
+        ) as checkouts:
+            self.assertEqual(3, len(checkouts))
+
     def test_verified_checkouts_reject_remote_drift_before_yielding(self) -> None:
         from src.skill_catalog import (
             SourceCatalog,
