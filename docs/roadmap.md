@@ -318,12 +318,19 @@ ran through a worker pool and the apply's was a serial loop over the same
 sources. Both go through one helper now.
 
 What remains is one clone pass, which is the cost of the verification itself —
-reading reality is how the apply checks the plan against it. Carrying the plan's
-checkouts into the apply would remove the second pass entirely, but that is a
-change of contract rather than a speed fix: it would install exactly what was
-previewed instead of aborting when upstream moved. Both are defensible; they are
-not the same promise, and the second should be chosen deliberately rather than
-arrived at while optimising. Tracked as workspace roadmap item 4.5.
+reading reality is how the apply checks the plan against it.
+
+**Decided on 2026-09-12: it stays.** Carrying the plan's checkouts into the
+apply would remove the second pass entirely, but that is a change of contract
+rather than a speed fix — the apply would install exactly what was previewed
+instead of aborting when upstream moved. The two failure modes are not
+symmetric: aborting is loud and recoverable, while installing a revision that
+moved during the operator's confirmation is silent. A product whose design is
+preview-first with explicit mutation should fail loudly.
+
+Reopen if the source count grows past roughly forty, `update` starts running
+unattended in a loop, or the target machine is on a genuinely slow connection.
+The full reasoning is workspace roadmap item 4.5.
 
 ## Explicitly out of scope
 
@@ -364,3 +371,4 @@ removed control-plane code directly into the live lifecycle.
 | 2026-09-11 | Workspace roadmap item 4.1 finished: install gained a component selector and execution plan, the Platform submenu folded into install and status, and both products now share one presentation contract |
 | 2026-09-11 | Recorded the update transaction's double clone as a measured, open cost rather than leaving it in a commit message |
 | 2026-09-12 | Halved the update's source-clone cost by running the apply's pass concurrently, as the plan's already was (32.5s to ~18s over twelve sources) |
+| 2026-09-12 | Decided the apply keeps re-cloning to verify the plan; workspace roadmap item 4 is closed |
