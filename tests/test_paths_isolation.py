@@ -82,6 +82,9 @@ class PathIsolationTests(unittest.TestCase):
                 "global_skill_lock": paths.global_skill_lock,
                 "workspace_profiles_file": paths.workspace_profiles_file,
                 "workspace_state_file": paths.workspace_state_file,
+                "mcp_catalog_file": paths.mcp_catalog_file,
+                "mcp_state_file": paths.mcp_state_file,
+                "mcp_backup_home": paths.mcp_backup_home,
             }
             for name, value in managed.items():
                 self.assertTrue(

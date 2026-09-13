@@ -51,6 +51,18 @@ class AgentbotPaths:
     def workspace_state_file(self) -> Path:
         return self.config_home / "workspaces.json"
 
+    @property
+    def mcp_catalog_file(self) -> Path:
+        return self.root / "mcp" / "catalog.json"
+
+    @property
+    def mcp_state_file(self) -> Path:
+        return self.config_home / "mcp.json"
+
+    @property
+    def mcp_backup_home(self) -> Path:
+        return self.config_home / "backups" / "mcp"
+
 
 def default_paths(root: Path | None = None) -> AgentbotPaths:
     home = Path.home()
