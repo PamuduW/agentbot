@@ -85,9 +85,9 @@ input is masked, and normal output shows only a fingerprint.
 ## MCP management
 
 Gate 5.1A provides a provider-neutral, default-off MCP control plane for Claude
-Code, Codex CLI, and Cursor CLI. Its validated catalog is intentionally empty:
-Agentbot currently selects, owns, and writes no MCP server. Later gates must
-admit each candidate before `setup` can configure it.
+Code, Codex CLI, and Cursor CLI. The catalog can contain reviewed candidates,
+but Agentbot currently selects, owns, and writes no MCP server. Each candidate
+must pass its admission gate before `setup` can configure it.
 
 ```bash
 agentbot mcp catalog

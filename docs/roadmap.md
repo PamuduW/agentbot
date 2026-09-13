@@ -195,7 +195,7 @@ Agentbot does not own.
 
 Delivered in Gate 5.1A:
 
-1. one strict, currently empty catalog that never selects a server by default;
+1. one strict catalog that never selects a server by default;
 2. independent Claude, Codex, and Cursor native renderers at
    only the scopes each client supports;
 3. preview-first `catalog`, `status`, `plan`, `setup`, ownership-aware `off`,
@@ -208,10 +208,11 @@ Delivered in Gate 5.1A:
 5. offline status and Doctor mapping for ownership, configuration, drift, and
    authentication-reference failures.
 
-The catalog has no eligible entry in this gate, so `setup` cannot configure a
-server yet. Remaining gates admit GitHub read-only, filtered knowledge
-overlays, and the GitLab REST-read facade only after their exact authority,
-tool, credential, and three-client contracts pass.
+The catalog has no eligible entry, so `setup` cannot configure a server yet.
+The GitHub read-only contract is frozen as an ineligible candidate. Remaining
+gates admit it, filtered knowledge overlays, and the GitLab REST-read facade
+only after their exact authority, tool, credential, and three-client contracts
+pass.
 
 The historical files under `archive/catalog/` and `archive/mcp/` are research
 inputs only. Phase 3 must extend the Phase 2 renderer; it must not restore the

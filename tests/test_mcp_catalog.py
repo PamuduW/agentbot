@@ -52,10 +52,23 @@ class McpCatalogTests(unittest.TestCase):
         entry.update(overrides)
         return entry
 
-    def test_shipped_catalog_contains_no_entry(self) -> None:
+    def test_shipped_catalog_contains_no_eligible_entry(self) -> None:
         catalog = load_mcp_catalog(self.paths.mcp_catalog_file)
         self.assertEqual(1, catalog.version)
-        self.assertEqual((), catalog.entries)
+        self.assertFalse(any(entry.eligible for entry in catalog.entries))
+
+    def test_static_headers_reject_credential_values(self) -> None:
+        entry = self.valid_entry()
+        entry["clients"] = {
+            client: {
+                "enabled": True,
+                "static_headers": {"Private-Token": "literal-secret"},
+            }
+            for client in ("claude", "codex", "cursor")
+        }
+        self.write_catalog({"version": 1, "entries": [entry]})
+        with self.assertRaisesRegex(ValueError, "unsupported public control header"):
+            load_mcp_catalog(self.catalog_path)
 
     def test_unknown_top_level_key_fails_closed(self) -> None:
         self.write_catalog({"version": 1, "entries": [], "mystery": True})

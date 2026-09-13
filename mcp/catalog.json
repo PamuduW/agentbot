@@ -1,4 +1,103 @@
 {
   "version": 1,
-  "entries": []
+  "entries": [
+    {
+      "id": "github",
+      "name": "agentbot_github",
+      "publisher": "GitHub",
+      "documentation_url": "https://github.com/github/github-mcp-server/blob/main/docs/server-configuration.md",
+      "license": "MIT",
+      "terms_url": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+      "reviewed_on": "2026-09-13",
+      "eligible": false,
+      "transport": "remote_http",
+      "origin": "https://api.githubcopilot.com/mcp/readonly",
+      "clients": {
+        "claude": {
+          "enabled": true,
+          "static_headers": {
+            "X-MCP-Readonly": "true",
+            "X-MCP-Tools": "get_me,search_repositories,get_file_contents,get_commit,list_commits,list_branches,list_tags,get_tag,list_releases,get_latest_release,get_release_by_tag,list_issues,issue_read,list_pull_requests,pull_request_read,actions_list,actions_get,get_job_logs"
+          }
+        },
+        "codex": {
+          "enabled": true,
+          "static_headers": {
+            "X-MCP-Readonly": "true",
+            "X-MCP-Tools": "get_me,search_repositories,get_file_contents,get_commit,list_commits,list_branches,list_tags,get_tag,list_releases,get_latest_release,get_release_by_tag,list_issues,issue_read,list_pull_requests,pull_request_read,actions_list,actions_get,get_job_logs"
+          }
+        },
+        "cursor": {
+          "enabled": true,
+          "static_headers": {
+            "X-MCP-Readonly": "true",
+            "X-MCP-Tools": "get_me,search_repositories,get_file_contents,get_commit,list_commits,list_branches,list_tags,get_tag,list_releases,get_latest_release,get_release_by_tag,list_issues,issue_read,list_pull_requests,pull_request_read,actions_list,actions_get,get_job_logs"
+          }
+        }
+      },
+      "credential": {
+        "mode": "bearer_env",
+        "environment": [
+          "GITHUB_MCP_TOKEN"
+        ]
+      },
+      "allowed_tools": [
+        "get_me",
+        "search_repositories",
+        "get_file_contents",
+        "get_commit",
+        "list_commits",
+        "list_branches",
+        "list_tags",
+        "get_tag",
+        "list_releases",
+        "get_latest_release",
+        "get_release_by_tag",
+        "list_issues",
+        "issue_read",
+        "list_pull_requests",
+        "pull_request_read",
+        "actions_list",
+        "actions_get",
+        "get_job_logs"
+      ],
+      "descriptor_fingerprints": [
+        "sha256:6f785484d07a700f889eab15d256545845f3f02917b6f10721970b8b30a03030",
+        "sha256:cfc01ab387d3f7a0540b7247adc3184678067bc502f050ca800db69536b321bf",
+        "sha256:be2bff06d2540e53cba8dbc817660588960cfa5e93e98085d770ddd1eae9a066",
+        "sha256:22a7de2906827a39eefafd0171433cfb5a7f7d14b4b2aa6d52ecce2de81f8906",
+        "sha256:99c633f38f6b6f1882afeb4e18063041b8aa7dd7d6426f9f3939ee48538965cc",
+        "sha256:8f969f8df8f8313c35ee526f8a6430ce7a59f3f96cb890a8c08bcf03456b0db4",
+        "sha256:269133657a7a4ac97950078b2d8c961233a4ec219f8253134b5234beb6ccf9ca",
+        "sha256:bdf935fea6ba83ff89c8dc2e59b3bf435dc8e7e2016474bf05f2118c61fb6f59",
+        "sha256:c531dbf898fcac23fa9559b39892d915e39423e48bd58d88cd0bceecd5f30ade",
+        "sha256:05265fb7ddb091b98d8d5c0afeedbb2018d74a7bac1deb655c11d774a3d18a77",
+        "sha256:130ef231afded08a7f3ff1b3faf5619f1993469c483f267fa551d8ce12ef2cdc",
+        "sha256:b602e5e96aa6d2677ed07ca875ae38986e658d94c671645024b205d9f04320a1",
+        "sha256:f3d3bac7b230fe0c8535d0689345608022ba81b1d3241fb02d08e0b719609d58",
+        "sha256:d3b2cd97ec6f790496ed11885b5a061dba2c6c5a56f21718df4bbf48943c86c8",
+        "sha256:9c22560d7b5b3854f1129fbe3c4fed093fc7e0e4f4dc586c9fe2a69928301c31",
+        "sha256:769181b62c5e51bf8286e07a3497ef20870beb7da3e5c109033b9b41d6927ef3",
+        "sha256:6bedf2551fa874fda85bc2ee33079557385fc708bc584e925e30dd33faacb563",
+        "sha256:14ed8eb72b3ae34f664c0ee5f68766dbc529f769c7e9c59bbb80ff1b0cd48e85"
+      ],
+      "read_only_authority": "GitHub remote /readonly path and X-MCP-Readonly strict server filter, paired with a repository-limited fine-grained token whose selected permissions are read-only",
+      "limitations": [
+        "Pending live remote tools/list, direct-call rejection, and three-client acceptance",
+        "Remote service behavior can change without a package version pin",
+        "Returned repository and Actions content is untrusted input"
+      ],
+      "timeout_seconds": 60,
+      "max_response_bytes": 4194304,
+      "doctor_rules": [
+        "auth_reference_present",
+        "readonly_endpoint_and_header",
+        "exact_tool_header",
+        "codex_enabled_tools_exact",
+        "live_tool_list_exact",
+        "prohibited_tool_rejected",
+        "descriptor_fingerprints_match"
+      ]
+    }
+  ]
 }

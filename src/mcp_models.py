@@ -42,6 +42,7 @@ class McpClientContract:
     args: tuple[str, ...] = ()
     environment: tuple[tuple[str, str], ...] = ()
     headers: tuple[tuple[str, str], ...] = ()
+    static_headers: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

@@ -109,7 +109,10 @@ def _native_entry(client: str, entry: McpCatalogEntry) -> dict[str, object]:
         if client != "codex":
             native["type"] = "http"
         _add_remote_auth(native, client, entry.credential.mode, environment)
+        _add_static_headers(native, client, contract.static_headers)
         _add_header_references(native, client, contract.headers)
+        if client == "codex" and entry.allowed_tools:
+            native["enabled_tools"] = list(entry.allowed_tools)
         return native
 
     if entry.transport != "local_stdio":
@@ -123,6 +126,8 @@ def _native_entry(client: str, entry: McpCatalogEntry) -> dict[str, object]:
         native["args"] = list(args)
     referenced = tuple(dict.fromkeys((*environment, *(value for _, value in contract.environment))))
     _add_stdio_environment(native, client, referenced)
+    if client == "codex" and entry.allowed_tools:
+        native["enabled_tools"] = list(entry.allowed_tools)
     return native
 
 
@@ -183,6 +188,23 @@ def _add_header_references(
         else:
             expression = f"${{env:{environment}}}" if client == "cursor" else f"${{{environment}}}"
             rendered_headers[header] = expression
+
+
+def _add_static_headers(
+    native: dict[str, object], client: str, headers: tuple[tuple[str, str], ...]
+) -> None:
+    if not headers:
+        return
+    native_key = "http_headers" if client == "codex" else "headers"
+    existing = native.get(native_key)
+    if existing is None:
+        rendered_headers: dict[str, str] = {}
+        native[native_key] = rendered_headers
+    elif isinstance(existing, dict):
+        rendered_headers = existing
+    else:
+        raise ValueError(f"native MCP {native_key} must be a mapping")
+    rendered_headers.update(headers)
 
 
 def _add_stdio_environment(

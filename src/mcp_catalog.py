@@ -36,7 +36,9 @@ _ENTRY_KEYS = frozenset(
     }
 )
 _REQUIRED_ENTRY_KEYS = _ENTRY_KEYS - {"origin", "entrypoint"}
-_CLIENT_KEYS = frozenset({"enabled", "url", "command", "args", "environment", "headers"})
+_CLIENT_KEYS = frozenset(
+    {"enabled", "url", "command", "args", "environment", "headers", "static_headers"}
+)
 _CREDENTIAL_KEYS = frozenset({"mode", "environment"})
 _CLIENTS = ("claude", "codex", "cursor")
 _TRANSPORTS = frozenset({"remote_http", "local_stdio"})
@@ -45,6 +47,18 @@ _ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _NAME_PATTERN = re.compile(r"^agentbot_[a-z][a-z0-9_]*$")
 _ENV_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+_HEADER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+_STATIC_CONTROL_HEADERS = frozenset(
+    {
+        "x-mcp-exclude-tools",
+        "x-mcp-features",
+        "x-mcp-insiders",
+        "x-mcp-lockdown",
+        "x-mcp-readonly",
+        "x-mcp-tools",
+        "x-mcp-toolsets",
+    }
+)
 
 
 def load_mcp_catalog(path: Path) -> McpCatalog:
@@ -163,6 +177,9 @@ def _decode_clients(raw: object) -> tuple[McpClientContract, ...]:
                 args=_string_tuple(value.get("args", []), f"{client} args"),
                 environment=_string_mapping(value.get("environment", {}), f"{client} environment"),
                 headers=_string_mapping(value.get("headers", {}), f"{client} headers"),
+                static_headers=_static_header_mapping(
+                    value.get("static_headers", {}), f"{client} static_headers"
+                ),
             )
         )
     return tuple(contracts)
@@ -249,6 +266,18 @@ def _string_mapping(raw: object, label: str) -> tuple[tuple[str, str], ...]:
             for key, value in data.items()
         )
     )
+
+
+def _static_header_mapping(raw: object, label: str) -> tuple[tuple[str, str], ...]:
+    values = _string_mapping(raw, label)
+    for name, value in values:
+        if not _HEADER_PATTERN.fullmatch(name):
+            raise ValueError(f"{label} key must be an HTTP header name")
+        if name.lower() not in _STATIC_CONTROL_HEADERS:
+            raise ValueError(f"{label} contains unsupported public control header: {name}")
+        if "${" in value or "\n" in value or "\r" in value:
+            raise ValueError(f"{label} value must be a literal single-line control")
+    return values
 
 
 def _date_string(raw: object) -> str:
