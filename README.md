@@ -9,7 +9,7 @@ Use `./install.sh` from a checkout or `agentbot` after installation. Run
 
 ## Requirements
 
-- Bash, Git, Python 3, and PyYAML
+- Bash, Git, Python 3, PyYAML, and tomlkit
 - Node.js, npm, and `npx` for managed skill sources
 - optional `graphify` and `boost` CLIs installed by Dotfiles
 
@@ -66,6 +66,8 @@ agentbot boot /path/to/repo       # render and register a workspace
 agentbot workspaces               # list registered workspaces
 agentbot resync --dry-run --all   # preview every registered workspace
 agentbot token                    # manage the optional private GitHub token
+agentbot mcp catalog              # list validated MCP candidates
+agentbot mcp status               # inspect MCP ownership without network access
 ```
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
@@ -79,6 +81,40 @@ agentbot cli-config status|apply      # declared Claude, Codex, Cursor keys
 
 The menu and direct CLI share the same command model and lifecycle code. Token
 input is masked, and normal output shows only a fingerprint.
+
+## MCP management
+
+Gate 5.1A provides a provider-neutral, default-off MCP control plane for Claude
+Code, Codex CLI, and Cursor CLI. Its validated catalog is intentionally empty:
+Agentbot currently selects, owns, and writes no MCP server. Later gates must
+admit each candidate before `setup` can configure it.
+
+```bash
+agentbot mcp catalog
+agentbot mcp status
+agentbot mcp plan --select ID... --targets claude codex cursor
+agentbot mcp setup --select ID... --targets CLIENT... --yes
+agentbot mcp off --select ID... --targets CLIENT... --yes
+agentbot mcp restore OPERATION_ID --yes
+```
+
+`catalog`, `status`, and `plan` are read-only; default status never contacts a
+provider. Mutations require a non-empty server and client selection plus
+`--yes`. Agentbot refuses malformed configuration, symlinks, unmanaged
+same-name entries, and changes to an entry it previously rendered.
+
+Ownership records live in private mode-`0600` state under
+`${XDG_CONFIG_HOME:-$HOME/.config}/agentbot/mcp.json`. Each operation snapshots
+all selected client files and state under a mode-`0700`
+`backups/mcp/OPERATION_ID/` directory before writing. A failed multi-client
+operation restores every original file; deliberate restore refuses if a
+destination changed afterward.
+
+The catalog and state store environment-variable names only. Claude, Codex,
+and Cursor receive their native reference forms; Agentbot never writes a token
+value, token-bearing URL, command argument, or MCP `.env` file. `off` removes
+only unchanged Agentbot-owned entries and does not revoke client-owned OAuth or
+delete environment variables.
 
 ## Skills
 

@@ -7,13 +7,14 @@ install.sh / bin/agentbot
         |
         v
 src/cli.py ---- src/commands.py
-        |
-        v
-src/lifecycle.py
-   |       |        |
- skills  render   workspace services
-   |       |        |
-   +---- diagnostics + reports
+     |          |
+     v          v
+src/lifecycle.py  src/mcp_service.py
+   |       |       |-- strict catalog + private ownership state
+ skills  render    |-- native client renderers
+ workspace services|-- transactional reconciliation + restore
+   |               |
+   +--------- diagnostics + reports
 ```
 
 ## Main boundaries
@@ -41,6 +42,11 @@ src/lifecycle.py
   relay in the menu, so they look the same from a terminal, through a pipe, and
   inside `dotfiles full-update`.
 - `src/diagnostics.py` produces the shared Status and Doctor snapshot.
+- `src/mcp_service.py` is the only public MCP business-logic entrypoint. It
+  loads the strict catalog and private ownership state, delegates native
+  rendering to `src/mcp_render.py`, and delegates whole-operation planning,
+  backup, rollback, and restore to `src/mcp_reconcile.py`. CLI and menu paths
+  call this same service.
 - `scripts/lib/tui.sh` and `scripts/menus/` are presentation adapters.
 - `src/ui/menu.py` draws menu frames and `src/ui/menu_select.py` runs the
   selection loop. ADR-0001 in the workspace repository moves presentation to
@@ -90,15 +96,17 @@ src/lifecycle.py
 
 ## Authored and generated data
 
-Authored sources include `skills.sources.yaml`, `base/AGENTS.md`,
-`base/CLAUDE.md`, `global/AGENTS.md`, and `agentos.yaml`. Global assistant
+Authored sources include `skills.sources.yaml`, `mcp/catalog.json`,
+`base/AGENTS.md`, `base/CLAUDE.md`, `global/AGENTS.md`, and `agentos.yaml`. Global assistant
 files, workspace compatibility files, skill links, and the Claude statusline
 are derived outputs. Edit an authored source and use the documented Agentbot
 flow to refresh its outputs.
 
 Local mutable state is outside the checkout under
-`${XDG_CONFIG_HOME:-$HOME/.config}/agentbot` and `~/.agents/`. The MCP snapshots
-under `archive/` are research inputs only.
+`${XDG_CONFIG_HOME:-$HOME/.config}/agentbot` and `~/.agents/`. MCP ownership is
+recorded in private `mcp.json`; secure operation snapshots live under
+`backups/mcp/`. The catalog contains no selection or secret value. The MCP
+snapshots under `archive/` are historical research inputs only.
 
 ## Cross-repository ownership
 

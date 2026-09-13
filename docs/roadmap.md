@@ -1,8 +1,8 @@
 # Agentbot roadmap
 
-**Status:** Phases 0, 1, 2, and 5 are complete. The parent workspace is actively
-designing Phase 3 provider-neutral MCP ownership; implementation has not
-started. Phase 4 memory remains deferred. Slice 4M is complete, but Slice 4.0A
+**Status:** Phases 0, 1, 2, and 5 are complete. Phase 3 Gate 5.1A now provides
+the default-off MCP control plane; GitHub, filtered knowledge, and GitLab
+admission gates remain. Phase 4 memory remains deferred. Slice 4M is complete, but Slice 4.0A
 must not start until the planned cross-agent memory comparison is resolved. The
 current core has one Python lifecycle backend, one diagnostics snapshot, one
 command model, and focused shell adapters and tests.
@@ -31,7 +31,7 @@ must use Agentbot and agentbot.
 | Global machine baseline | global/AGENTS.md and install.sh global | Live |
 | Curated skills | skills.sources.yaml and install.sh skills ... | Live |
 | Dotfiles integration | sibling dotfiles Agentbot bridge | Live |
-| Provider-neutral MCP management | parent workspace design; archive snapshots are historical inputs | Phase 3 design active |
+| Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Gate 5.1A live; admissions pending |
 | Durable memory | workspace `docs/designs/memory/` design | Pending cross-agent memory comparison |
 | Graphify CLI and assistant integration | sibling dotfiles component plus Agentbot integration | Live (Phase 5) |
 
@@ -53,7 +53,7 @@ Phase 2: profiles + managed workspace render + local resync ✅
     |\
     | \--> Phase 5: optional Graphify CLI + assistant integration ✅
     |
-    +----> Phase 3: provider-neutral MCP management (design active)
+    +----> Phase 3: provider-neutral MCP management (Gate 5.1A live)
     |
     +----> Phase 4: durable memory (pending cross-agent comparison)
 ```
@@ -187,30 +187,31 @@ The implementation is covered by:
 - Agentbot dispatcher, boot, menu, syntax, and temporary-folder acceptance
   tests.
 
-## Phase 3 — provider-neutral MCP management
+## Phase 3 — provider-neutral MCP management (Gate 5.1A live)
 
 **Goal:** Give Claude Code, Codex CLI, and Cursor one Agentbot-owned MCP catalog
 while rendering each client's native schema and preserving configuration that
 Agentbot does not own.
 
-Planned work:
+Delivered in Gate 5.1A:
 
-1. define one strict catalog whose entries are all unselected by default and
-   require explicit operator opt-in;
-2. render the documented Claude, Codex, and Cursor schemas independently at
+1. one strict, currently empty catalog that never selects a server by default;
+2. independent Claude, Codex, and Cursor native renderers at
    only the scopes each client supports;
-3. add preview-first `status`, `plan`, `setup`, and ownership-aware `off`
+3. preview-first `catalog`, `status`, `plan`, `setup`, ownership-aware `off`,
+   and guarded `restore`
    behavior with backups, atomic writes, whole-operation rollback, and
    preservation of unowned entries;
-4. keep secret values out of source, generated configuration, arguments, logs,
+4. secret-value exclusion from source, generated configuration, arguments, logs,
    and reports by storing only approved environment-variable names or native
    credential-store references;
-5. model read-only access as a server or credential guarantee, not as a tool
-   annotation, prompt, or client approval setting;
-6. add Doctor states for absent, disabled, stale, conflicting, shadowed,
-   unauthenticated, unreachable, and unowned entries;
-7. add the approved GitLab read-only API facade only after its exact tool,
-   credential, threat, and fail-closed test contracts are complete.
+5. offline status and Doctor mapping for ownership, configuration, drift, and
+   authentication-reference failures.
+
+The catalog has no eligible entry in this gate, so `setup` cannot configure a
+server yet. Remaining gates admit GitHub read-only, filtered knowledge
+overlays, and the GitLab REST-read facade only after their exact authority,
+tool, credential, and three-client contracts pass.
 
 The historical files under `archive/catalog/` and `archive/mcp/` are research
 inputs only. Phase 3 must extend the Phase 2 renderer; it must not restore the
@@ -384,3 +385,4 @@ removed control-plane code directly into the live lifecycle.
 | 2026-09-12 | Halved the update's source-clone cost by running the apply's pass concurrently, as the plan's already was (32.5s to ~18s over twelve sources) |
 | 2026-09-12 | Decided the apply keeps re-cloning to verify the plan; workspace roadmap item 4 is closed |
 | 2026-09-13 | Replaced the retired package-catalog direction with the active provider-neutral MCP ownership design |
+| 2026-09-13 | Delivered Phase 3 Gate 5.1A with an empty default-off catalog, native renderers, private ownership, atomic reconciliation, CLI, menu, and Doctor integration |
