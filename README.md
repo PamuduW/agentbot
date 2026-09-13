@@ -116,6 +116,29 @@ value, token-bearing URL, command argument, or MCP `.env` file. `off` removes
 only unchanged Agentbot-owned entries and does not revoke client-owned OAuth or
 delete environment variables.
 
+### GitHub admission status
+
+The official GitHub remote is present as an ineligible candidate. Its frozen
+contract uses the `/readonly` endpoint, exact individual tools, and Codex's
+matching `enabled_tools`. Agentbot will not configure it until the live remote
+and all three clients pass the admission suite.
+
+For that gate, create a repository-limited fine-grained personal access token
+with only Metadata, Contents, Issues, Pull requests, and Actions set to `Read`.
+Expose it to the test process as `GITHUB_MCP_TOKEN`; do not put the value in an
+Agentbot file or command argument. The opt-in test remains a clean skip unless
+both variables are present:
+
+```bash
+AGENTBOT_TEST_GITHUB_MCP=1 \
+  GITHUB_MCP_TOKEN="$GITHUB_MCP_TOKEN" \
+  python3 -m unittest tests.integration.test_mcp_github_live -v
+```
+
+The test records no token, header, repository content, issue text, comment, or
+job log. Until it passes, `agentbot mcp plan --select github ...` fails closed
+because the candidate is not eligible.
+
 ## Skills
 
 [`skills.sources.yaml`](skills.sources.yaml) is the canonical source manifest.

@@ -56,14 +56,26 @@ class McpService:
         if not catalog.entries and not state.managed:
             return McpStatusReport(catalog_version=catalog.version, live=live, items=())
 
-        from .mcp_render import entry_fingerprint
-
         for entry in catalog.entries:
             for contract in entry.clients:
                 if not contract.enabled:
                     continue
                 client = contract.client
                 record = records.get((entry.id, client, entry.name))
+                if not entry.eligible:
+                    if record is not None:
+                        items.append(
+                            self._item(
+                                entry.id,
+                                client,
+                                entry.name,
+                                "config-invalid",
+                                "owned entry remains after its catalog admission was withdrawn",
+                            )
+                        )
+                    continue
+                from .mcp_render import entry_fingerprint
+
                 try:
                     destination, native = self._native_entry(client, entry.name)
                 except ValueError as error:
