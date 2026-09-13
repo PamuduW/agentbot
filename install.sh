@@ -506,6 +506,18 @@ main() {
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;
+	mcp)
+		check_python_deps
+		case "${2:-}" in
+		catalog | status) ;;
+		*)
+			if ! python3 -c "import tomlkit" >/dev/null 2>&1; then
+				die "tomlkit is required (run: python3 -m pip install -r requirements.txt)"
+			fi
+			;;
+		esac
+		run_cli "$cmd" "${@:2}"
+		;;
 	cli-config | cursor | vscode)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"

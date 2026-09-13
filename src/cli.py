@@ -27,6 +27,9 @@ from .ui import (
     print_install_closing_line,
     print_install_summary,
     print_manual_skill_removal_report,
+    print_mcp_catalog,
+    print_mcp_plan,
+    print_mcp_status,
     print_output_refresh_report,
     print_rollup,
     print_skill_prune_report,
@@ -267,6 +270,43 @@ def _handle_boost(context: CommandContext) -> int:
     return 1 if status.state in {"broken", "forbidden", "unsafe-config"} else 0
 
 
+def _handle_mcp(context: CommandContext) -> int:
+    from .mcp_service import McpService
+
+    service = McpService(context.paths)
+    command = context.args.mcp_command
+    json_output = bool(getattr(context.args, "mcp_json", False))
+    if command == "catalog":
+        print_mcp_catalog(service.catalog(), json_output=json_output)
+        return 0
+    if command == "status":
+        report = service.status(live=bool(getattr(context.args, "live", False)))
+        print_mcp_status(report, json_output=json_output)
+        return 1 if any(item.severity == "error" for item in report.items) else 0
+    if command == "restore":
+        service.restore(context.args.operation_id, confirmed=bool(context.args.confirm))
+        print(f"  Restored MCP operation {context.args.operation_id}")
+        return 0
+
+    selection = tuple(context.args.mcp_select)
+    targets = tuple(context.args.mcp_targets)
+    plan = service.plan(selection, targets) if command != "off" else service.plan_off(
+        selection, targets
+    )
+    print_mcp_plan(plan, json_output=json_output)
+    if not plan.can_apply:
+        return 1
+    if command == "plan":
+        return 0
+    operation_id = (
+        service.setup(selection, targets, confirmed=bool(context.args.confirm))
+        if command == "setup"
+        else service.off(selection, targets, confirmed=bool(context.args.confirm))
+    )
+    print(f"  MCP operation: {operation_id}")
+    return 0
+
+
 def _handle_update(context: CommandContext) -> int:
     args = context.args
     command = args.command
@@ -465,6 +505,7 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "doctor": _handle_doctor,
     "graphify": _handle_graphify,
     "boost": _handle_boost,
+    "mcp": _handle_mcp,
     "cli-config": _handle_cli_config,
     "cursor": _handle_cursor,
     "vscode": _handle_vscode,
@@ -538,6 +579,29 @@ def build_parser() -> argparse.ArgumentParser:
     boost_sub.add_parser("status", help="Show Boost CLI, safety, and integration state")
     boost_sub.add_parser("setup", help="Set up Boost for installed Claude, Codex, and Cursor CLIs")
     boost_sub.add_parser("off", help="Remove Boost integration from Claude, Codex, and Cursor")
+    mcp = subparsers.add_parser("mcp", help="Manage explicitly selected MCP servers")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
+    mcp_catalog = mcp_sub.add_parser("catalog", help="List validated MCP candidates")
+    mcp_catalog.add_argument("--json", action="store_true", dest="mcp_json")
+    mcp_status = mcp_sub.add_parser("status", help="Inspect managed MCP configuration")
+    mcp_status.add_argument("--json", action="store_true", dest="mcp_json")
+    mcp_status.add_argument("--live", action="store_true", help="Run admitted live checks")
+    for action in ("plan", "setup", "off"):
+        action_parser = mcp_sub.add_parser(action, help=f"{action.capitalize()} MCP configuration")
+        action_parser.add_argument("--select", nargs="+", required=True, dest="mcp_select")
+        action_parser.add_argument(
+            "--targets",
+            nargs="+",
+            required=True,
+            choices=("claude", "codex", "cursor"),
+            dest="mcp_targets",
+        )
+        action_parser.add_argument("--json", action="store_true", dest="mcp_json")
+        if action in {"setup", "off"}:
+            action_parser.add_argument("--yes", action="store_true", dest="confirm")
+    mcp_restore = mcp_sub.add_parser("restore", help="Restore a complete MCP operation backup")
+    mcp_restore.add_argument("operation_id")
+    mcp_restore.add_argument("--yes", action="store_true", dest="confirm")
     cli_config = subparsers.add_parser("cli-config", help="Manage agent CLI configuration")
     cli_config_sub = cli_config.add_subparsers(dest="cli_config_command")
     cli_config_sub.add_parser("status", help="Preview CLI config changes without writing")

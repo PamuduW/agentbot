@@ -12,6 +12,20 @@ from tests.support import (
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_invalid_mcp_catalog_is_a_doctor_error(self) -> None:
+        from src.diagnostics import Diagnostics
+
+        with isolated_agentbot_paths() as (root, paths):
+            (root / "mcp").mkdir()
+            (root / "mcp" / "catalog.json").write_text(
+                '{"version":2,"entries":[]}', encoding="utf-8"
+            )
+            issues = Diagnostics(paths).doctor_issues()
+
+        self.assertTrue(
+            any(issue.level == "error" and issue.scope == "mcp" for issue in issues)
+        )
+
     def test_disabled_source_skill_is_reported_as_orphaned_and_prunable(self) -> None:
         """Break caught: Doctor calls a lock-pinned orphan a manual skill."""
         from src.diagnostics import Diagnostics

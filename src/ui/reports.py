@@ -5,10 +5,13 @@ Generic terminal primitives live in src/ui/table.py.
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Literal
 
 from ..commands import CommandSpec, commands_for_surface
+from ..mcp_models import McpCatalog, McpPlan, McpStatusReport
 from ..models import Table, TableSection
 from .table import (
     DIM,
@@ -1141,3 +1144,63 @@ def print_vscode_report(report) -> None:
         _tally(print_table(settings_rows))
 
     print_rollup(ok=totals[0], check=totals[1], miss=totals[2])
+
+
+def print_mcp_catalog(catalog: McpCatalog, *, json_output: bool = False) -> None:
+    if json_output:
+        print(json.dumps(asdict(catalog), indent=2, sort_keys=True))
+        return
+    print_header("MCP catalog", "Agentbot › MCP › Catalog")
+    if not any(entry.eligible for entry in catalog.entries):
+        print("  No MCP servers are eligible. Agentbot manages none by default.")
+        return
+    rows = [
+        (
+            entry.id,
+            f"{entry.publisher}; reviewed {entry.reviewed_on}",
+            "ok" if entry.eligible else "skipped",
+        )
+        for entry in catalog.entries
+    ]
+    print_table(rows, headers=("server", "contract", "eligibility"), wrap_details=True)
+
+
+def print_mcp_status(report: McpStatusReport, *, json_output: bool = False) -> None:
+    if json_output:
+        print(json.dumps(asdict(report), indent=2, sort_keys=True))
+        return
+    print_header("MCP status", "Agentbot › MCP › Status")
+    selected = tuple(item for item in report.items if item.status != "not-selected")
+    if not selected:
+        print("  No MCP servers are selected or managed.")
+        return
+    print_table(
+        [
+            (
+                f"{item.client}/{item.catalog_id}",
+                f"{item.status}: {item.detail}",
+                item.severity,
+            )
+            for item in selected
+        ],
+        headers=("target", "state", "result"),
+        wrap_details=True,
+    )
+
+
+def print_mcp_plan(plan: McpPlan, *, json_output: bool = False) -> None:
+    if json_output:
+        print(json.dumps(asdict(plan) | {"can_apply": plan.can_apply}, indent=2, sort_keys=True))
+        return
+    print_header("MCP plan", "Agentbot › MCP › Plan")
+    print_table(
+        [
+            (
+                f"{item.client}/{item.catalog_id}",
+                f"{item.action}: {item.state}",
+                "check" if item.state in {"absent", "owned"} else "error",
+            )
+            for item in plan.items
+        ],
+        headers=("target", "change", "result"),
+    )

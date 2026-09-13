@@ -16,6 +16,27 @@ from tests.support import (
 
 
 class CliTests(unittest.TestCase):
+    def test_parser_accepts_the_mcp_command_contract(self) -> None:
+        from src.cli import build_parser
+
+        parser = build_parser()
+        plan = parser.parse_args(
+            ["mcp", "plan", "--select", "github", "--targets", "claude", "codex"]
+        )
+        setup = parser.parse_args(
+            ["mcp", "setup", "--select", "github", "--targets", "cursor", "--yes"]
+        )
+        restore = parser.parse_args(
+            ["mcp", "restore", "20260913T120000Z-1234abcd", "--yes"]
+        )
+
+        self.assertEqual("plan", plan.mcp_command)
+        self.assertEqual(["github"], plan.mcp_select)
+        self.assertEqual(["claude", "codex"], plan.mcp_targets)
+        self.assertTrue(setup.confirm)
+        self.assertEqual("20260913T120000Z-1234abcd", restore.operation_id)
+        self.assertTrue(restore.confirm)
+
     def test_real_launcher_help_resolves_every_metadata_topic_and_alias(self) -> None:
         """Break caught: help accepts only one argv token, hiding nested commands."""
         from src.commands import COMMANDS, command_by_name
@@ -206,6 +227,8 @@ class CliTests(unittest.TestCase):
                     "Graphify CLI and Agent Skills integration are not installed.",
                 ),
                 ("boost", "status"): (0, "Boost CLI is not installed."),
+                ("mcp", "catalog"): (0, "No MCP servers are eligible."),
+                ("mcp", "status"): (0, "No MCP servers are selected or managed."),
             }
             for args, (expected_returncode, expected_stdout) in cases.items():
                 with self.subTest(args=args):
@@ -401,6 +424,7 @@ class CliTests(unittest.TestCase):
                 "doctor",
                 "graphify",
                 "boost",
+                "mcp",
                 "cli-config",
                 "cursor",
                 "vscode",

@@ -73,6 +73,8 @@ test_dispatch_matrix() (
 	[[ $? -eq 12 ]] || exit 1
 	agentbot_main graphify status
 	[[ $? -eq 14 ]] || exit 1
+	agentbot_main mcp status
+	[[ $? -eq 14 ]] || exit 1
 	agentbot_main update
 	[[ $? -eq 14 ]] || exit 1
 	agentbot_main boot --cursor /tmp/project
@@ -84,7 +86,7 @@ test_dispatch_matrix() (
 	agentbot_main resync --all
 	[[ $? -eq 14 ]] || exit 1
 	set -e
-	[[ "$(<"$calls")" == $'menu\nbackend:status\nbackend:install\nbackend:doctor\ntoken\nbackend:graphify status\nbackend:update\nbackend:boot --cursor /tmp/project\nbackend:workspace /tmp/project\nbackend:workspaces\nbackend:resync --all' ]]
+	[[ "$(<"$calls")" == $'menu\nbackend:status\nbackend:install\nbackend:doctor\ntoken\nbackend:graphify status\nbackend:mcp status\nbackend:update\nbackend:boot --cursor /tmp/project\nbackend:workspace /tmp/project\nbackend:workspaces\nbackend:resync --all' ]]
 )
 
 test_install_menu_routes_to_the_component_selector() (

@@ -33,6 +33,8 @@ class DiagnosticsSnapshot:
     claude_statusline_state: str
     issues: tuple[DoctorIssue, ...]
     prune_candidate_count: int = 0
+    mcp_catalog_count: int = 0
+    mcp_managed_count: int = 0
 
 
 @dataclass(frozen=True)

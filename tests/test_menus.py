@@ -15,6 +15,9 @@ from src.ui import graphify_lib, menu_select, menus
 
 
 class MenuDefinitionTests(unittest.TestCase):
+    def test_main_menu_exposes_mcp_management(self) -> None:
+        self.assertIn("mcp", menus.menu("main").keys)
+
     def test_every_menu_has_a_key_and_a_description_per_label(self) -> None:
         """Three parallel sequences describe one menu. A label without its key
         shifts every entry below it onto the wrong action."""

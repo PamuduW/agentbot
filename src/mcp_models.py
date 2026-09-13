@@ -182,6 +182,23 @@ class McpPlan:
         return all(item.state in {"absent", "owned"} for item in self.items)
 
 
+@dataclass(frozen=True)
+class McpStatusItem:
+    catalog_id: str
+    client: str
+    name: str
+    status: str
+    detail: str
+    severity: Literal["ok", "info", "warning", "error"]
+
+
+@dataclass(frozen=True)
+class McpStatusReport:
+    catalog_version: int
+    live: bool
+    items: tuple[McpStatusItem, ...]
+
+
 def _validate_date(raw: object, label: str) -> None:
     if not isinstance(raw, str):
         raise ValueError(f"{label} must be an ISO date")

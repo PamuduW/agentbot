@@ -47,6 +47,7 @@ MENUS: dict[str, Menu] = {
             "Update",
             "Prune Skills",
             "GitHub Token Config",
+            "MCP Servers",
             "Workspaces",
             "Libraries",
             "Quit",
@@ -57,6 +58,7 @@ MENUS: dict[str, Menu] = {
             "update",
             "prune-skills",
             "token",
+            "mcp",
             "workspaces",
             "libraries",
             "quit",
@@ -72,6 +74,8 @@ MENUS: dict[str, Menu] = {
             "Each candidate shows its classification and source detail before confirmation.",
             "Configure the optional shared GitHub API token.\n"
             "The token is stored outside this repository.",
+            "Inspect Agentbot's default-off MCP catalog and managed status.\n"
+            "Read-only; setup and removal remain explicit CLI commands.",
             "List, preview, and resync locally registered workspaces.\n"
             "Apply actions require explicit confirmation.",
             "Open the Agentbot and Graphify command reference libraries.\n"

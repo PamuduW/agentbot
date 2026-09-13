@@ -40,6 +40,9 @@ class _DiagnosticsFacts:
     graphify_status: GraphifyStatus
     graphify_official: bool
     boost_status: BoostStatus
+    mcp_catalog_count: int
+    mcp_managed_count: int
+    mcp_issues: tuple[DoctorIssue, ...]
 
 
 class Diagnostics:
@@ -71,6 +74,8 @@ class Diagnostics:
             claude_bridge_links=claude_bridge_links,
             claude_statusline_state=facts.statusline.status_label,
             issues=issues,
+            mcp_catalog_count=facts.mcp_catalog_count,
+            mcp_managed_count=facts.mcp_managed_count,
         )
 
     def list_skills(self) -> list[str]:
@@ -85,6 +90,7 @@ class Diagnostics:
     def _doctor_issues(self, facts: _DiagnosticsFacts) -> list[DoctorIssue]:
         issues: list[DoctorIssue] = []
         issues.extend(self._token_doctor_issues())
+        issues.extend(facts.mcp_issues)
 
         if not self.paths.global_agents.exists():
             issues.append(
@@ -255,6 +261,7 @@ class Diagnostics:
             )
 
         graphify = GraphifyIntegration(self.paths)
+        mcp_catalog_count, mcp_managed_count, mcp_issues = self._mcp_facts()
         return _DiagnosticsFacts(
             enabled_sources=enabled_sources,
             managed_names=managed,
@@ -264,6 +271,9 @@ class Diagnostics:
             graphify_status=self.graphify_status(),
             graphify_official=graphify.version_path.is_file(),
             boost_status=BoostIntegration(self.paths).status(),
+            mcp_catalog_count=mcp_catalog_count,
+            mcp_managed_count=mcp_managed_count,
+            mcp_issues=mcp_issues,
         )
 
     def status_summary(self) -> dict[str, object]:
@@ -281,7 +291,32 @@ class Diagnostics:
             "claude_bridge_links": snapshot.claude_bridge_links,
             "claude_statusline_state": snapshot.claude_statusline_state,
             "doctor_issue_count": len(snapshot.issues),
+            "mcp_catalog_count": snapshot.mcp_catalog_count,
+            "mcp_managed_count": snapshot.mcp_managed_count,
         }
+
+    def _mcp_facts(self) -> tuple[int, int, tuple[DoctorIssue, ...]]:
+        if not self.paths.mcp_catalog_file.exists():
+            return (0, 0, ())
+        from .mcp_service import McpService
+
+        service = McpService(self.paths)
+        try:
+            catalog = service.catalog()
+            report = service.status()
+            managed = service.state_store.load().managed
+        except (ValueError, OSError) as error:
+            return (0, 0, (DoctorIssue("error", "mcp", str(error)),))
+        issues = tuple(
+            DoctorIssue(
+                item.severity,
+                f"mcp:{item.client}:{item.catalog_id}",
+                item.detail,
+            )
+            for item in report.items
+            if item.severity in {"warning", "error"}
+        )
+        return (len(catalog.entries), len(managed), issues)
 
     def _unmanaged_skill_dirs(
         self, managed_names: set[str], declared_names: set[str]
