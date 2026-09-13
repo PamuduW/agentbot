@@ -1,10 +1,11 @@
 # Agentbot roadmap
 
-**Status:** Phases 0, 1, 2, and 5 are complete. Phase 3 MCP ownership and Phase
-4 memory remain deferred to the parent workspace roadmap. Slice 4M is complete,
-but Slice 4.0A must not start until the planned cross-agent memory comparison is
-resolved. The current core has one Python lifecycle backend, one diagnostics
-snapshot, one command model, and focused shell adapters and tests.
+**Status:** Phases 0, 1, 2, and 5 are complete. The parent workspace is actively
+designing Phase 3 provider-neutral MCP ownership; implementation has not
+started. Phase 4 memory remains deferred. Slice 4M is complete, but Slice 4.0A
+must not start until the planned cross-agent memory comparison is resolved. The
+current core has one Python lifecycle backend, one diagnostics snapshot, one
+command model, and focused shell adapters and tests.
 
 This is a living roadmap. The runtime source and operational documentation are
 the authority; this file records the delivered contracts and the future
@@ -30,7 +31,7 @@ must use Agentbot and agentbot.
 | Global machine baseline | global/AGENTS.md and install.sh global | Live |
 | Curated skills | skills.sources.yaml and install.sh skills ... | Live |
 | Dotfiles integration | sibling dotfiles Agentbot bridge | Live |
-| Package catalog and MCP bundles | historical snapshots in archive/catalog/ and archive/mcp/ | Phase 3 (deferred) |
+| Provider-neutral MCP management | parent workspace design; archive snapshots are historical inputs | Phase 3 design active |
 | Durable memory | workspace `docs/designs/memory/` design | Pending cross-agent memory comparison |
 | Graphify CLI and assistant integration | sibling dotfiles component plus Agentbot integration | Live (Phase 5) |
 
@@ -52,7 +53,7 @@ Phase 2: profiles + managed workspace render + local resync ✅
     |\
     | \--> Phase 5: optional Graphify CLI + assistant integration ✅
     |
-    +----> Phase 3: package catalog + profile-filtered MCP bundles (deferred)
+    +----> Phase 3: provider-neutral MCP management (design active)
     |
     +----> Phase 4: durable memory (pending cross-agent comparison)
 ```
@@ -186,24 +187,34 @@ The implementation is covered by:
 - Agentbot dispatcher, boot, menu, syntax, and temporary-folder acceptance
   tests.
 
-## Phase 3 — package catalog and MCP bundles
+## Phase 3 — provider-neutral MCP management
 
-**Goal:** Let an explicit package catalog determine which MCP servers and
-related artifacts are rendered for a selected profile or workspace.
+**Goal:** Give Claude Code, Codex CLI, and Cursor one Agentbot-owned MCP catalog
+while rendering each client's native schema and preserving configuration that
+Agentbot does not own.
 
 Planned work:
 
-1. revalidate the historical `archive/catalog/packages.json` and
-   `archive/mcp/mcp.json` snapshots against current client schemas;
-2. restore catalog load/filter and provenance-aware managed-artifact behavior;
-3. add profile-filtered MCP output only after the Phase 2 renderer contract is
-   stable;
-4. reintroduce import-local and remove-managed only with explicit ownership and
-   conflict reporting;
-5. extend Doctor for orphaned, conflicting, or unowned MCP entries.
+1. define one strict catalog whose entries are all unselected by default and
+   require explicit operator opt-in;
+2. render the documented Claude, Codex, and Cursor schemas independently at
+   only the scopes each client supports;
+3. add preview-first `status`, `plan`, `setup`, and ownership-aware `off`
+   behavior with backups, atomic writes, whole-operation rollback, and
+   preservation of unowned entries;
+4. keep secret values out of source, generated configuration, arguments, logs,
+   and reports by storing only approved environment-variable names or native
+   credential-store references;
+5. model read-only access as a server or credential guarantee, not as a tool
+   annotation, prompt, or client approval setting;
+6. add Doctor states for absent, disabled, stale, conflicting, shadowed,
+   unauthenticated, unreachable, and unowned entries;
+7. add the approved GitLab read-only API facade only after its exact tool,
+   credential, threat, and fail-closed test contracts are complete.
 
-Phase 3 must extend the Phase 2 renderer; it must not create a second unrelated
-configuration system.
+The historical files under `archive/catalog/` and `archive/mcp/` are research
+inputs only. Phase 3 must extend the Phase 2 renderer; it must not restore the
+retired catalog control plane or create a second configuration system.
 
 ## Phase 4 — durable memory (pending cross-agent comparison)
 
@@ -351,7 +362,7 @@ These ideas remain planning inputs, not runtime features:
 - OpenClaw bootstrap files and additional ChatGPT/export adapters;
 - Graphify hooks, Mem0, Graphiti, or GraphRAG memory upgrades.
 
-Restore catalog or MCP work only through a new Phase 3 design. Do not restore
+Implement MCP work only through the approved Phase 3 design. Do not restore
 removed control-plane code directly into the live lifecycle.
 
 ## Change log
@@ -372,3 +383,4 @@ removed control-plane code directly into the live lifecycle.
 | 2026-09-11 | Recorded the update transaction's double clone as a measured, open cost rather than leaving it in a commit message |
 | 2026-09-12 | Halved the update's source-clone cost by running the apply's pass concurrently, as the plan's already was (32.5s to ~18s over twelve sources) |
 | 2026-09-12 | Decided the apply keeps re-cloning to verify the plan; workspace roadmap item 4 is closed |
+| 2026-09-13 | Replaced the retired package-catalog direction with the active provider-neutral MCP ownership design |
