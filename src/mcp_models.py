@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from typing import Literal
 
 _CLIENTS = frozenset({"claude", "codex", "cursor"})
 _FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -157,6 +158,28 @@ class McpManagedRecord:
 class McpState:
     version: int
     managed: tuple[McpManagedRecord, ...]
+
+
+@dataclass(frozen=True)
+class McpPlanItem:
+    action: Literal["setup", "off"]
+    catalog_id: str
+    client: str
+    destination: str
+    name: str
+    state: Literal["absent", "owned", "unmanaged-conflict", "managed-drift"]
+
+
+@dataclass(frozen=True)
+class McpPlan:
+    action: Literal["setup", "off"]
+    selection: tuple[str, ...]
+    targets: tuple[str, ...]
+    items: tuple[McpPlanItem, ...]
+
+    @property
+    def can_apply(self) -> bool:
+        return all(item.state in {"absent", "owned"} for item in self.items)
 
 
 def _validate_date(raw: object, label: str) -> None:
