@@ -15,6 +15,10 @@ the way to the terminal, so nothing here emits escapes.
 
 from __future__ import annotations
 
+import os
+import threading
+from typing import TextIO
+
 from .table import BOLD, CYAN, DIM, GREEN, ORANGE, RED, YELLOW, _c
 
 # The same four words, in the same order, as the sibling product's legend.
@@ -50,7 +54,109 @@ def log_legend() -> None:
     print(f"  {legend}", flush=True)
 
 
+#: The sibling product's frames and cadence, in _step_spinner_start. Matching
+#: them matters because a full update prints both runs into one terminal, and
+#: two different spinners read as two different tools disagreeing about what
+#: "working" looks like.
+_SPINNER_FRAMES = ("\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f")
+_SPINNER_INTERVAL = 0.12
+
+
+class _StepSpinner:
+    """Says a step is still working, without putting frames in the log.
+
+    The install's stdout is piped -- `dotfiles full-update` reads it through a
+    relay, and that is exactly the run whose silences were longest -- so frames
+    written there would be captured rather than animated, and a log full of
+    spinner frames is worse than no spinner. They go straight to the controlling
+    terminal instead, on their own line below the step, erased before the next
+    line prints. This is what the sibling product's tty_printf does; no terminal,
+    or AGENTBOT_NO_PROGRESS_ANIMATION set, simply has none.
+    """
+
+    def __init__(self) -> None:
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+        self._tty: TextIO | None = None
+        self._tty_tried = False
+
+    def _terminal(self) -> TextIO | None:
+        if self._tty_tried:
+            return self._tty
+        self._tty_tried = True
+        if os.environ.get("AGENTBOT_NO_PROGRESS_ANIMATION"):
+            return None
+        try:
+            self._tty = open("/dev/tty", "w", encoding="utf-8")
+        except OSError:
+            # No controlling terminal: a cron run, a CI job, a pipe with no tty
+            # behind it. The prefixed lines still print; only the animation is
+            # absent, which is the degradation this whole seam is designed for.
+            self._tty = None
+        return self._tty
+
+    def start(self, message: str) -> None:
+        self.stop()
+        terminal = self._terminal()
+        if terminal is None:
+            return
+        self._stop = threading.Event()
+        # Daemon: a run that dies mid-stage must not be held open by the thread
+        # that was drawing its spinner.
+        self._thread = threading.Thread(
+            target=self._spin, args=(terminal, message), daemon=True
+        )
+        self._thread.start()
+
+    def _spin(self, terminal: TextIO, message: str) -> None:
+        index = 0
+        while not self._stop.is_set():
+            # The cursor is parked back at column 0 after each frame, as the
+            # sibling does, so anything printed mid-step overwrites the
+            # animation from the left instead of being welded to the end of it.
+            try:
+                terminal.write(f"\r    {_SPINNER_FRAMES[index % len(_SPINNER_FRAMES)]} {message}\r")
+                terminal.flush()
+            except (OSError, ValueError):
+                return
+            index += 1
+            self._stop.wait(_SPINNER_INTERVAL)
+
+    def stop(self) -> None:
+        if self._thread is None:
+            return
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+        self._thread = None
+        terminal = self._tty
+        if terminal is None:
+            return
+        # Erase the line the animation owned, so the next log line starts clean.
+        try:
+            terminal.write("\r\033[K")
+            terminal.flush()
+        except (OSError, ValueError):
+            return
+
+
+_SPINNER = _StepSpinner()
+
+
+def stop_progress_animation() -> None:
+    """End any running animation.
+
+    The closing `[OK]` normally does this, but the report tables that follow a
+    run print straight to stdout rather than through `log_line`. A run that
+    ended without closing its last stage would otherwise draw a table over a
+    spinner still writing to the terminal underneath it.
+    """
+    _SPINNER.stop()
+
+
 def log_rule() -> None:
+    # A boundary ends the step before it, so no animation is left running
+    # underneath the next component's output.
+    _SPINNER.stop()
     print(f"  {_c(RULE, DIM)}", flush=True)
 
 
@@ -65,7 +171,12 @@ def log_line(level: str, message: str) -> None:
     # No code, no escapes at all: _c with an empty colour still appends a
     # reset, which would put a stray byte on a line nothing had painted.
     marker = _c(f"[{level}]", code) if code else f"[{level}]"
+    # Any line ends the step that was running: the run has moved on, and the
+    # animation must not still be claiming otherwise underneath it.
+    _SPINNER.stop()
     print(f"  {marker} {message}", flush=True)
+    if level == "STEP":
+        _SPINNER.start(message)
 
 
 def duration(seconds: float) -> str:

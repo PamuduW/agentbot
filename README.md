@@ -90,11 +90,22 @@ input is masked, and normal output shows only a fingerprint.
 
 ## MCP management
 
-Agentbot provides a provider-neutral, default-off MCP control plane for Claude
-Code, Codex CLI, and Cursor CLI. The catalog contains reviewed candidates, but
-Agentbot selects, owns, and writes no MCP server until the operator names both
-the server and target clients. Each candidate must pass its admission gate
-before `setup` can configure it.
+Agentbot provides a provider-neutral MCP control plane for Claude Code, Codex
+CLI, and Cursor CLI. `mcp/catalog.json` is its manifest, the way
+`skills.sources.yaml` is for skills: an entry marked eligible has passed its
+admission gate and is reviewed, and an entry that has not stays unreachable.
+
+MCP is an install component. Selecting **MCP servers** in the install selector
+registers every reviewed entry for all three clients; `agentbot update` does
+the same, so a server added to the catalog later reaches a machine that was set
+up before it existed; and `agentbot status` reports registered pairs against
+available ones. Deselecting the component reads without writing, the rule
+Graphify and Boost follow.
+
+The component never overwrites configuration it does not own. A same-name entry
+another tool wrote, or a registered entry that no longer matches its record, is
+reported and left alone -- resolving those means overwriting somebody's file,
+which stays an explicit act through the commands below.
 
 ```bash
 agentbot mcp catalog

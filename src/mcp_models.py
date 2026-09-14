@@ -184,6 +184,34 @@ class McpPlan:
 
 
 @dataclass(frozen=True)
+class McpInstallOutcome:
+    """What the install component's MCP phase left behind.
+
+    The catalog is the manifest, the way skills.sources.yaml is for skills: an
+    entry marked eligible is one that has already passed review, so the install
+    admits every one of them rather than asking again. `blocked` carries the
+    pairs the run deliberately did not touch -- an entry someone else already
+    wrote under the same name, or one whose managed copy no longer matches its
+    record. Repairing those means overwriting somebody's configuration, which
+    stays an explicit act.
+    """
+
+    admitted: tuple[tuple[str, str], ...] = ()
+    current: tuple[tuple[str, str], ...] = ()
+    blocked: tuple[tuple[str, str, str], ...] = ()
+    operation_id: str | None = None
+    applied: bool = False
+
+    @property
+    def result(self) -> str:
+        if self.blocked:
+            return "check"
+        if self.admitted:
+            return "installed"
+        return "ok"
+
+
+@dataclass(frozen=True)
 class McpStatusItem:
     catalog_id: str
     client: str

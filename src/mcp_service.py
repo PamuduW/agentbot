@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .mcp_catalog import load_mcp_catalog
-from .mcp_models import McpCatalog, McpPlan, McpStatusItem, McpStatusReport
+from .mcp_models import (
+    McpCatalog,
+    McpInstallOutcome,
+    McpPlan,
+    McpStatusItem,
+    McpStatusReport,
+)
 from .mcp_state import McpStateStore
 from .paths import AgentbotPaths
 
@@ -130,6 +136,68 @@ class McpService:
             catalog_version=catalog.version,
             live=live,
             items=tuple(sorted(items, key=lambda item: (item.client, item.catalog_id, item.name))),
+        )
+
+    def eligible_selection(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Every vetted catalog entry, and the clients it declares.
+
+        Eligibility is the review: mcp_catalog rejects a catalog that marks an
+        entry eligible without enabling all three clients, so an eligible entry
+        always has the same target set and the install never has to choose one.
+        """
+        entries = tuple(entry for entry in self.catalog().entries if entry.eligible)
+        if not entries:
+            return ((), ())
+        clients = sorted(
+            {contract.client for entry in entries for contract in entry.clients if contract.enabled}
+        )
+        return (tuple(entry.id for entry in entries), tuple(clients))
+
+    def install_eligible(self, *, apply: bool = True) -> McpInstallOutcome:
+        """Admit every vetted catalog entry that is not registered yet.
+
+        The install component's whole behaviour. It adds what is absent, leaves
+        what it already owns alone, and refuses to touch anything else -- a name
+        another tool wrote, or a managed entry that no longer matches its
+        record. Those are reported for a person to resolve, because resolving
+        them means overwriting a file this run did not author.
+
+        `apply=False` is the deselected case: the same reading, no writes.
+        """
+        selection, targets = self.eligible_selection()
+        if not selection or not targets:
+            return McpInstallOutcome()
+
+        plan = self.plan(selection, targets)
+        admitted = tuple(
+            (item.catalog_id, item.client) for item in plan.items if item.state == "absent"
+        )
+        current = tuple(
+            (item.catalog_id, item.client) for item in plan.items if item.state == "owned"
+        )
+        blocked = tuple(
+            (item.catalog_id, item.client, item.state)
+            for item in plan.items
+            if item.state not in {"absent", "owned"}
+        )
+        # Nothing to add, or something in the way: either is a reading, not a
+        # write. apply_mcp_plan rejects a plan it cannot apply anyway, and a
+        # run that rewrote three configs to change nothing would churn a backup
+        # on every install.
+        if not apply or not admitted or blocked:
+            return McpInstallOutcome(
+                admitted=() if blocked or not apply else admitted,
+                current=current,
+                blocked=blocked,
+            )
+
+        operation_id = self.setup(selection, targets, confirmed=True)
+        return McpInstallOutcome(
+            admitted=admitted,
+            current=current,
+            blocked=(),
+            operation_id=operation_id,
+            applied=True,
         )
 
     def plan(self, selection: Sequence[str], targets: Sequence[str]) -> McpPlan:

@@ -141,6 +141,8 @@ def print_status_summary(
     claude_statusline_state: str = "unknown",
     manual_skill_count: int = 0,
     doctor_issue_count: int = 0,
+    mcp_catalog_count: int = 0,
+    mcp_managed_count: int = 0,
     repo_root: Path | str | None = None,
     platform: tuple = (),
 ) -> None:
@@ -204,6 +206,14 @@ def print_status_summary(
                         else "none",
                         "info" if manual_skill_count else "ok",
                     ),
+                    # MCP is an install component now, so the one screen that
+                    # answers "is this machine set up" has to say what it left
+                    # -- managed pairs against the reviewed servers available.
+                    (
+                        "MCP servers",
+                        _mcp_status_detail(mcp_catalog_count, mcp_managed_count),
+                        "ok" if mcp_managed_count or not mcp_catalog_count else "check",
+                    ),
                     (
                         "Doctor",
                         "no issues"
@@ -225,6 +235,20 @@ def print_status_summary(
         ),
     )
     print_table_model(table)
+
+
+def _mcp_status_detail(catalog_count: int, managed_count: int) -> str:
+    """`6 registered of 9 available`, or why there is nothing to report.
+
+    Counted in (server, client) pairs, the unit the managed state stores and
+    the summary row reports, so the two screens cannot disagree about what a
+    number means.
+    """
+    if not catalog_count:
+        return "no reviewed servers in the catalog"
+    if not managed_count:
+        return f"none registered of {catalog_count} available"
+    return f"{managed_count} registered of {catalog_count} available"
 
 
 def print_doctor_summary(issues: list, *, include_header: bool = True) -> int:
@@ -388,12 +412,36 @@ def print_install_summary(outcome) -> tuple[int, int, int]:
     )
     rows.extend(_integration_rows("Graphify", outcome.graphify, _graphify_rows(outcome.graphify)))
     rows.extend(_integration_rows("Boost", outcome.boost, _boost_rows(outcome.boost)))
+    rows.append(_mcp_row(outcome.mcp))
     for surface in outcome.platform:
         rows.append((surface.label, surface.detail, surface.result))
     # Truncated, not wrapped: a summary is one line per thing, and a wrapped
     # repository name turned twenty rows into thirty-odd. The command behind
     # each row is where the untruncated detail lives.
     return print_table(rows)
+
+
+def _mcp_row(outcome) -> tuple[str, str, str]:
+    """One row, in the vocabulary the other components use.
+
+    A pair is (server, client), so three reviewed servers across three clients
+    is nine of them. The count is what the row reports: naming nine pairs in a
+    summary column that fits one line would truncate to nothing useful, and
+    `agentbot mcp status` is where the per-pair detail lives.
+    """
+    registered = len(outcome.admitted) + len(outcome.current)
+    if outcome.blocked:
+        blocked = ", ".join(sorted({state for _, _, state in outcome.blocked}))
+        return ("MCP servers", f"{len(outcome.blocked)} need attention: {blocked}", "check")
+    if not registered:
+        return ("MCP servers", "no reviewed servers in the catalog", "ok")
+    if outcome.admitted:
+        return (
+            "MCP servers",
+            f"{len(outcome.admitted)} registered, {len(outcome.current)} already current",
+            "installed",
+        )
+    return ("MCP servers", f"{registered} registered", "ok")
 
 
 def _graphify_rows(status) -> list[tuple[str, str, str]]:
@@ -502,9 +550,21 @@ def _boost_rows(status) -> list[tuple[str, str, str]]:
             status.graph_state,
             "ok" if status.graph_state == "absent" else "error",
         ),
-        ("Claude", status.claude_state, "ok" if status.claude_state in {"ready", "skipped"} else "check"),
-        ("Codex", status.codex_state, "ok" if status.codex_state in {"ready", "skipped"} else "check"),
-        ("Cursor", status.cursor_state, "ok" if status.cursor_state in {"ready", "skipped"} else "check"),
+        (
+            "Claude",
+            status.claude_state,
+            "ok" if status.claude_state in {"ready", "skipped"} else "check",
+        ),
+        (
+            "Codex",
+            status.codex_state,
+            "ok" if status.codex_state in {"ready", "skipped"} else "check",
+        ),
+        (
+            "Cursor",
+            status.cursor_state,
+            "ok" if status.cursor_state in {"ready", "skipped"} else "check",
+        ),
     ]
     if status.user_flags:
         rows.append(
@@ -634,9 +694,7 @@ def print_skills_update_report(
     return 0
 
 
-def print_output_refresh_report(
-    *, linked: int, updated: int, skipped: int
-) -> tuple[int, int, int]:
+def print_output_refresh_report(*, linked: int, updated: int, skipped: int) -> tuple[int, int, int]:
     print_section_block("── Output refresh ──")
     return print_table(
         [
@@ -751,7 +809,9 @@ def print_workspace_resync_report(
             (
                 action.relative_path,
                 action.detail,
-                workspace_action_result(action.kind, applied=bool(getattr(report, "applied", False))),
+                workspace_action_result(
+                    action.kind, applied=bool(getattr(report, "applied", False))
+                ),
             )
             for action in global_actions
         ]
@@ -808,9 +868,7 @@ def _planned_workspace_writes(report) -> int:
         if action.kind in {"create", "update"}
     )
     return writes + sum(
-        1
-        for action in getattr(report, "global_actions", ())
-        if action.kind in {"create", "update"}
+        1 for action in getattr(report, "global_actions", ()) if action.kind in {"create", "update"}
     )
 
 
@@ -838,9 +896,7 @@ def print_update_result(outcome) -> tuple[int, int, int]:
     # reworking. A failure is the one case where the outcome says something the
     # rows underneath cannot.
     if not outcome.status.startswith("applied"):
-        rows.append(
-            ("Update", outcome.message or outcome.status, outcome.status)
-        )
+        rows.append(("Update", outcome.message or outcome.status, outcome.status))
 
     if reconcile is not None:
         changed = tuple(reconcile.changed_paths)
@@ -860,6 +916,20 @@ def print_update_result(outcome) -> tuple[int, int, int]:
                 "Repository files",
                 _counted_names(changed),
                 "applied" if changed else "unchanged",
+            )
+        )
+
+    mcp = getattr(outcome, "mcp", None)
+    if mcp is not None:
+        label, detail, result = _mcp_row(mcp)
+        # The update vocabulary, not the install one: this table says what
+        # changed, so a phase that registered nothing reads "unchanged" rather
+        # than "ok".
+        rows.append(
+            (
+                label,
+                detail,
+                result if result == "check" else ("applied" if mcp.admitted else "unchanged"),
             )
         )
 
@@ -906,14 +976,10 @@ def _kind_row(label: str, kinds: list[str], total: int) -> tuple[str, str, str]:
 
 def _workspace_row(label: str, results) -> tuple[str, str, str]:
     results = tuple(results)
-    kinds = [
-        action.kind for result in results for action in getattr(result, "actions", ())
-    ]
+    kinds = [action.kind for result in results for action in getattr(result, "actions", ())]
     # A result can fail without producing any action at all, so its own status
     # counts too.
-    kinds += [
-        result.status for result in results if getattr(result, "status", "") == "conflict"
-    ]
+    kinds += [result.status for result in results if getattr(result, "status", "") == "conflict"]
     return _kind_row(label, kinds, len(results))
 
 

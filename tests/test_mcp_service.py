@@ -175,3 +175,116 @@ class McpServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class McpInstallComponentTests(unittest.TestCase):
+    """MCP as an install component, driven by the catalog the way skills are
+    driven by skills.sources.yaml.
+
+    Eligibility is the review. An entry marked eligible has already been
+    vetted, so a selected install registers every one of them rather than
+    asking which -- and an ineligible entry stays out no matter what the
+    component does, because that is the admission gate, not a preference.
+    """
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        product = self.root / "agentbot"
+        (product / "mcp").mkdir(parents=True)
+        self.catalog_file = product / "mcp" / "catalog.json"
+        self.paths = AgentbotPaths(
+            root=product,
+            codex_home=self.root / ".codex",
+            claude_home=self.root / ".claude",
+            cursor_home=self.root / ".cursor",
+            config_home=self.root / ".config" / "agentbot",
+            agents_home=self.root / ".agents",
+        )
+        for home in (self.paths.codex_home, self.paths.claude_home, self.paths.cursor_home):
+            home.mkdir(parents=True, exist_ok=True)
+        # The shipped catalog, so these tests move with the servers the product
+        # actually vets rather than a fixture that can drift away from it.
+        shipped = Path("mcp/catalog.json").read_text(encoding="utf-8")
+        self.catalog_file.write_text(shipped, encoding="utf-8")
+        self.service = McpService(self.paths)
+
+    def test_selection_is_every_eligible_entry_and_its_clients(self) -> None:
+        selection, targets = self.service.eligible_selection()
+        catalog = self.service.catalog()
+        eligible = {entry.id for entry in catalog.entries if entry.eligible}
+        ineligible = {entry.id for entry in catalog.entries if not entry.eligible}
+
+        self.assertEqual(eligible, set(selection))
+        self.assertEqual(("claude", "codex", "cursor"), targets)
+        # The admission gate: a catalog entry that has not passed review is not
+        # reachable through the install component at all.
+        self.assertFalse(ineligible & set(selection))
+        self.assertTrue(ineligible, "fixture should still carry an unvetted entry")
+
+    def test_install_registers_every_reviewed_pair(self) -> None:
+        selection, targets = self.service.eligible_selection()
+        outcome = self.service.install_eligible(apply=True)
+
+        self.assertTrue(outcome.applied)
+        self.assertEqual(len(selection) * len(targets), len(outcome.admitted))
+        self.assertEqual((), outcome.blocked)
+        self.assertEqual("installed", outcome.result)
+        managed = self.service.state_store.load().managed
+        self.assertEqual(len(outcome.admitted), len(managed))
+
+    def test_a_second_install_changes_nothing(self) -> None:
+        """Install runs on every bootstrap. A component that rewrote three
+        client configs each time would churn a backup per run to change
+        nothing."""
+        self.service.install_eligible(apply=True)
+        before = self.paths.mcp_state_file.read_bytes()
+
+        again = self.service.install_eligible(apply=True)
+
+        self.assertFalse(again.applied)
+        self.assertEqual((), again.admitted)
+        self.assertTrue(again.current)
+        self.assertEqual("ok", again.result)
+        self.assertEqual(before, self.paths.mcp_state_file.read_bytes())
+
+    def test_a_deselected_component_reads_without_writing(self) -> None:
+        outcome = self.service.install_eligible(apply=False)
+
+        self.assertFalse(outcome.applied)
+        self.assertEqual((), outcome.admitted)
+        self.assertFalse(self.paths.mcp_state_file.exists())
+
+    def test_an_entry_another_tool_owns_blocks_instead_of_being_overwritten(self) -> None:
+        """The one thing this component must never do.
+
+        A name already present that Agentbot does not own is somebody's
+        configuration. Registering over it would destroy it, so the run reports
+        the pair and touches nothing.
+        """
+        cursor_config = self.paths.cursor_home / "mcp.json"
+        cursor_config.write_text(
+            json.dumps({"mcpServers": {"agentbot_context7": {"url": "https://example.invalid"}}}),
+            encoding="utf-8",
+        )
+
+        outcome = self.service.install_eligible(apply=True)
+
+        self.assertFalse(outcome.applied)
+        self.assertEqual((), outcome.admitted)
+        self.assertIn(("context7", "cursor", "unmanaged-conflict"), outcome.blocked)
+        self.assertEqual("check", outcome.result)
+        # Untouched, byte for byte.
+        self.assertEqual(
+            {"mcpServers": {"agentbot_context7": {"url": "https://example.invalid"}}},
+            json.loads(cursor_config.read_text(encoding="utf-8")),
+        )
+
+    def test_an_empty_catalog_is_not_an_error(self) -> None:
+        self.catalog_file.write_text('{"version":1,"entries":[]}\n', encoding="utf-8")
+        outcome = McpService(self.paths).install_eligible(apply=True)
+
+        self.assertEqual((), outcome.admitted)
+        self.assertEqual((), outcome.blocked)
+        self.assertEqual("ok", outcome.result)

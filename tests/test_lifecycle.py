@@ -109,6 +109,9 @@ class LifecycleTests(unittest.TestCase):
                 "Installing skill sources",
                 "Refreshing Graphify integration",
                 "Configuring Boost integration",
+                # The catalog is this component's manifest, so it sits with the
+                # other manifest-driven work rather than after the surfaces.
+                "Registering MCP servers",
                 "Refreshing managed outputs",
                 # The editor and CLI surfaces, which were a Platform submenu
                 # until they became install components.

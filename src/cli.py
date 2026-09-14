@@ -46,7 +46,7 @@ from .ui import (
     print_workspace_resync_report,
     skills_report_status,
 )
-from .ui.install_log import InstallLog, log_legend, print_timing
+from .ui.install_log import InstallLog, log_legend, print_timing, stop_progress_animation
 from .ui.table import CollapseBlankLines
 from .workspace_render import WORKSPACE_TARGETS
 
@@ -1083,12 +1083,15 @@ def run_agentbot_install(
     # to infer.
     log_legend()
     print()
-    # Emitted whether or not anyone is watching live. These are plain [STEP]
-    # and [OK] lines with no cursor control, so a pipe degrades cleanly rather
-    # than losing them -- and the piped case is `dotfiles full-update`, which is
-    # where the silence this progress exists to fix was longest.
+    # Emitted whether or not anyone is watching live. The [STEP] and [OK] lines
+    # carry no cursor control, so a pipe degrades cleanly rather than losing
+    # them -- and the piped case is `dotfiles full-update`, which is where the
+    # silence this progress exists to fix was longest. The animation between a
+    # step and its completion is written to the terminal instead of stdout for
+    # that same reason; see install_log._StepSpinner.
     log = InstallLog()
     outcome = lifecycle.install(progress=log.stage, components=components)
+    stop_progress_animation()
 
     # One table for everything the run did, then the doctor, then the time.
     ok, check, miss = print_install_summary(outcome)
@@ -1154,6 +1157,8 @@ def print_status(diagnostics: Diagnostics, *, include_issues: bool = False) -> i
         claude_statusline_state=snapshot.claude_statusline_state,
         manual_skill_count=snapshot.manual_skill_count,
         doctor_issue_count=len(snapshot.issues),
+        mcp_catalog_count=snapshot.mcp_catalog_count,
+        mcp_managed_count=snapshot.mcp_managed_count,
         # The checkout Diagnostics was built against, so status reports on the
         # repository it actually inspected rather than the process's cwd.
         repo_root=getattr(getattr(diagnostics, 'paths', None), 'root', None),

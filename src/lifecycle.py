@@ -12,6 +12,7 @@ from .claude_bridge import BridgeResult, bridge_claude_skills
 from .command_runner import CommandRunner
 from .diagnostics import Diagnostics
 from .graphify import GraphifyIntegration, GraphifyStatus
+from .mcp_models import McpInstallOutcome
 from .models import (
     DiagnosticsSnapshot,
     InstallOutcome,
@@ -122,6 +123,7 @@ class Lifecycle:
         "skills",
         "graphify",
         "boost",
+        "mcp",
         "vscode",
         "cursor",
         "cli-config",
@@ -193,6 +195,18 @@ class Lifecycle:
             stage("Skipping Boost integration")
             boost = self.boost.status()
 
+        # The catalog is this component's manifest, exactly as
+        # skills.sources.yaml is for skills: every entry marked eligible has
+        # already been reviewed, so a selected run admits all of them rather
+        # than asking which. Deselected reads without writing, the rule
+        # Graphify and Boost follow.
+        if "mcp" in selected:
+            stage("Registering MCP servers")
+            mcp = self._mcp_install(apply=True)
+        else:
+            stage("Skipping MCP servers")
+            mcp = self._mcp_install(apply=False)
+
         stage("Refreshing managed outputs")
         outputs = self.refresh_outputs()
 
@@ -212,8 +226,23 @@ class Lifecycle:
         diagnostics = self.diagnostics.collect()
         stage("Install complete")
         return InstallOutcome(
-            skills, graphify, boost, outputs, diagnostics, tuple(platform)
+            skills, graphify, boost, outputs, diagnostics, tuple(platform), mcp
         )
+
+    def _mcp_install(self, *, apply: bool) -> McpInstallOutcome:
+        """The MCP phase, degrading to an empty outcome rather than a failure.
+
+        A missing catalog, an unreadable client config, or a renderer
+        dependency that is not installed must not take the whole install down:
+        the diagnostics that follow report MCP state for exactly this reason,
+        and they run after this phase.
+        """
+        from .mcp_service import McpService
+
+        try:
+            return McpService(self.paths).install_eligible(apply=apply)
+        except (ImportError, ValueError, OSError):
+            return McpInstallOutcome()
 
     def _apply_platform(self, key: str, label: str) -> PlatformOutcome:
         """Reconcile one surface and describe what it left."""
@@ -342,6 +371,12 @@ class Lifecycle:
                     else:
                         stage_begins("Skipping Graphify integration")
                     stage["graphify"] = graphify
+                    # The same catalog-driven registration install performs. An
+                    # update is how a newly reviewed server reaches a machine
+                    # that was set up before it was added, so update reads the
+                    # manifest too rather than only maintaining what is there.
+                    stage_begins("Registering MCP servers")
+                    stage["mcp"] = self._mcp_install(apply=True)
                     stage_begins("Refreshing managed workspaces")
                     workspace_report = self.resync_workspaces(apply=True)
                     if any(
@@ -388,12 +423,13 @@ class Lifecycle:
                     reconcile.status,
                     "Update plan applied.",
                     reconcile=reconcile,
-                    # `stage` is a loosely-typed staging dict; these three keys
-                    # are populated by the update applier with the matching
+                    # `stage` is a loosely-typed staging dict; these keys are
+                    # populated by the update applier with the matching
                     # dataclasses, which the dict type cannot express.
                     graphify=cast("GraphifyStatus | None", stage.get("graphify")),
                     workspace_report=cast("WorkspaceReport | None", stage.get("workspace_report")),
                     diagnostics=cast("DiagnosticsSnapshot | None", stage.get("diagnostics")),
+                    mcp=cast("McpInstallOutcome | None", stage.get("mcp")),
                 )
         except StaleSourceCatalogError as error:
             return UpdateOutcome("stale-plan", str(error))

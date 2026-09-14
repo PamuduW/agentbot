@@ -296,15 +296,21 @@ class Diagnostics:
         }
 
     def _mcp_facts(self) -> tuple[int, int, tuple[DoctorIssue, ...]]:
+        """(registerable pairs, managed pairs, issues), both in the same unit."""
         if not self.paths.mcp_catalog_file.exists():
             return (0, 0, ())
         from .mcp_service import McpService
 
         service = McpService(self.paths)
         try:
-            catalog = service.catalog()
             report = service.status()
             managed = service.state_store.load().managed
+            # Counted the way managed state counts: one (server, client) pair.
+            # The raw entry count mixed units against it -- five catalog
+            # entries against nine registerable pairs -- so a status row
+            # comparing the two was comparing different things.
+            selection, targets = service.eligible_selection()
+            available = len(selection) * len(targets)
         except ImportError as error:
             # A missing renderer dependency is a provisioning fault, not a
             # reason to abort every diagnostic around it. Reported as an issue
@@ -332,7 +338,7 @@ class Diagnostics:
             for item in report.items
             if item.severity in {"warning", "error"}
         )
-        return (len(catalog.entries), len(managed), issues)
+        return (available, len(managed), issues)
 
     def _unmanaged_skill_dirs(
         self, managed_names: set[str], declared_names: set[str]

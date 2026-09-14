@@ -17,7 +17,6 @@ source "$_AGENTBOT_MENU_DIR/menus/prune_skills.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/github_token.sh"
 # shellcheck disable=SC1091
-source "$_AGENTBOT_MENU_DIR/menus/mcp.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/workspaces.sh"
 # shellcheck disable=SC1091
@@ -41,7 +40,6 @@ agentbot_menu_dispatch() {
 	update) agentbot_menu_update || rc=$? ;;
 	prune-skills) agentbot_menu_prune_skills || rc=$? ;;
 	token) agentbot_menu_token || rc=$? ;;
-	mcp) agentbot_menu_mcp || rc=$? ;;
 	workspaces) agentbot_menu_workspaces || rc=$? ;;
 	libraries) agentbot_menu_libraries || rc=$? ;;
 	*)

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from .mcp_models import McpInstallOutcome
 
 if TYPE_CHECKING:
     from .boost import BoostStatus
@@ -70,6 +72,10 @@ class InstallOutcome:
     # go and look. Optional because a run that did not select them still
     # reports on them, and a caller building an outcome by hand need not.
     platform: tuple[PlatformOutcome, ...] = ()
+    #: What the MCP component registered, or read without registering when it
+    #: was deselected. Optional for the same reason platform is: a caller
+    #: building an outcome by hand need not supply it.
+    mcp: McpInstallOutcome = field(default_factory=McpInstallOutcome)
 
 
 @dataclass(frozen=True)
@@ -107,3 +113,6 @@ class UpdateOutcome:
     workspace_report: WorkspaceReport | None = None
     outputs: OutputRefreshOutcome | None = None
     diagnostics: DiagnosticsSnapshot | None = None
+    #: What the update's MCP phase registered. None when the applier that ran
+    #: does not report one, which the summary reads as "nothing to say".
+    mcp: McpInstallOutcome | None = None

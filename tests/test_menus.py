@@ -15,8 +15,18 @@ from src.ui import graphify_lib, menu_select, menus
 
 
 class MenuDefinitionTests(unittest.TestCase):
-    def test_main_menu_exposes_mcp_management(self) -> None:
-        self.assertIn("mcp", menus.menu("main").keys)
+    def test_mcp_is_an_install_component_not_a_menu_entry(self) -> None:
+        """MCP used to be a main-menu entry that only showed status.
+
+        It is a component now, so install, update and status manage it the way
+        they manage skills. Both halves are asserted together because dropping
+        the entry without adding the component would remove the surface
+        entirely.
+        """
+        from src.lifecycle import Lifecycle
+
+        self.assertNotIn("mcp", menus.menu("main").keys)
+        self.assertIn("mcp", Lifecycle.SELECTABLE_COMPONENTS)
 
     def test_every_menu_has_a_key_and_a_description_per_label(self) -> None:
         """Three parallel sequences describe one menu. A label without its key

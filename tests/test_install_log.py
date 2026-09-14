@@ -7,18 +7,23 @@ The shape is the sibling product's: a legend under the heading, one
 from __future__ import annotations
 
 import io
+import os
+import time
 import unittest
 from contextlib import redirect_stdout
 from itertools import pairwise
+from unittest import mock
 
 from src.ui.install_log import (
     RULE,
     SLOWEST_ROWS,
     InstallLog,
+    _StepSpinner,
     duration,
     log_legend,
     log_line,
     print_timing,
+    stop_progress_animation,
 )
 
 #: What Lifecycle.install hands the progress callback, in order. Each call names
@@ -229,6 +234,77 @@ class TimingTests(unittest.TestCase):
         )
         self.assertAlmostEqual(37.0, log.total)
         self.assertAlmostEqual(5.0, log.total - sum(log.seconds.values()))
+
+
+class StepAnimation(unittest.TestCase):
+    """The spinner a step runs under until it closes.
+
+    Its whole reason for going to the terminal rather than stdout is that
+    `dotfiles full-update` reads this run through a pipe, and frames captured
+    into a log are worse than no frames at all. So the cases below are about
+    where the bytes go, not what they look like.
+    """
+
+    def setUp(self) -> None:
+        self.addCleanup(stop_progress_animation)
+
+    def test_frames_never_reach_stdout(self) -> None:
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            log_line("STEP", "Installing skill sources")
+            log_line("OK", "Installing skill sources (30s)")
+        printed = buffer.getvalue()
+        self.assertIn("[STEP] Installing skill sources", printed)
+        for frame in ("\u280b", "\u2819", "\u2839"):
+            self.assertNotIn(frame, printed)
+        # Nor the cursor control that erases them.
+        self.assertNotIn("\033[K", printed)
+        self.assertNotIn("\r", printed)
+
+    def test_animation_writes_to_the_terminal_it_opens(self) -> None:
+        spinner = _StepSpinner()
+        terminal = io.StringIO()
+        spinner._tty = terminal
+        spinner._tty_tried = True
+        spinner.start("Installing skill sources")
+        # One frame is enough: the contract is that it draws there at all.
+        deadline = time.monotonic() + 2.0
+        while not terminal.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        spinner.stop()
+        written = terminal.getvalue()
+        self.assertIn("Installing skill sources", written)
+        self.assertIn("\u280b", written)
+        # Stopping erases the line it owned rather than leaving it on screen.
+        self.assertTrue(written.endswith("\r\033[K"))
+
+    def test_no_terminal_means_no_animation_and_no_error(self) -> None:
+        spinner = _StepSpinner()
+        spinner._tty = None
+        spinner._tty_tried = True
+        spinner.start("Installing skill sources")
+        self.assertIsNone(spinner._thread)
+        spinner.stop()
+
+    def test_opt_out_suppresses_the_animation(self) -> None:
+        spinner = _StepSpinner()
+        with mock.patch.dict(os.environ, {"AGENTBOT_NO_PROGRESS_ANIMATION": "1"}):
+            self.assertIsNone(spinner._terminal())
+        spinner.start("Installing skill sources")
+        self.assertIsNone(spinner._thread)
+
+    def test_a_new_step_replaces_the_previous_animation(self) -> None:
+        spinner = _StepSpinner()
+        spinner._tty = io.StringIO()
+        spinner._tty_tried = True
+        spinner.start("first")
+        first = spinner._thread
+        spinner.start("second")
+        self.assertIsNotNone(first)
+        self.assertFalse(first.is_alive())
+        self.assertIsNot(first, spinner._thread)
+        spinner.stop()
+        self.assertIsNone(spinner._thread)
 
 
 if __name__ == "__main__":

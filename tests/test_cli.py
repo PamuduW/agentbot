@@ -1053,7 +1053,7 @@ class CliTests(unittest.TestCase):
         # submenu was folded in, so an install can leave them untouched only by
         # being told to.
         self.assertEqual(
-            ("skills", "graphify", "boost", "vscode", "cursor", "cli-config"),
+            ("skills", "graphify", "boost", "mcp", "vscode", "cursor", "cli-config"),
             Lifecycle.SELECTABLE_COMPONENTS,
         )
 

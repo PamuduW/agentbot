@@ -18,11 +18,12 @@ test_main_menu_snapshot() {
 	_agentbot_menu_setup
 	output="$(AGENTBOT_TUI=1 tui_menu_draw 0 80 | strip_ansi_stream)"
 	[[ "$output" == *$'=== Agentbot ===\n  Agentbot'* ]] || return 1
-	# Nine entries: Platform's seven actions became install components and
-	# status rows, while MCP Servers is the default-off control-plane entry.
-	[[ "$output" == *'1. Check Status'* && "$output" == *'9. Quit'* ]] || return 1
+	# Eight entries: Platform's seven actions became install components and
+	# status rows, and MCP followed them -- it was an entry that only showed
+	# status, and install, update and status manage it directly now.
+	[[ "$output" == *'1. Check Status'* && "$output" == *'8. Quit'* ]] || return 1
 	[[ "$output" == *'Prune Skills'* && "$output" == *'GitHub Token Config'* ]] || return 1
-	[[ "$output" == *'6. MCP Servers'* ]] || return 1
+	[[ "$output" != *'MCP Servers'* ]] || return 1
 	[[ "$output" != *'Platform'* ]] || return 1
 	[[ "$output" == *'Libraries'* ]] || return 1
 	[[ "$output" == *'Check the installed Agentbot components, editors, and baseline.'* ]]
@@ -286,7 +287,7 @@ test_every_platform_surface_is_an_install_component() (
 	# them, and Lifecycle installs whatever the selector returns.
 	local key
 	_agentbot_components_prepare
-	for key in vscode cursor cli-config; do
+	for key in vscode cursor cli-config mcp; do
 		[[ " ${AGENTBOT_COMPONENT_KEYS[*]} " == *" $key "* ]] || return 1
 	done
 	# Every key the selector offers must be one the backend knows, or a chosen
