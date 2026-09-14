@@ -25,6 +25,20 @@
 #
 # The fallback is why the dependency checks in install.sh remain: resolution
 # succeeding does not prove the resolved interpreter has the packages.
+#
+# Resolution publishes its answer in AGENTBOT_PYTHON, which means a child
+# process cannot tell an operator's choice from a parent's fallback by reading
+# that variable -- and the difference decides whether provisioning is skipped.
+# `bin/agentbot` resolves before delegating to install.sh, so trusting the
+# inherited value made every install through the launcher skip provisioning and
+# then fail the dependency check it had just declined to satisfy.
+#
+# So the operator's value is captured once, at source time, before any
+# resolution can overwrite it. Assignment is `=` and not `:=` on purpose: a
+# parent that had no override exports an empty string, and that empty string is
+# the answer -- re-deriving it from AGENTBOT_PYTHON is exactly the mistake.
+: "${AGENTBOT_PYTHON_EXPLICIT=${AGENTBOT_PYTHON:-}}"
+export AGENTBOT_PYTHON_EXPLICIT
 
 agentbot_python_venv_dir() {
 	printf '%s/.venv\n' "${AGENTBOT_HOME:?AGENTBOT_HOME is not set}"
@@ -39,10 +53,14 @@ agentbot_python_venv_bin() {
 # coprocess -- inherits the same answer rather than re-deriving it.
 agentbot_python_resolve() {
 	local venv_bin
-	if [[ -n "${AGENTBOT_PYTHON:-}" && -x "${AGENTBOT_PYTHON}" ]]; then
+	if [[ -n "${AGENTBOT_PYTHON_EXPLICIT}" && -x "${AGENTBOT_PYTHON_EXPLICIT}" ]]; then
+		AGENTBOT_PYTHON="$AGENTBOT_PYTHON_EXPLICIT"
 		export AGENTBOT_PYTHON
 		return 0
 	fi
+	# Deliberately recomputed rather than reusing an inherited AGENTBOT_PYTHON:
+	# a parent that resolved before .venv existed exported the fallback, and
+	# after provisioning the venv is the right answer.
 	venv_bin="$(agentbot_python_venv_bin)"
 	if [[ -x "$venv_bin" ]]; then
 		AGENTBOT_PYTHON="$venv_bin"
@@ -78,7 +96,7 @@ agentbot_python_ensure() {
 	# An explicit AGENTBOT_PYTHON is an operator saying they own the
 	# interpreter. Provisioning one anyway would build an environment nothing
 	# then uses, so the override opts out of the whole step.
-	if [[ -n "${AGENTBOT_PYTHON:-}" && -x "${AGENTBOT_PYTHON}" ]]; then
+	if [[ -n "${AGENTBOT_PYTHON_EXPLICIT}" && -x "${AGENTBOT_PYTHON_EXPLICIT}" ]]; then
 		agentbot_python_resolve
 		return 0
 	fi

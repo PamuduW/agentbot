@@ -169,6 +169,54 @@ FAKE
 	grep -q 'install' <<<"$output"
 }
 
+# The regression this file exists for after the first attempt shipped broken:
+# bin/agentbot resolves and exports AGENTBOT_PYTHON before delegating to
+# install.sh. If the child reads that as an operator override it skips
+# provisioning, then fails the dependency check it just declined to satisfy --
+# which is exactly what a real full-update did.
+test_inherited_fallback_is_not_an_override() {
+	local home
+	home="$(make_home inherited)"
+	(
+		AGENTBOT_HOME="$home"
+		export AGENTBOT_HOME
+		unset AGENTBOT_PYTHON AGENTBOT_PYTHON_EXPLICIT
+		# shellcheck source=/dev/null
+		source "$ROOT/scripts/lib/python_env.sh"
+		agentbot_python_resolve || exit 1
+		# The parent now exports a resolved fallback, as the launcher does.
+		# A child must still treat itself as having no override.
+		bash -c '
+			# shellcheck source=/dev/null
+			source "'"$ROOT"'/scripts/lib/python_env.sh"
+			[[ -z "$AGENTBOT_PYTHON_EXPLICIT" ]]
+		'
+	)
+}
+
+# And the other half: once provisioning has created .venv, resolution must
+# return it rather than the fallback an earlier resolve already exported.
+test_resolution_prefers_a_new_venv_over_an_exported_fallback() {
+	local home resolved
+	home="$(make_home latervenv)"
+	resolved="$(
+		AGENTBOT_HOME="$home"
+		export AGENTBOT_HOME
+		unset AGENTBOT_PYTHON AGENTBOT_PYTHON_EXPLICIT
+		# shellcheck source=/dev/null
+		source "$ROOT/scripts/lib/python_env.sh"
+		agentbot_python_resolve || exit 1
+		mkdir -p "$home/.venv/bin"
+		printf '#!/usr/bin/env bash\nexit 0\n' >"$home/.venv/bin/python"
+		chmod 700 "$home/.venv/bin/python"
+		agentbot_python_resolve || exit 1
+		printf '%s\n' "$AGENTBOT_PYTHON"
+	)" || return 1
+	[[ "$resolved" == "$home/.venv/bin/python" ]]
+}
+
+check 'an inherited fallback is not treated as an override' test_inherited_fallback_is_not_an_override
+check 'resolution prefers a newly created venv over an exported fallback' test_resolution_prefers_a_new_venv_over_an_exported_fallback
 check 'resolution falls back to python3 on PATH' test_falls_back_to_path_python3
 check 'resolution prefers the checkout virtual environment' test_prefers_the_checkout_venv
 check 'an explicit interpreter outranks the virtual environment' test_override_outranks_the_venv
