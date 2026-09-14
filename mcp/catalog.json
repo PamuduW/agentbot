@@ -8,8 +8,8 @@
       "documentation_url": "https://github.com/github/github-mcp-server/blob/main/docs/server-configuration.md",
       "license": null,
       "terms_url": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
-      "reviewed_on": "2026-09-13",
-      "eligible": false,
+      "reviewed_on": "2026-09-14",
+      "eligible": true,
       "transport": "remote_http",
       "origin": "https://api.githubcopilot.com/mcp/readonly",
       "clients": {
@@ -62,24 +62,24 @@
         "get_job_logs"
       ],
       "descriptor_fingerprints": [
-        "sha256:6f785484d07a700f889eab15d256545845f3f02917b6f10721970b8b30a03030",
-        "sha256:cfc01ab387d3f7a0540b7247adc3184678067bc502f050ca800db69536b321bf",
-        "sha256:be2bff06d2540e53cba8dbc817660588960cfa5e93e98085d770ddd1eae9a066",
-        "sha256:22a7de2906827a39eefafd0171433cfb5a7f7d14b4b2aa6d52ecce2de81f8906",
-        "sha256:99c633f38f6b6f1882afeb4e18063041b8aa7dd7d6426f9f3939ee48538965cc",
-        "sha256:8f969f8df8f8313c35ee526f8a6430ce7a59f3f96cb890a8c08bcf03456b0db4",
-        "sha256:269133657a7a4ac97950078b2d8c961233a4ec219f8253134b5234beb6ccf9ca",
-        "sha256:bdf935fea6ba83ff89c8dc2e59b3bf435dc8e7e2016474bf05f2118c61fb6f59",
-        "sha256:c531dbf898fcac23fa9559b39892d915e39423e48bd58d88cd0bceecd5f30ade",
-        "sha256:05265fb7ddb091b98d8d5c0afeedbb2018d74a7bac1deb655c11d774a3d18a77",
-        "sha256:130ef231afded08a7f3ff1b3faf5619f1993469c483f267fa551d8ce12ef2cdc",
-        "sha256:b602e5e96aa6d2677ed07ca875ae38986e658d94c671645024b205d9f04320a1",
-        "sha256:f3d3bac7b230fe0c8535d0689345608022ba81b1d3241fb02d08e0b719609d58",
-        "sha256:d3b2cd97ec6f790496ed11885b5a061dba2c6c5a56f21718df4bbf48943c86c8",
-        "sha256:9c22560d7b5b3854f1129fbe3c4fed093fc7e0e4f4dc586c9fe2a69928301c31",
-        "sha256:769181b62c5e51bf8286e07a3497ef20870beb7da3e5c109033b9b41d6927ef3",
-        "sha256:6bedf2551fa874fda85bc2ee33079557385fc708bc584e925e30dd33faacb563",
-        "sha256:14ed8eb72b3ae34f664c0ee5f68766dbc529f769c7e9c59bbb80ff1b0cd48e85"
+        "sha256:1c5b98ed9b3d3d374b3b7a2f2c7d009b7a5b5eaee02bf53c05fca87d2b473638",
+        "sha256:6e07ceb9e1e050abc618098c50fcc8ceb8e7533dc44c07cf2955a9105aec191e",
+        "sha256:37ab6d6cd6da6cb17c63534cdcfd55759e5dbc48d5c91cbba49c64cf9f4526d6",
+        "sha256:f5f0698dfbf42dadc6d18702d54459588c2b569f39061dfbc898ef61147c8e64",
+        "sha256:1319cb12f7de449dcedb8e909cc45c655b5201cf8e8dce621e8b7feb97d34bfc",
+        "sha256:dc682d42d124840ab59909184ecb1033765100451468e8b1316fe1d8326e1a15",
+        "sha256:30fff089318ec544ee2730163b569b7583e80ef48bb988094739cbcf2589dde6",
+        "sha256:c01afc122ecd4cf829ea9d727af53c5e051ad4ad6eee308c139fdd32f8ba861e",
+        "sha256:9960f6c48fb0ab4ebec546b9d427edbbf61741f75e6b1dbc6d7a96d62f662b3e",
+        "sha256:d27ca415830ed787118788fff4e76f4f111ea94d29650f70a16b3ebb2600416c",
+        "sha256:f45841a264a91152b0d5ea102568d6ed41ac8878ec09a0d57ef724efd9c9ce5d",
+        "sha256:57cc557cd2eb39e27028b0d554854f9d2c682988f44463195cbe5a21312188cf",
+        "sha256:f6e785464d9e479d02d8d11ad683152d547bd9028d129c588e827097269edf56",
+        "sha256:0e6642a2e1ca69a4d109c48dc80b7db8db9333b13144f016d47b8ec48ca1da54",
+        "sha256:6faeb8c4918da63dd5df0b50aabb58de6397ec9fd07e6ed20c0d1d35218eb21e",
+        "sha256:94b870ab985189c090638b1d37be7f0fd3c53ad6c3b6006dd675d5836a1762a2",
+        "sha256:601dfa84296fe6358ac8035ad28c60ae35d73544936318f0fba02265f273dca2",
+        "sha256:25333cbc9c4ca59b24aa4ee5f0923412955483d53f2c92a7c34337dba8bd73ae"
       ],
       "read_only_authority": "GitHub remote /readonly path and X-MCP-Readonly strict server filter, paired with a repository-limited fine-grained token whose selected permissions are read-only",
       "limitations": [
@@ -117,11 +117,20 @@
         "context7"
       ],
       "clients": {
-        "claude": {"enabled": true},
-        "codex": {"enabled": true},
-        "cursor": {"enabled": true}
+        "claude": {
+          "enabled": true
+        },
+        "codex": {
+          "enabled": true
+        },
+        "cursor": {
+          "enabled": true
+        }
       },
-      "credential": {"mode": "none", "environment": []},
+      "credential": {
+        "mode": "none",
+        "environment": []
+      },
       "allowed_tools": [
         "resolve-library-id",
         "query-docs"
@@ -163,11 +172,20 @@
         "aws_knowledge"
       ],
       "clients": {
-        "claude": {"enabled": true},
-        "codex": {"enabled": true},
-        "cursor": {"enabled": true}
+        "claude": {
+          "enabled": true
+        },
+        "codex": {
+          "enabled": true
+        },
+        "cursor": {
+          "enabled": true
+        }
       },
-      "credential": {"mode": "none", "environment": []},
+      "credential": {
+        "mode": "none",
+        "environment": []
+      },
       "allowed_tools": [
         "aws___read_documentation",
         "aws___search_documentation",
@@ -216,11 +234,20 @@
         "microsoft_learn"
       ],
       "clients": {
-        "claude": {"enabled": true},
-        "codex": {"enabled": true},
-        "cursor": {"enabled": true}
+        "claude": {
+          "enabled": true
+        },
+        "codex": {
+          "enabled": true
+        },
+        "cursor": {
+          "enabled": true
+        }
       },
-      "credential": {"mode": "none", "environment": []},
+      "credential": {
+        "mode": "none",
+        "environment": []
+      },
       "allowed_tools": [
         "microsoft_docs_search",
         "microsoft_code_sample_search",
@@ -254,7 +281,7 @@
       "license": null,
       "terms_url": "https://about.gitlab.com/terms/",
       "reviewed_on": "2026-09-14",
-      "eligible": false,
+      "eligible": true,
       "transport": "local_stdio",
       "entrypoint": [
         "agentbot",
@@ -264,13 +291,21 @@
         "gitlab_read"
       ],
       "clients": {
-        "claude": {"enabled": true},
-        "codex": {"enabled": true},
-        "cursor": {"enabled": true}
+        "claude": {
+          "enabled": true
+        },
+        "codex": {
+          "enabled": true
+        },
+        "cursor": {
+          "enabled": true
+        }
       },
       "credential": {
         "mode": "header_env",
-        "environment": ["GITLAB_MCP_READ_TOKEN"]
+        "environment": [
+          "GITLAB_MCP_READ_TOKEN"
+        ]
       },
       "allowed_tools": [
         "gitlab_project",

@@ -52,17 +52,20 @@ class McpCatalogTests(unittest.TestCase):
         entry.update(overrides)
         return entry
 
-    def test_shipped_catalog_keeps_github_pending_and_admits_only_filtered_overlays(self) -> None:
+    def test_shipped_catalog_admits_every_reviewed_entry(self) -> None:
         catalog = load_mcp_catalog(self.paths.mcp_catalog_file)
         self.assertEqual(1, catalog.version)
         eligibility = {entry.id: entry.eligible for entry in catalog.entries}
         self.assertEqual(
+            # github and gitlab_read were admitted on 2026-09-14 after their
+            # live gates passed. Eligibility is still not selection: nothing is
+            # written to a client until the MCP component registers it.
             {
-                "github": False,
+                "github": True,
                 "context7": True,
                 "aws_knowledge": True,
                 "microsoft_learn": True,
-                "gitlab_read": False,
+                "gitlab_read": True,
             },
             eligibility,
         )

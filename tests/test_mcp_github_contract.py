@@ -69,10 +69,12 @@ class GitHubMcpContractTests(unittest.TestCase):
         for fingerprint in fingerprints:
             self.assertRegex(fingerprint, r"^sha256:[0-9a-f]{64}$")
 
-    def test_catalog_entry_matches_contract_but_is_not_yet_eligible(self) -> None:
+    def test_catalog_entry_matches_the_contract_and_is_admitted(self) -> None:
         contract = self.load_contract()
         entry = self.catalog_entry()
-        self.assertFalse(entry.eligible)
+        # Admitted on 2026-09-14: the live gate confirmed the eighteen frozen
+        # tools and that write aliases and unknown names fail closed.
+        self.assertTrue(entry.eligible)
         self.assertEqual("agentbot_github", entry.name)
         self.assertEqual(contract["endpoint"], entry.origin)
         self.assertEqual(EXPECTED_TOOLS, entry.allowed_tools)

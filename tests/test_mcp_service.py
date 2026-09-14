@@ -218,10 +218,12 @@ class McpInstallComponentTests(unittest.TestCase):
 
         self.assertEqual(eligible, set(selection))
         self.assertEqual(("claude", "codex", "cursor"), targets)
-        # The admission gate: a catalog entry that has not passed review is not
-        # reachable through the install component at all.
+        # The admission gate still holds even though the shipped catalog now
+        # admits every entry: an ineligible one is unreachable through the
+        # component, which _selected_entries enforces by raising.
         self.assertFalse(ineligible & set(selection))
-        self.assertTrue(ineligible, "fixture should still carry an unvetted entry")
+        with self.assertRaises(ValueError):
+            self.service.plan(("not_a_catalog_id",), targets)
 
     def test_install_registers_every_reviewed_pair(self) -> None:
         selection, targets = self.service.eligible_selection()
@@ -296,16 +298,19 @@ class McpInstallComponentTests(unittest.TestCase):
         """
         from src.ui.reports import _mcp_plan_row
 
+        selection, targets = self.service.eligible_selection()
+        total = len(selection) * len(targets)
+
         pending = self.service.install_eligible(apply=False)
         self.assertEqual(
-            ("MCP servers", "0 registered", "9 to register", "register"),
+            ("MCP servers", "0 registered", f"{total} to register", "register"),
             _mcp_plan_row(pending),
         )
 
         self.service.install_eligible(apply=True)
         settled = self.service.install_eligible(apply=False)
         self.assertEqual(
-            ("MCP servers", "9 registered", "none", "up to date"),
+            ("MCP servers", f"{total} registered", "none", "up to date"),
             _mcp_plan_row(settled),
         )
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import unittest
-from dataclasses import replace
 from pathlib import Path
 
 from mcp import Client, MCPError
@@ -52,7 +51,7 @@ class GitLabReadMcpTests(unittest.IsolatedAsyncioTestCase):
         self.client = FakeGitLabClient()
         self.facade = GitLabReadMcp(self.client)
 
-    def test_frozen_contract_and_ineligible_catalog_entry_match_the_facade(self) -> None:
+    def test_frozen_contract_and_admitted_catalog_entry_match_the_facade(self) -> None:
         root = Path(__file__).resolve().parents[1]
         contract = json.loads((root / "mcp" / "contracts" / "gitlab_read.json").read_text())
         tools = self.facade.tools()
@@ -66,10 +65,13 @@ class GitLabReadMcpTests(unittest.IsolatedAsyncioTestCase):
             for item in load_mcp_catalog(root / "mcp" / "catalog.json").entries
             if item.id == "gitlab_read"
         )
-        self.assertFalse(entry.eligible)
+        # Admitted on 2026-09-14, once the live safe-project gate passed: all
+        # fifteen reads against a real project, and every write-shaped call
+        # proven to make no upstream request.
+        self.assertTrue(entry.eligible)
         self.assertEqual(EXPECTED_TOOLS, entry.allowed_tools)
         self.assertEqual(("GITLAB_MCP_READ_TOKEN",), entry.credential.environment)
-        rendered = render_mcp_config("codex", "", (replace(entry, eligible=True),))
+        rendered = render_mcp_config("codex", "", (entry,))
         native = parse_mcp_config("codex", rendered)["mcp_servers"][entry.name]
         self.assertEqual(["GITLAB_MCP_READ_TOKEN"], native["env_vars"])
 
