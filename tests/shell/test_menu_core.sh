@@ -22,7 +22,10 @@ test_main_menu_snapshot() {
 	# status rows, and MCP followed them -- it was an entry that only showed
 	# status, and install, update and status manage it directly now.
 	[[ "$output" == *'1. Check Status'* && "$output" == *'8. Quit'* ]] || return 1
-	[[ "$output" == *'Prune Skills'* && "$output" == *'GitHub Token Config'* ]] || return 1
+	# Token Config, not GitHub Token Config: the entry opens a provider list
+	# now that a GitLab credential exists beside the GitHub one.
+	[[ "$output" == *'Prune Skills'* && "$output" == *'Token Config'* ]] || return 1
+	[[ "$output" != *'GitHub Token Config'* ]] || return 1
 	[[ "$output" != *'MCP Servers'* ]] || return 1
 	[[ "$output" != *'Platform'* ]] || return 1
 	[[ "$output" == *'Libraries'* ]] || return 1
@@ -333,6 +336,56 @@ test_relay_animation_can_be_switched_off() (
 	[[ -z "${_TUI_SPINNER_PID:-}" ]]
 )
 
+# Token Config is a provider list now. The property worth pinning is that the
+# GitLab screen never puts the secret where /proc would publish it: every
+# action shells out, and only `set` carries a token, on stdin.
+test_token_menu_lists_both_providers() (
+	local dumped
+	dumped="$(cd "$ROOT" && "${AGENTBOT_PYTHON:-python3}" -m src.ui.menu_select --menu tokens --dump </dev/null)" || return 1
+	[[ "$dumped" == *'GitHub token'* && "$dumped" == *'GitLab token'* ]] || return 1
+	# The dump separates a field from its value with \x1f, so the key rows read
+	# as "key<US>github" rather than "keygithub".
+	[[ "$dumped" == *"key"$'\x1f'"github"* ]] || return 1
+	[[ "$dumped" == *"key"$'\x1f'"gitlab"* ]]
+)
+
+test_token_menu_dispatch_routes_each_provider() (
+	local calls="$TEST_ROOT/tokens.calls"
+	: >"$calls"
+	agentbot_token_config_menu() { printf 'github
+' >>"$calls"; }
+	agentbot_gitlab_token_menu() { printf 'gitlab
+' >>"$calls"; }
+	agentbot_menu_tokens_dispatch github || return 1
+	agentbot_menu_tokens_dispatch gitlab || return 1
+	[[ "$(<"$calls")" == $'github
+gitlab' ]]
+)
+
+test_gitlab_token_secret_never_reaches_an_argument_vector() (
+	# The backend is stubbed to record its arguments and its stdin. A token in
+	# the arguments is the defect; a token on stdin is the contract.
+	local args="$TEST_ROOT/gitlab.args" input="$TEST_ROOT/gitlab.stdin"
+	: >"$args"
+	: >"$input"
+	_agentbot_gitlab_token_backend() {
+		printf '%s
+' "$*" >>"$args"
+		cat >>"$input" 2>/dev/null || true
+	}
+	_agentbot_token_menu_secret() { printf -v "$1" '%s' 'glpat-abcdefghijklmnopqrstuvwx'; }
+	_agentbot_token_menu_confirm() { return 0; }
+	_agentbot_token_menu_say() { :; }
+	AGENTBOT_TOKEN_MENU_OUT_FD=1
+	_agentbot_gitlab_token_save >/dev/null 2>&1
+	[[ "$(<"$args")" == 'set' ]] || return 1
+	grep -q 'glpat-abcdefghijklmnopqrstuvwx' "$input" || return 1
+	! grep -q 'glpat' "$args"
+)
+
+check 'token menu lists both providers' test_token_menu_lists_both_providers
+check 'token menu dispatch routes each provider' test_token_menu_dispatch_routes_each_provider
+check 'gitlab token never reaches an argument vector' test_gitlab_token_secret_never_reaches_an_argument_vector
 check 'relay reads the step message from a STEP line' test_relay_extracts_the_step_message
 check 'relay emits backend lines unchanged with no terminal' test_relay_emits_lines_unchanged_without_a_terminal
 check 'relay animation honours the opt-out' test_relay_animation_can_be_switched_off

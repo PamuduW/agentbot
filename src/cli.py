@@ -279,6 +279,79 @@ def _handle_boost(context: CommandContext) -> int:
     return 1 if status.state in {"broken", "forbidden", "unsafe-config"} else 0
 
 
+def _handle_gitlab_token(context: CommandContext) -> int:
+    from . import gitlab_token as store
+
+    command = context.args.gitlab_token_command
+    config_home = context.paths.config_home
+    saved = store.read(config_home)
+
+    if command == "status":
+        problem = store.inspect(config_home)
+        if problem is not None:
+            print(f"  Saved state is unusable: {problem}")
+            return 1
+        if not saved:
+            print("  not configured")
+            return 1
+        print(f"  {store.fingerprint(saved)}")
+        return 0
+
+    if command == "set":
+        # One line, from stdin. Whitespace is stripped because a paste through
+        # a terminal carries a newline and sometimes a trailing space, and a
+        # token that differs only by those is refused by the shape check with
+        # nothing to show the operator why.
+        token = sys.stdin.readline().strip()
+        if not token:
+            print("  No token was supplied; nothing was saved.", file=sys.stderr)
+            return 1
+        try:
+            store.write(config_home, token)
+        except store.TokenError as error:
+            print(f"  {error}", file=sys.stderr)
+            return 1
+        print(f"  Saved {store.fingerprint(token)}")
+        return 0
+
+    if command == "check":
+        if not saved:
+            print("  No saved token to check.", file=sys.stderr)
+            return 1
+        result = store.verify(saved)
+        if result.accepted is None:
+            print(f"  Could not check it: {result.detail}")
+            return 2
+        if not result.accepted:
+            print(f"  {result.detail}")
+            return 1
+        scopes = ", ".join(result.scopes) if result.scopes else "unknown"
+        print(f"  GitLab {result.detail}; scopes: {scopes}")
+        # A token that can write is accepted by GitLab and still wrong for a
+        # read-only facade, so it is reported rather than passed silently.
+        if result.scopes and not result.read_only:
+            print("  Warning: this token carries a write scope; read_api is the contract.")
+        return 0
+
+    if command == "reveal":
+        if not saved:
+            print("  No saved token to reveal.", file=sys.stderr)
+            return 1
+        print(saved)
+        return 0
+
+    if command == "remove":
+        try:
+            removed = store.remove(config_home)
+        except store.TokenError as error:
+            print(f"  {error}", file=sys.stderr)
+            return 1
+        print("  Saved token removed." if removed else "  No saved token file exists.")
+        return 0
+
+    raise SystemExit(f"unknown gitlab-token command: {command}")
+
+
 def _handle_mcp(context: CommandContext) -> int:
     command = context.args.mcp_command
     if command == "serve":
@@ -527,6 +600,7 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "graphify": _handle_graphify,
     "boost": _handle_boost,
     "mcp": _handle_mcp,
+    "gitlab-token": _handle_gitlab_token,
     "cli-config": _handle_cli_config,
     "cursor": _handle_cursor,
     "vscode": _handle_vscode,
@@ -600,6 +674,20 @@ def build_parser() -> argparse.ArgumentParser:
     boost_sub.add_parser("status", help="Show Boost CLI, safety, and integration state")
     boost_sub.add_parser("setup", help="Set up Boost for installed Claude, Codex, and Cursor CLIs")
     boost_sub.add_parser("off", help="Remove Boost integration from Claude, Codex, and Cursor")
+    # The GitLab read credential. GitHub's token stays in the Bash helper both
+    # products share; this one is Agentbot's, and the menu drives it through
+    # here so the secret never crosses a shell argument vector.
+    gitlab_token = subparsers.add_parser(
+        "gitlab-token", help="Inspect or manage the saved GitLab read token"
+    )
+    gitlab_token_sub = gitlab_token.add_subparsers(dest="gitlab_token_command", required=True)
+    gitlab_token_sub.add_parser("status", help="Show whether a token is saved, by fingerprint")
+    # Read from stdin, never an argument: an argv is world-readable in /proc.
+    gitlab_token_sub.add_parser("set", help="Save a token read from standard input")
+    gitlab_token_sub.add_parser("check", help="Ask GitLab whether the saved token is accepted")
+    gitlab_token_sub.add_parser("reveal", help="Print the saved token once")
+    gitlab_token_sub.add_parser("remove", help="Delete the saved token")
+
     mcp = subparsers.add_parser("mcp", help="Manage explicitly selected MCP servers")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_catalog = mcp_sub.add_parser("catalog", help="List validated MCP candidates")

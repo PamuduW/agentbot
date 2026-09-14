@@ -46,7 +46,7 @@ MENUS: dict[str, Menu] = {
             "Install Agentbot",
             "Update",
             "Prune Skills",
-            "GitHub Token Config",
+            "Token Config",
             "Workspaces",
             "Libraries",
             "Quit",
@@ -70,13 +70,26 @@ MENUS: dict[str, Menu] = {
             "A preview and explicit confirmation are required before mutation.",
             "Select and permanently remove manual, orphaned, excluded, or stale skills.\n"
             "Each candidate shows its classification and source detail before confirmation.",
-            "Configure the optional shared GitHub API token.\n"
-            "The token is stored outside this repository.",
+            "Configure the saved GitHub and GitLab credentials.\n"
+            "Tokens are stored outside this repository, one file each.",
             "List, preview, and resync locally registered workspaces.\n"
             "Apply actions require explicit confirmation.",
             "Open the Agentbot and Graphify command reference libraries.\n"
             "Read-only command and safety information.",
             "Exit the Agentbot menu.\nReturn to the calling process.",
+        ),
+    ),
+    "tokens": Menu(
+        title="Token Config",
+        breadcrumb="Agentbot › Token Config",
+        labels=("GitHub token", "GitLab token"),
+        keys=("github", "gitlab"),
+        descs=(
+            "Raises public-repository API rate limits, and authenticates the "
+            "GitHub MCP server.\n"
+            "Read access only; shared with the sibling product.",
+            "The read_api credential the Agentbot GitLab facade reads with.\n"
+            "Read access only; no project or instance settings are stored beside it.",
         ),
     ),
     "libraries": Menu(

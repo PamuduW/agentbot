@@ -39,7 +39,9 @@ test_main_dispatch_and_pause_ownership() (
 	agentbot_menu_prune_skills() { printf 'prune-skills\n' >>"$calls"; }
 	# Submenus own their action pauses and say so; the parent must not add a
 	# second one. Direct actions do not, so the parent pauses for them.
-	agentbot_menu_token() {
+	# Renamed with the surface: the main-menu entry is Token Config now, and
+	# it opens a provider list rather than the GitHub screen directly.
+	agentbot_menu_tokens() {
 		tui_menu_declare_owns_pause
 		printf 'token\n' >>"$calls"
 	}

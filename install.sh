@@ -520,7 +520,7 @@ main() {
 		check_python_deps
 		run_cli boot "${@:2}"
 		;;
-	graphify | boost)
+	graphify | boost | gitlab-token)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;

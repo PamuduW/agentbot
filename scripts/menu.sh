@@ -16,7 +16,10 @@ source "$_AGENTBOT_MENU_DIR/menus/update.sh"
 source "$_AGENTBOT_MENU_DIR/menus/prune_skills.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/github_token.sh"
+# After github_token.sh: the GitLab screen reuses its descriptor and prompt
+# helpers rather than opening a second reader on the same terminal.
 # shellcheck disable=SC1091
+source "$_AGENTBOT_MENU_DIR/menus/tokens.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/workspaces.sh"
 # shellcheck disable=SC1091
@@ -39,7 +42,7 @@ agentbot_menu_dispatch() {
 	install) agentbot_menu_components || rc=$? ;;
 	update) agentbot_menu_update || rc=$? ;;
 	prune-skills) agentbot_menu_prune_skills || rc=$? ;;
-	token) agentbot_menu_token || rc=$? ;;
+	token) agentbot_menu_tokens || rc=$? ;;
 	workspaces) agentbot_menu_workspaces || rc=$? ;;
 	libraries) agentbot_menu_libraries || rc=$? ;;
 	*)

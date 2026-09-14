@@ -71,7 +71,8 @@ agentbot full                     # install, then update
 agentbot boot /path/to/repo       # render and register a workspace
 agentbot workspaces               # list registered workspaces
 agentbot resync --dry-run --all   # preview every registered workspace
-agentbot token                    # manage the optional private GitHub token
+agentbot token                    # Token Config: the GitHub and GitLab credentials
+agentbot gitlab-token status      # inspect the saved GitLab read token, by fingerprint
 agentbot mcp catalog              # list validated MCP candidates
 agentbot mcp status               # inspect MCP ownership without network access
 ```
@@ -115,6 +116,13 @@ agentbot mcp setup --select ID... --targets CLIENT... --yes
 agentbot mcp off --select ID... --targets CLIENT... --yes
 agentbot mcp restore OPERATION_ID --yes
 ```
+
+The GitLab facade reads with the token saved under **Token Config › GitLab**,
+or `agentbot gitlab-token`. It is stored as a single mode-`0600` assignment in
+`${XDG_CONFIG_HOME:-$HOME/.config}/agentbot/gitlab.env`, is never passed through
+an argument vector, and is only ever reported by fingerprint. Nothing else is
+stored beside it: every facade tool takes `project_id` as a call argument, so
+what may be read is decided by the token's own access.
 
 `catalog`, `status`, and `plan` are read-only; default status never contacts a
 provider. Mutations require a non-empty server and client selection plus

@@ -425,6 +425,9 @@ class CliTests(unittest.TestCase):
                 "graphify",
                 "boost",
                 "mcp",
+                # Token Config's GitLab screen drives this; the GitHub half
+                # stays in the Bash helper both products share.
+                "gitlab-token",
                 "cli-config",
                 "cursor",
                 "vscode",
