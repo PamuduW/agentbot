@@ -213,7 +213,9 @@ The catalog admits Context7, AWS Knowledge, and Microsoft Learn through the
 local fail-closed filter. Their live public descriptors, bounded calls, and
 isolated Claude, Codex, and Cursor configurations passed on 2026-09-14. They
 remain unselected by default. The GitHub read-only contract is frozen as an
-ineligible candidate; the GitLab REST-read facade is not yet implemented.
+ineligible candidate. The typed, bounded GitLab REST-read facade is implemented
+but remains ineligible until its safe-project and three-client live admission
+gates pass with a `read_api` credential.
 
 The historical files under `archive/catalog/` and `archive/mcp/` are research
 inputs only. Phase 3 must extend the Phase 2 renderer; it must not restore the

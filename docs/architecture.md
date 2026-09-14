@@ -46,7 +46,11 @@ src/lifecycle.py  src/mcp_service.py
   loads the strict catalog and private ownership state, delegates native
   rendering to `src/mcp_render.py`, and delegates whole-operation planning,
   backup, rollback, and restore to `src/mcp_reconcile.py`. CLI and menu paths
-  call this same service.
+  call this same service. Admitted remote knowledge overlays run through
+  `src/mcp_filter.py`, which refuses descriptor drift before exposing its exact
+  allowlist. GitLab uses `src/gitlab_read_mcp.py` over
+  `src/gitlab_read_client.py`: the MCP surface maps to typed, bounded REST
+  `GET` routes only and contains no generic request or mutation primitive.
 - `scripts/lib/tui.sh` and `scripts/menus/` are presentation adapters.
 - `src/ui/menu.py` draws menu frames and `src/ui/menu_select.py` runs the
   selection loop. ADR-0001 in the workspace repository moves presentation to
@@ -105,7 +109,9 @@ flow to refresh its outputs.
 Local mutable state is outside the checkout under
 `${XDG_CONFIG_HOME:-$HOME/.config}/agentbot` and `~/.agents/`. MCP ownership is
 recorded in private `mcp.json`; secure operation snapshots live under
-`backups/mcp/`. The catalog contains no selection or secret value. The MCP
+`backups/mcp/`. The catalog contains eligibility and credential-reference
+metadata, but no selection or secret value. Ineligible candidates such as the
+unadmitted GitHub and GitLab entries cannot be rendered. The MCP
 snapshots under `archive/` are historical research inputs only.
 
 ## Cross-repository ownership

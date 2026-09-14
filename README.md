@@ -178,6 +178,43 @@ The test records no token, header, repository content, issue text, comment, or
 job log. Until it passes, `agentbot mcp plan --select github ...` fails closed
 because the candidate is not eligible.
 
+### GitLab admission status
+
+The Agentbot-owned GitLab facade is also present as an ineligible candidate.
+It exposes fifteen typed REST `GET` operations and no GraphQL, generic-request,
+pipeline-action, artifact, package, registry, or mutation tool. Its credential
+must have only GitLab's
+[`read_api` scope](https://docs.gitlab.com/security/tokens/access_token_scopes/).
+Prefer a project access token for one project, then a group access token for a
+group; use a personal access token only when the required reads cross those
+boundaries. [Project access tokens](https://docs.gitlab.com/api/rest/authentication/#project-access-tokens)
+on GitLab.com require Premium or Ultimate; self-managed GitLab provides them on
+Free, Premium, and Ultimate. Internal projects can be visible beyond their
+membership boundary to authenticated users, so use an explicitly safe test
+project and verify its visibility before admission.
+
+Keep the token only in `GITLAB_MCP_READ_TOKEN`. Set `GITLAB_MCP_ORIGIN` to the
+fixed HTTPS origin for a self-managed instance; omit it for GitLab.com. The
+opt-in acceptance gate also requires declarations that make the tested
+environment auditable without recording the credential or returned content:
+
+```bash
+AGENTBOT_TEST_GITLAB_MCP=1 \
+  GITLAB_MCP_READ_TOKEN="$GITLAB_MCP_READ_TOKEN" \
+  GITLAB_MCP_TEST_PROJECT="safe-group/safe-project" \
+  GITLAB_MCP_INSTANCE_VERSION="your-version" \
+  GITLAB_MCP_TEST_TIER="free|premium|ultimate" \
+  GITLAB_MCP_TOKEN_KIND="project|group|personal" \
+  GITLAB_MCP_TEST_ROLE="your-project-role" \
+  python3 -m unittest tests.integration.test_gitlab_read_live -v
+```
+
+The safe project needs a default branch with at least one file, one merge
+request, and one completed CI job. The suite calls all fifteen tools, rejects
+write-shaped and generic bypass names locally, bounds every request, and keeps
+response data out of test output. GitLab remains ineligible until this suite
+and isolated Claude, Codex, and Cursor launches pass with the same credential.
+
 ## Skills
 
 [`skills.sources.yaml`](skills.sources.yaml) is the canonical source manifest.
