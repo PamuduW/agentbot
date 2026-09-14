@@ -22,7 +22,7 @@ _RETRY_STATUSES = frozenset({429, 502, 503, 504})
 _SEARCH_SCOPES = frozenset({"blobs", "commits", "issues", "merge_requests", "notes"})
 
 
-class GitLabReadError(Exception):
+class GitLabReadError(ValueError):
     pass
 
 

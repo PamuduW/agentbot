@@ -282,6 +282,10 @@ def _handle_boost(context: CommandContext) -> int:
 def _handle_mcp(context: CommandContext) -> int:
     command = context.args.mcp_command
     if command == "serve":
+        if context.args.catalog_id == "gitlab_read":
+            from .gitlab_read_mcp import main as run_gitlab
+
+            return run_gitlab([])
         from .mcp_filter import main as run_filter
 
         return run_filter(

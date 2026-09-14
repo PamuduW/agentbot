@@ -245,6 +245,83 @@
         "descriptor_fingerprints_match",
         "hidden_tool_rejected"
       ]
+    },
+    {
+      "id": "gitlab_read",
+      "name": "agentbot_gitlab_read",
+      "publisher": "Agentbot",
+      "documentation_url": "https://docs.gitlab.com/api/rest/",
+      "license": null,
+      "terms_url": "https://about.gitlab.com/terms/",
+      "reviewed_on": "2026-09-14",
+      "eligible": false,
+      "transport": "local_stdio",
+      "entrypoint": [
+        "agentbot",
+        "mcp",
+        "serve",
+        "--catalog-id",
+        "gitlab_read"
+      ],
+      "clients": {
+        "claude": {"enabled": true},
+        "codex": {"enabled": true},
+        "cursor": {"enabled": true}
+      },
+      "credential": {
+        "mode": "header_env",
+        "environment": ["GITLAB_MCP_READ_TOKEN"]
+      },
+      "allowed_tools": [
+        "gitlab_project",
+        "gitlab_repository_tree",
+        "gitlab_repository_file",
+        "gitlab_commits",
+        "gitlab_refs",
+        "gitlab_issues",
+        "gitlab_merge_requests",
+        "gitlab_merge_request_diff",
+        "gitlab_notes",
+        "gitlab_members",
+        "gitlab_releases",
+        "gitlab_pipelines",
+        "gitlab_jobs",
+        "gitlab_job_log",
+        "gitlab_search"
+      ],
+      "descriptor_fingerprints": [
+        "sha256:616a1d125d0b2f83cbd880bad8bb414aeda91d49ebd7f138308d5e62ec763755",
+        "sha256:c52c6e6c299c790b802cc676c98a2ee344bfd902f5b06cb0caf99fed1f7887f8",
+        "sha256:a282529aec5d1c2ef6bb15dc6f9ddd8ce2c6d03e066be3fc975f87648d5e961b",
+        "sha256:eb03a62504e83d179c2f4b05674b96a5a4e009cf51704fca902106452d19f16e",
+        "sha256:13e572aad8c2986a1866fcc8b30a55fc6f76c03d83830e92d5e5f06da994fffd",
+        "sha256:78e10b483f74aadc51cd0bf260fef1cf9951a384a38abcc361d9d82732c07130",
+        "sha256:420e24417451e8c4e66e7aa25e98c7d4f2f1a412b2451572675e63502ab568c5",
+        "sha256:689d769c855cde104a7240665e1d8ccaeea72763aaa0f86c27a3fff3e54396da",
+        "sha256:513c64932b03227a3358e5affffc4f87566919fa77dbc0b41f160bd859c5d152",
+        "sha256:eecdd2f602bb3bba6d5fa5f72032fbb5235006cd3fcc824d9110d443a70981c8",
+        "sha256:6dcb25d233f9c12f80cee1f133abaf7952e104c8533bcaa427cdb3b251e81826",
+        "sha256:406dbea7eef399a1a76e7c5a65bc1972851442642e3768a2141bbd08d579819e",
+        "sha256:e8887c902544fd81420ef26d63d6cad4f0fd80a442b5640ce4e9b2407e47d3d8",
+        "sha256:e8e1662bc2574b501f28c290517d00064c867300e8bc7230803fb317a62415f9",
+        "sha256:8339f92fdfb9111960459b89d617391bb60d44f2410b410848421e8b1c60c12d"
+      ],
+      "read_only_authority": "Agentbot exposes only fifteen typed GitLab REST GET operations and requires a read_api token; no generic request or mutation primitive exists",
+      "limitations": [
+        "Pending live safe-project endpoint coverage and three-client acceptance",
+        "The default origin is GitLab.com; self-managed origins require GITLAB_MCP_ORIGIN",
+        "Repository, issue, merge-request, note, release, and job-log content is untrusted input"
+      ],
+      "timeout_seconds": 30,
+      "max_response_bytes": 4194304,
+      "doctor_rules": [
+        "auth_reference_present",
+        "read_api_scope_declared",
+        "get_only_routes",
+        "exact_tool_surface",
+        "prohibited_tool_rejected",
+        "live_endpoint_coverage"
+      ]
     }
   ]
 }

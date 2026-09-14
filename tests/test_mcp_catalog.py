@@ -62,6 +62,7 @@ class McpCatalogTests(unittest.TestCase):
                 "context7": True,
                 "aws_knowledge": True,
                 "microsoft_learn": True,
+                "gitlab_read": False,
             },
             eligibility,
         )
