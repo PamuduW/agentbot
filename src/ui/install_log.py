@@ -16,6 +16,7 @@ the way to the terminal, so nothing here emits escapes.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 from typing import TextIO
 
@@ -85,6 +86,21 @@ class _StepSpinner:
             return self._tty
         self._tty_tried = True
         if os.environ.get("AGENTBOT_NO_PROGRESS_ANIMATION"):
+            return None
+        # Only when this process's stdout *is* the terminal.
+        #
+        # Frames go to /dev/tty while the prefixed lines go to stdout, and when
+        # something sits between stdout and the terminal -- the menu's Bash
+        # relay, a Dotfiles full update -- the two arrive out of order. A line
+        # relayed late lands after the next step's animation has already
+        # started and overwrites part of it, which is how `[OK] ... installed:
+        # devops-anmol (3s)` ended up wearing the tail of the frame beneath it.
+        # The relay owns sequencing in that case and draws its own animation;
+        # see _tui_step_spinner_start in scripts/lib/tui.sh.
+        try:
+            if not sys.stdout.isatty():
+                return None
+        except (AttributeError, ValueError):
             return None
         try:
             self._tty = open("/dev/tty", "w", encoding="utf-8")

@@ -303,6 +303,39 @@ print(" ".join(Lifecycle.SELECTABLE_COMPONENTS))')" || return 1
 	((${#AGENTBOT_COMPONENT_KEYS[@]} == ${#AGENTBOT_COMPONENT_DESCS[@]}))
 )
 
+# The relay draws the step animation, because it is the only thing holding both
+# the backend's lines and the terminal. The backend writes frames to /dev/tty
+# and its lines to stdout, and under this relay stdout arrives late -- which put
+# the tail of one frame on the end of the next [OK] line.
+test_relay_extracts_the_step_message() (
+	local got
+	got="$(_tui_step_message '  [STEP] Installing skill source: humanizer (blader/humanizer)')"
+	[[ "$got" == 'Installing skill source: humanizer (blader/humanizer)' ]]
+)
+
+test_relay_emits_lines_unchanged_without_a_terminal() (
+	# No tty in the harness, so no animation may be drawn and no frame or
+	# cursor-control byte may reach the stream the lines go to.
+	local output
+	output="$(printf '  [STEP] Working
+  [OK] Working (1s)
+' |
+		_tui_color_backend_stream | strip_ansi_stream)"
+	[[ "$output" == *'[STEP] Working'* ]] || return 1
+	[[ "$output" == *'[OK] Working (1s)'* ]] || return 1
+	[[ "$output" != *'⠋'* && "$output" != *'⠙'* ]] || return 1
+	[[ -z "${_TUI_SPINNER_PID:-}" ]]
+)
+
+test_relay_animation_can_be_switched_off() (
+	AGENTBOT_NO_PROGRESS_ANIMATION=1
+	_tui_step_spinner_start 'Working'
+	[[ -z "${_TUI_SPINNER_PID:-}" ]]
+)
+
+check 'relay reads the step message from a STEP line' test_relay_extracts_the_step_message
+check 'relay emits backend lines unchanged with no terminal' test_relay_emits_lines_unchanged_without_a_terminal
+check 'relay animation honours the opt-out' test_relay_animation_can_be_switched_off
 check 'main menu snapshot uses the unified labels and breadcrumb' test_main_menu_snapshot
 check 'menu label, key, and description arrays stay aligned' test_menu_arrays_stay_aligned
 check 'every platform surface is an install component' test_every_platform_surface_is_an_install_component

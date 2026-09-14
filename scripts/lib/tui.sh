@@ -121,13 +121,73 @@ _tui_color_backend_line() {
 # beside the question.
 _TUI_KEEP_CURSOR=$'\x17'
 
+# The animation under a [STEP] line, drawn by the relay rather than by the
+# backend that printed the line.
+#
+# Two processes writing to one terminal cannot sequence themselves: the backend
+# writes frames to /dev/tty and its lines to stdout, and stdout passes through
+# this relay, so a line arrives after the frames it was supposed to follow. The
+# relay has both -- it is the one writing every line out -- so it can stop the
+# animation immediately before printing the next line and start a new one
+# immediately after. Same frames and cadence as the backend and as the sibling
+# product's logging.sh, because a full update prints all three into one
+# terminal.
+_TUI_SPINNER_PID=''
+_TUI_SPINNER_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+
+_tui_step_spinner_stop() {
+	[[ -n "$_TUI_SPINNER_PID" ]] || return 0
+	kill "$_TUI_SPINNER_PID" 2>/dev/null
+	wait "$_TUI_SPINNER_PID" 2>/dev/null
+	_TUI_SPINNER_PID=''
+	printf '\r\033[K'
+	return 0
+}
+
+_tui_step_spinner_start() {
+	local message="$1"
+	_tui_step_spinner_stop
+	[[ -z "${AGENTBOT_NO_PROGRESS_ANIMATION:-}" ]] || return 0
+	[[ -t 1 ]] || return 0
+	(
+		local index=0
+		while true; do
+			# Cursor parked at column 0 after each frame, so a line printed
+			# mid-step overwrites the animation from the left instead of being
+			# appended to the end of it.
+			printf '\r    %s %s\r' "${_TUI_SPINNER_FRAMES[index % 10]}" "$message"
+			index=$((index + 1))
+			sleep 0.12
+		done
+	) &
+	_TUI_SPINNER_PID=$!
+}
+
+# The step a [STEP] line names, without its marker or indentation.
+_tui_step_message() {
+	local line="$1"
+	line="${line#"${line%%[![:space:]]*}"}"
+	line="${line#\[STEP\] }"
+	printf '%s' "$line"
+}
+
 _tui_color_backend_stream() {
 	local line=''
+	# No animation may outlive the stream that was drawing it.
+	trap '_tui_step_spinner_stop' RETURN
 	while IFS= read -r line; do
+		# Before the line, always: the run has moved on, and the animation must
+		# not still be claiming otherwise underneath it.
+		_tui_step_spinner_stop
 		if [[ "$line" == *"$_TUI_KEEP_CURSOR" ]]; then
 			_tui_color_backend_line "${line%"$_TUI_KEEP_CURSOR"}" ''
 		else
 			_tui_color_backend_line "$line" $'\n'
+		fi
+		# And after it: a [STEP] opens work that runs until the next line, and
+		# that gap is the silence this animation exists to fill.
+		if [[ "$line" == *'[STEP]'* && "$line" != *'[Legend]'* ]]; then
+			_tui_step_spinner_start "$(_tui_step_message "$line")"
 		fi
 	done
 	[[ -z "$line" ]] || _tui_color_backend_line "$line" ''

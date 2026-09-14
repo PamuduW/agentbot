@@ -278,6 +278,21 @@ class StepAnimation(unittest.TestCase):
         # Stopping erases the line it owned rather than leaving it on screen.
         self.assertTrue(written.endswith("\r\033[K"))
 
+    def test_a_relayed_stdout_leaves_the_animation_to_the_relay(self) -> None:
+        """The corruption this rule exists to prevent.
+
+        Frames go to /dev/tty and lines go to stdout. With a relay between
+        stdout and the terminal the two arrive out of order, and a line
+        delivered late overwrites part of the next step's animation. The relay
+        owns both streams in that case and draws its own.
+        """
+        spinner = _StepSpinner()
+        with mock.patch("sys.stdout", new=io.StringIO()):
+            # A StringIO has isatty() -> False, which is what a pipe reports.
+            self.assertIsNone(spinner._terminal())
+        spinner.start("Installing skill sources")
+        self.assertIsNone(spinner._thread)
+
     def test_no_terminal_means_no_animation_and_no_error(self) -> None:
         spinner = _StepSpinner()
         spinner._tty = None

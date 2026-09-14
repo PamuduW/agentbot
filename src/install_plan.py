@@ -56,6 +56,30 @@ def _boost(lifecycle: Lifecycle) -> tuple[str, str, str]:
     return status.cli_version or "present", "—", "configure"
 
 
+def _mcp(lifecycle: Lifecycle) -> tuple[str, str, str]:
+    """Registered pairs against reviewable ones, without registering any.
+
+    Read-only like every builder here: install_eligible(apply=False) plans and
+    reports, so the screen between a keystroke and a confirm prompt writes
+    nothing.
+    """
+    from .mcp_service import McpService
+
+    service = McpService(lifecycle.paths)
+    selection, targets = service.eligible_selection()
+    available = len(selection) * len(targets)
+    if not available:
+        return "none registered", "no reviewed servers", "skip"
+    outcome = service.install_eligible(apply=False)
+    registered = len(outcome.current)
+    installed = f"{registered} registered"
+    if outcome.blocked:
+        return installed, f"{len(outcome.blocked)} need attention", "check"
+    if registered >= available:
+        return installed, "none", "up to date"
+    return installed, f"{available - registered} to register", "register"
+
+
 def _platform(lifecycle: Lifecycle, key: str) -> tuple[str, str, str]:
     from .platform_surfaces import surface_outcome
 
@@ -71,6 +95,7 @@ _BUILDERS = {
     "skills": _skills,
     "graphify": _graphify,
     "boost": _boost,
+    "mcp": _mcp,
 }
 
 #: Selector label per key, so the plan names components the way the screen
@@ -79,6 +104,7 @@ LABELS = {
     "skills": "Skills",
     "graphify": "Graphify",
     "boost": "Boost",
+    "mcp": "MCP servers",
     "vscode": "VS Code",
     "cursor": "Cursor statusline",
     "cli-config": "CLI config",
