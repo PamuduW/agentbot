@@ -250,10 +250,17 @@ class McpInstallComponentTests(unittest.TestCase):
         self.assertEqual(before, self.paths.mcp_state_file.read_bytes())
 
     def test_a_deselected_component_reads_without_writing(self) -> None:
+        """It still reports what it would have registered.
+
+        `admitted` is the plan's reading -- what is absent -- and `applied` is
+        what says whether it was written. Blanking the first when not applying
+        erased the number the update preview needs.
+        """
         outcome = self.service.install_eligible(apply=False)
 
         self.assertFalse(outcome.applied)
-        self.assertEqual((), outcome.admitted)
+        self.assertTrue(outcome.admitted)
+        self.assertEqual("skipped", outcome.result)
         self.assertFalse(self.paths.mcp_state_file.exists())
 
     def test_an_entry_another_tool_owns_blocks_instead_of_being_overwritten(self) -> None:
@@ -272,7 +279,6 @@ class McpInstallComponentTests(unittest.TestCase):
         outcome = self.service.install_eligible(apply=True)
 
         self.assertFalse(outcome.applied)
-        self.assertEqual((), outcome.admitted)
         self.assertIn(("context7", "cursor", "unmanaged-conflict"), outcome.blocked)
         self.assertEqual("check", outcome.result)
         # Untouched, byte for byte.
@@ -280,6 +286,35 @@ class McpInstallComponentTests(unittest.TestCase):
             {"mcpServers": {"agentbot_context7": {"url": "https://example.invalid"}}},
             json.loads(cursor_config.read_text(encoding="utf-8")),
         )
+
+    def test_the_update_preview_names_what_the_apply_will_register(self) -> None:
+        """The preview is the screen the operator confirms from.
+
+        The apply registers MCP servers, so a report that did not mention them
+        would have a newly reviewed server arrive without the screen before it
+        saying so.
+        """
+        from src.ui.reports import _mcp_plan_row
+
+        pending = self.service.install_eligible(apply=False)
+        self.assertEqual(
+            ("MCP servers", "0 registered", "9 to register", "register"),
+            _mcp_plan_row(pending),
+        )
+
+        self.service.install_eligible(apply=True)
+        settled = self.service.install_eligible(apply=False)
+        self.assertEqual(
+            ("MCP servers", "9 registered", "none", "up to date"),
+            _mcp_plan_row(settled),
+        )
+
+    def test_the_update_preview_registers_nothing(self) -> None:
+        from src.ui.reports import _mcp_plan_row
+
+        _mcp_plan_row(self.service.install_eligible(apply=False))
+
+        self.assertFalse(self.paths.mcp_state_file.exists())
 
     def test_an_empty_catalog_is_not_an_error(self) -> None:
         self.catalog_file.write_text('{"version":1,"entries":[]}\n', encoding="utf-8")

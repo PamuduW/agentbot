@@ -304,6 +304,11 @@ class Lifecycle:
             if self._workspace_preview is not None
             else self.resync_workspaces(apply=False)
         )
+        # Read-only, like every other reading this plan takes: apply=False
+        # plans and reports without writing, so the preview cannot register
+        # anything the operator has not confirmed yet.
+        stage_begins("Previewing MCP servers")
+        mcp = self._mcp_install(apply=False)
         stage_begins("Plan complete")
         return UpdatePlan(
             snapshot=self._update_snapshot(),
@@ -311,6 +316,7 @@ class Lifecycle:
             graphify_action=graphify_action,
             workspace_report=workspace_report,
             source_catalogs=catalogs,
+            mcp=mcp,
         )
 
     def apply_update(

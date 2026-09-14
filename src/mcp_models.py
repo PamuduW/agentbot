@@ -206,9 +206,12 @@ class McpInstallOutcome:
     def result(self) -> str:
         if self.blocked:
             return "check"
-        if self.admitted:
-            return "installed"
-        return "ok"
+        if not self.admitted:
+            return "ok"
+        # Registered, or deliberately left alone: a deselected component is a
+        # choice, not a fault, so it reads as skipped rather than as something
+        # needing attention.
+        return "installed" if self.applied else "skipped"
 
 
 @dataclass(frozen=True)

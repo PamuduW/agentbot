@@ -429,19 +429,20 @@ def _mcp_row(outcome) -> tuple[str, str, str]:
     summary column that fits one line would truncate to nothing useful, and
     `agentbot mcp status` is where the per-pair detail lives.
     """
-    registered = len(outcome.admitted) + len(outcome.current)
     if outcome.blocked:
         blocked = ", ".join(sorted({state for _, _, state in outcome.blocked}))
         return ("MCP servers", f"{len(outcome.blocked)} need attention: {blocked}", "check")
-    if not registered:
+    pending = len(outcome.admitted)
+    current = len(outcome.current)
+    if not pending and not current:
         return ("MCP servers", "no reviewed servers in the catalog", "ok")
-    if outcome.admitted:
-        return (
-            "MCP servers",
-            f"{len(outcome.admitted)} registered, {len(outcome.current)} already current",
-            "installed",
-        )
-    return ("MCP servers", f"{registered} registered", "ok")
+    if pending and outcome.applied:
+        return ("MCP servers", f"{pending} registered, {current} already current", "installed")
+    # Absent and not written: the component was deselected, so the row says
+    # what is there and what was left rather than claiming either happened.
+    if pending:
+        return ("MCP servers", f"{current} registered, {pending} not registered", "skipped")
+    return ("MCP servers", f"{current} registered", "ok")
 
 
 def _graphify_rows(status) -> list[tuple[str, str, str]]:
@@ -988,6 +989,25 @@ def _global_row(actions) -> tuple[str, str, str]:
     return _kind_row("Global outputs", [action.kind for action in actions], len(actions))
 
 
+def _mcp_plan_row(outcome) -> tuple[str, str, str, str]:
+    """The MCP row for a preview, in the four-column vocabulary those use.
+
+    Shaped like the install plan's row rather than the summary's: a preview
+    answers "what will approving this do", so the available column counts what
+    is still to register instead of what is already there.
+    """
+    if outcome is None:
+        return ("MCP servers", "—", "—", "skip")
+    registered = len(outcome.current)
+    installed = f"{registered} registered"
+    if outcome.blocked:
+        return ("MCP servers", installed, f"{len(outcome.blocked)} need attention", "check")
+    pending = len(outcome.admitted)
+    if pending:
+        return ("MCP servers", installed, f"{pending} to register", "register")
+    return ("MCP servers", installed, "none", "up to date")
+
+
 def print_update_plan(plan, *, command: str = "update") -> None:
     title = command.capitalize()
     # `=== Update report ===`, as the sibling product names the same screen.
@@ -1020,6 +1040,7 @@ def print_update_plan(plan, *, command: str = "update") -> None:
             "—",
             plan.graphify_action if graphify_changes else "skip",
         ),
+        _mcp_plan_row(getattr(plan, "mcp", None)),
         (
             "Workspaces",
             f"{len(plan.workspace_report.results)} registered",

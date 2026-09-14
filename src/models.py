@@ -102,6 +102,11 @@ class UpdatePlan:
     graphify_action: str
     workspace_report: WorkspaceReport
     source_catalogs: tuple[SourceCatalog, ...] = ()
+    #: What the MCP phase would register, read without registering it. The
+    #: preview is the screen an operator confirms from, so it has to name every
+    #: component the apply will touch -- and once a newly reviewed server
+    #: reaches the catalog, this is the row that says so before the run.
+    mcp: McpInstallOutcome = field(default_factory=McpInstallOutcome)
 
 
 @dataclass(frozen=True)

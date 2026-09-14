@@ -180,16 +180,17 @@ class McpService:
             for item in plan.items
             if item.state not in {"absent", "owned"}
         )
-        # Nothing to add, or something in the way: either is a reading, not a
-        # write. apply_mcp_plan rejects a plan it cannot apply anyway, and a
-        # run that rewrote three configs to change nothing would churn a backup
-        # on every install.
+        # `admitted` is what the plan says is absent, reported whether or not
+        # this call writes it -- `applied` is what says which happened. They
+        # were conflated once, with apply=False blanking admitted, and that
+        # erased the one number a preview exists to show: how many servers
+        # approving the run would register.
+        #
+        # Nothing to add, or something in the way, is a reading either way.
+        # apply_mcp_plan rejects a plan it cannot apply, and a run that rewrote
+        # three configs to change nothing would churn a backup every install.
         if not apply or not admitted or blocked:
-            return McpInstallOutcome(
-                admitted=() if blocked or not apply else admitted,
-                current=current,
-                blocked=blocked,
-            )
+            return McpInstallOutcome(admitted=admitted, current=current, blocked=blocked)
 
         operation_id = self.setup(selection, targets, confirmed=True)
         return McpInstallOutcome(
