@@ -206,8 +206,20 @@ def verify(token: str, *, origin: str = DEFAULT_ORIGIN) -> VerifyResult:
     try:
         identity = _get(f"{base}/api/v4/user", token)
     except urllib.error.HTTPError as error:
-        if error.code in {401, 403}:
-            return VerifyResult(False, f"GitLab rejected the token (HTTP {error.code})")
+        # 401 and 403 are not the same answer, and treating them alike called a
+        # good credential bad. 401 means GitLab does not accept this token at
+        # all. 403 means it knows exactly who the token is and will not let it
+        # read *this* endpoint -- which is the expected reply for a
+        # fine-grained token scoped to project resources with no User
+        # permission, the very shape the read-only facade wants.
+        if error.code == 401:
+            return VerifyResult(False, "GitLab rejected the token (HTTP 401)")
+        if error.code == 403:
+            return VerifyResult(
+                True,
+                "accepted; no permission to read the user profile, which a "
+                "project-scoped token is not expected to have",
+            )
         return VerifyResult(None, f"GitLab answered HTTP {error.code}")
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         return VerifyResult(None, f"could not reach GitLab: {error.__class__.__name__}")

@@ -306,12 +306,27 @@ def _handle_gitlab_token(context: CommandContext) -> int:
         if not token:
             print("  No token was supplied; nothing was saved.", file=sys.stderr)
             return 1
+        if not store.is_valid(token):
+            print(f"  token value is invalid: {store.SHAPE_RULE}", file=sys.stderr)
+            return 1
+        # Checked before it is written, the way the GitHub screen checks: a
+        # credential GitLab refuses is saved by nobody, and the operator finds
+        # out now rather than the first time the facade is asked for something.
+        # Being unable to ask is not a refusal, so it saves and says so.
+        result = store.verify(token)
+        if result.accepted is False:
+            print(f"  {result.detail}; nothing was saved.", file=sys.stderr)
+            return 1
         try:
             store.write(config_home, token)
         except store.TokenError as error:
             print(f"  {error}", file=sys.stderr)
             return 1
         print(f"  Saved {store.fingerprint(token)}")
+        if result.accepted is None:
+            print(f"  Saved without a check: {result.detail}")
+        elif result.scopes and not result.read_only:
+            print("  Warning: this token carries a write scope; read_api is the contract.")
         return 0
 
     if command == "check":

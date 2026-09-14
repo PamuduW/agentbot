@@ -253,14 +253,26 @@ class CommandTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.config_home = self.root / "config" / "agentbot"
 
-    def _run(self, *argv: str, stdin: str = "") -> tuple[int, str, str]:
+    #: What `set` sees when it checks before writing. Stubbed by default so no
+    #: test reaches the network -- `set` verifies now, and an unstubbed suite
+    #: both hangs on DNS and depends on GitLab being up.
+    VERIFY = store.VerifyResult(True, "accepted for someone", ("read_api",))
+
+    def _run(
+        self,
+        *argv: str,
+        stdin: str = "",
+        verify: store.VerifyResult | None = None,
+    ) -> tuple[int, str, str]:
         import io
 
         from tests.support import run_cli_main
 
         with mock.patch.dict(
             "os.environ", {"XDG_CONFIG_HOME": str(self.root / "config")}
-        ), mock.patch("sys.stdin", new=io.StringIO(stdin)):
+        ), mock.patch("sys.stdin", new=io.StringIO(stdin)), mock.patch.object(
+            store, "verify", return_value=verify or self.VERIFY
+        ):
             return run_cli_main(["agentbot", "--root", str(Path.cwd()), *argv])
 
     def test_status_reports_absence_as_a_nonzero_status(self) -> None:
@@ -316,22 +328,49 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(1, rc)
         self.assertIn("unusable", stdout)
 
+    def test_set_refuses_a_token_gitlab_rejects(self) -> None:
+        """The guarantee the GitHub screen already made: a credential the
+        provider refuses is saved by nobody."""
+        rejected = store.VerifyResult(False, "GitLab rejected the token (HTTP 401)")
+
+        rc, _, stderr = self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n", verify=rejected)
+
+        self.assertEqual(1, rc)
+        self.assertIn("nothing was saved", stderr)
+        self.assertEqual("", store.read(self.config_home))
+
+    def test_set_saves_when_the_check_cannot_be_made(self) -> None:
+        """Being unable to ask is not a refusal. Discarding a good token
+        because the network was down would be its own defect."""
+        unknown = store.VerifyResult(None, "could not reach GitLab: URLError")
+
+        rc, stdout, _ = self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n", verify=unknown)
+
+        self.assertEqual(0, rc)
+        self.assertIn("without a check", stdout)
+        self.assertEqual(_TOKEN, store.read(self.config_home))
+
+    def test_set_warns_when_the_token_can_write(self) -> None:
+        writable = store.VerifyResult(True, "accepted", ("api",))
+
+        rc, stdout, _ = self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n", verify=writable)
+
+        self.assertEqual(0, rc)
+        self.assertIn("write scope", stdout)
+
     def test_check_separates_rejection_from_being_unable_to_ask(self) -> None:
         self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n")
         rejected = store.VerifyResult(False, "GitLab rejected the token (HTTP 401)")
         unknown = store.VerifyResult(None, "could not reach GitLab: URLError")
 
-        with mock.patch.object(store, "verify", return_value=rejected):
-            self.assertEqual(1, self._run("gitlab-token", "check")[0])
-        with mock.patch.object(store, "verify", return_value=unknown):
-            self.assertEqual(2, self._run("gitlab-token", "check")[0])
+        self.assertEqual(1, self._run("gitlab-token", "check", verify=rejected)[0])
+        self.assertEqual(2, self._run("gitlab-token", "check", verify=unknown)[0])
 
     def test_check_warns_when_the_token_can_write(self) -> None:
         self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n")
         writable = store.VerifyResult(True, "accepted for someone", ("api",))
 
-        with mock.patch.object(store, "verify", return_value=writable):
-            rc, stdout, _ = self._run("gitlab-token", "check")
+        rc, stdout, _ = self._run("gitlab-token", "check", verify=writable)
 
         self.assertEqual(0, rc)
         self.assertIn("write scope", stdout)
@@ -340,8 +379,7 @@ class CommandTests(unittest.TestCase):
         self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n")
         good = store.VerifyResult(True, "accepted for someone", ("read_api",))
 
-        with mock.patch.object(store, "verify", return_value=good):
-            rc, stdout, _ = self._run("gitlab-token", "check")
+        rc, stdout, _ = self._run("gitlab-token", "check", verify=good)
 
         self.assertEqual(0, rc)
         self.assertIn("read_api", stdout)
