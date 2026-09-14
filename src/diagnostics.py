@@ -305,6 +305,22 @@ class Diagnostics:
             catalog = service.catalog()
             report = service.status()
             managed = service.state_store.load().managed
+        except ImportError as error:
+            # A missing renderer dependency is a provisioning fault, not a
+            # reason to abort every diagnostic around it. Reported as an issue
+            # so `status`, `doctor` and the install that collects them still
+            # answer, and so the answer names the remedy.
+            return (
+                0,
+                0,
+                (
+                    DoctorIssue(
+                        "error",
+                        "mcp",
+                        f"{error} — run ./install.sh install to provision .venv",
+                    ),
+                ),
+            )
         except (ValueError, OSError) as error:
             return (0, 0, (DoctorIssue("error", "mcp", str(error)),))
         issues = tuple(

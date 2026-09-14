@@ -14,6 +14,12 @@ export AGENTBOT_HOME
 
 # shellcheck source=/dev/null
 source "$AGENTBOT_HOME/scripts/lib/shared/tui/tty.sh"
+# shellcheck source=/dev/null
+source "$AGENTBOT_HOME/scripts/lib/python_env.sh"
+
+# Resolve once, non-fatally: the menu's Bash-only paths still draw on a machine
+# with no interpreter, and the Python call sites report that for themselves.
+agentbot_python_resolve || true
 
 agentbot_die() {
 	printf '  [err] %s\n' "$*" >&2
@@ -74,7 +80,7 @@ agentbot_run_install_menu() {
 agentbot_run_backend() { "$AGENTBOT_HOME/install.sh" "$@"; }
 
 agentbot_usage() {
-	(cd "$AGENTBOT_HOME" && python3 -m src.cli --root "$AGENTBOT_HOME" help "$@")
+	(cd "$AGENTBOT_HOME" && "${AGENTBOT_PYTHON:-python3}" -m src.cli --root "$AGENTBOT_HOME" help "$@")
 }
 
 agentbot_main() {

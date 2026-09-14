@@ -9,17 +9,23 @@ Use `./install.sh` from a checkout or `agentbot` after installation. Run
 
 ## Requirements
 
-- Bash, Git, Python 3, PyYAML, and tomlkit
+- Bash, Git, Python 3, and `python3-venv`
 - Node.js, npm, and `npx` for managed skill sources
 - optional `graphify` and `boost` CLIs installed by Dotfiles
 
-If PyYAML is unavailable, install the repository requirements in a local
-environment:
+Agentbot provisions its own Python packages. `./install.sh install` creates
+`.venv` in the checkout, fills it from `requirements.txt`, and every Agentbot
+command runs through that interpreter. The step is skipped when `requirements.txt`
+has not changed since the last fill, so a normal install does no network work.
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-```
+This is why the packages are not listed as prerequisites: a distribution
+interpreter marked `EXTERNALLY-MANAGED` refuses `pip install` under PEP 668,
+and apt carries neither `mcp` nor a tomlkit new enough for `requirements.txt`.
+Read-only commands never create the environment; they report what is missing
+and name `./install.sh install` as the remedy.
+
+To use an interpreter you manage yourself, set `AGENTBOT_PYTHON` to it.
+Agentbot then resolves through it and provisions nothing.
 
 ## Quick start
 

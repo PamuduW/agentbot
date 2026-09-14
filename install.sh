@@ -18,6 +18,8 @@ if [[ -z "${NO_COLOR:-}" && (-t 1 || -t 0 || -n "${AGENTBOT_TUI:-}" || -n "${FOR
 	AGENTBOT_OUT_RED=$'\033[31m'
 fi
 
+# shellcheck source=scripts/lib/python_env.sh
+source "${REPO_ROOT}/scripts/lib/python_env.sh"
 # shellcheck source=scripts/lib/repo_update.sh
 source "${REPO_ROOT}/scripts/lib/repo_update.sh"
 # shellcheck source=scripts/lib/shared/tui/tty.sh
@@ -50,19 +52,34 @@ log_info() {
 	info "$@"
 }
 
+# Every runtime import Agentbot makes before it can report anything. PyYAML
+# carries the policy renderers; tomlkit is reached by `status` and `doctor` too,
+# because their diagnostics collect the MCP report, so it is a baseline
+# dependency rather than an MCP-command one.
+AGENTBOT_RUNTIME_MODULES=(yaml tomlkit)
+
 check_python_deps() {
-	if ! command -v python3 >/dev/null 2>&1; then
+	local module
+	if ! agentbot_python_resolve; then
 		die "python3 is required"
 	fi
-	if ! python3 -c "import yaml" >/dev/null 2>&1; then
-		die "PyYAML is required (run: python3 -m pip install -r requirements.txt)"
-	fi
-	if ! python3 -c "import src.cli" >/dev/null 2>&1; then
+	for module in "${AGENTBOT_RUNTIME_MODULES[@]}"; do
+		if ! "$AGENTBOT_PYTHON" -c "import ${module}" >/dev/null 2>&1; then
+			die "${module} is required (run: ./install.sh install to provision .venv)"
+		fi
+	done
+	if ! "$AGENTBOT_PYTHON" -c "import src.cli" >/dev/null 2>&1; then
 		die "Agentbot Python CLI is unavailable (restore the checkout, then retry)"
 	fi
 }
 
+# The write paths -- install, full, update -- provision the environment instead
+# of only complaining about it. A read-only command must not create one as a
+# side effect of being asked a question, so it keeps the check and the message.
 check_skills_deps() {
+	if ! agentbot_python_ensure; then
+		die "failed to provision the Agentbot Python environment"
+	fi
 	check_python_deps
 	if ! command -v node >/dev/null 2>&1; then
 		die "node is required (install Node.js for npx skills)"
@@ -73,7 +90,8 @@ check_skills_deps() {
 }
 
 run_cli() {
-	python3 -m src.cli --root "$REPO_ROOT" "$@"
+	agentbot_python_resolve || die "python3 is required"
+	"$AGENTBOT_PYTHON" -m src.cli --root "$REPO_ROOT" "$@"
 }
 
 run_global_render() {
@@ -508,14 +526,6 @@ main() {
 		;;
 	mcp)
 		check_python_deps
-		case "${2:-}" in
-		catalog | status) ;;
-		*)
-			if ! python3 -c "import tomlkit" >/dev/null 2>&1; then
-				die "tomlkit is required (run: python3 -m pip install -r requirements.txt)"
-			fi
-			;;
-		esac
 		run_cli "$cmd" "${@:2}"
 		;;
 	cli-config | cursor | vscode)

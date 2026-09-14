@@ -65,6 +65,12 @@ fi
 exit "${TEST_PYTHON_EXIT:-0}"
 FAKE
 	chmod 700 "$TEST_FAKE_BIN/python3"
+	# install.sh addresses the interpreter through AGENTBOT_PYTHON now, not by
+	# name on PATH. Without this the resolver would find the repository's real
+	# .venv and the token-isolation assertions would inspect a child this
+	# harness never stood up.
+	AGENTBOT_PYTHON="$TEST_FAKE_BIN/python3"
+	export AGENTBOT_PYTHON
 }
 
 run_install_script() {

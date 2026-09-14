@@ -11,13 +11,13 @@ agentbot_graphify_validate_rows() {
 	while IFS= read -r top; do
 		[[ -n "$top" ]] || continue
 		grep -Eq "^[[:space:]]{2}${top}([[:space:]]|$)" <<<"$help_text" || return 1
-	done < <(cd "$AGENTBOT_HOME" && python3 -m src.ui.graphify_lib --commands)
+	done < <(cd "$AGENTBOT_HOME" && "${AGENTBOT_PYTHON:-python3}" -m src.ui.graphify_lib --commands)
 }
 
 _agentbot_graphify_render_detail() {
 	local command="$1" section="$2" row label description cols
 	cols="$(tui_cols)"
-	row="$(cd "$AGENTBOT_HOME" && python3 -m src.ui.graphify_lib \
+	row="$(cd "$AGENTBOT_HOME" && "${AGENTBOT_PYTHON:-python3}" -m src.ui.graphify_lib \
 		--section "$section" --command "$command")" || return 0
 	label="${row%%$'\x1f'*}"
 	description="${row#*$'\x1f'}"

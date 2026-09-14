@@ -343,11 +343,12 @@ agentbot_menu_load() {
 }
 
 _agentbot_python_available() {
-	command -v python3 >/dev/null 2>&1 && [[ -d "${AGENTBOT_HOME:-}/src/ui" ]]
+	[[ -n "${AGENTBOT_PYTHON:-}" || -x "$(command -v python3 2>/dev/null)" ]] &&
+		[[ -d "${AGENTBOT_HOME:-}/src/ui" ]]
 }
 
 _agentbot_menu_python() {
-	(cd "$AGENTBOT_HOME" && PYTHONDONTWRITEBYTECODE=1 python3 -m src.ui.menu_select "$@")
+	(cd "$AGENTBOT_HOME" && PYTHONDONTWRITEBYTECODE=1 "${AGENTBOT_PYTHON:-python3}" -m src.ui.menu_select "$@")
 }
 
 # agentbot_submenu_loop <menu-name> <dispatch-fn>
