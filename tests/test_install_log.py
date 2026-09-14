@@ -287,11 +287,27 @@ class StepAnimation(unittest.TestCase):
         owns both streams in that case and draws its own.
         """
         spinner = _StepSpinner()
-        with mock.patch("sys.stdout", new=io.StringIO()):
-            # A StringIO has isatty() -> False, which is what a pipe reports.
+        with mock.patch.dict(os.environ, {"AGENTBOT_TUI": "1"}):
             self.assertIsNone(spinner._terminal())
         spinner.start("Installing skill sources")
         self.assertIsNone(spinner._thread)
+
+    def test_a_piped_stdout_without_a_relay_still_animates(self) -> None:
+        """The regression the relay rule used to cause.
+
+        A Dotfiles full update tees stdout to a log file and runs `agentbot
+        full`, which never sets AGENTBOT_TUI -- so no relay is in the chain to
+        draw anything. Gating on `sys.stdout.isatty()` declined here too, and
+        the longest silences in the run animated nothing while the Dotfiles step
+        beside them did. Only the terminal decides.
+        """
+        spinner = _StepSpinner()
+        terminal = io.StringIO()
+        env = {key: value for key, value in os.environ.items() if key != "AGENTBOT_TUI"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch(
+            "sys.stdout", new=io.StringIO()
+        ), mock.patch("builtins.open", return_value=terminal):
+            self.assertIs(spinner._terminal(), terminal)
 
     def test_no_terminal_means_no_animation_and_no_error(self) -> None:
         spinner = _StepSpinner()

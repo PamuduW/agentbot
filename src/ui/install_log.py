@@ -16,7 +16,6 @@ the way to the terminal, so nothing here emits escapes.
 from __future__ import annotations
 
 import os
-import sys
 import threading
 from typing import TextIO
 
@@ -66,13 +65,14 @@ _SPINNER_INTERVAL = 0.12
 class _StepSpinner:
     """Says a step is still working, without putting frames in the log.
 
-    The install's stdout is piped -- `dotfiles full-update` reads it through a
-    relay, and that is exactly the run whose silences were longest -- so frames
-    written there would be captured rather than animated, and a log full of
-    spinner frames is worse than no spinner. They go straight to the controlling
-    terminal instead, on their own line below the step, erased before the next
-    line prints. This is what the sibling product's tty_printf does; no terminal,
-    or AGENTBOT_NO_PROGRESS_ANIMATION set, simply has none.
+    The install's stdout is often piped -- `dotfiles full-update` tees it to a
+    log file, and that is exactly the run whose silences were longest -- so
+    frames written there would be captured rather than animated, and a log full
+    of spinner frames is worse than no spinner. They go straight to the
+    controlling terminal instead, on their own line below the step, erased
+    before the next line prints. This is what the sibling product's tty_printf
+    does; no terminal, AGENTBOT_NO_PROGRESS_ANIMATION set, or the menu's relay
+    drawing its own (AGENTBOT_TUI) simply has none.
     """
 
     def __init__(self) -> None:
@@ -87,20 +87,29 @@ class _StepSpinner:
         self._tty_tried = True
         if os.environ.get("AGENTBOT_NO_PROGRESS_ANIMATION"):
             return None
-        # Only when this process's stdout *is* the terminal.
+        # Silent only when the menu's Bash relay is in front of stdout.
         #
-        # Frames go to /dev/tty while the prefixed lines go to stdout, and when
-        # something sits between stdout and the terminal -- the menu's Bash
-        # relay, a Dotfiles full update -- the two arrive out of order. A line
-        # relayed late lands after the next step's animation has already
-        # started and overwrites part of it, which is how `[OK] ... installed:
-        # devops-anmol (3s)` ended up wearing the tail of the frame beneath it.
-        # The relay owns sequencing in that case and draws its own animation;
-        # see _tui_step_spinner_start in scripts/lib/tui.sh.
-        try:
-            if not sys.stdout.isatty():
-                return None
-        except (AttributeError, ValueError):
+        # Frames go to /dev/tty while the prefixed lines go to stdout, and with
+        # the relay between the two they arrive out of order: a line relayed
+        # late lands after the next step's animation has started and overwrites
+        # part of it, which is how `[OK] ... installed: devops-anmol (3s)` ended
+        # up wearing the tail of the frame beneath it. The relay owns both
+        # streams there and draws its own animation; see
+        # _tui_step_spinner_start in scripts/lib/tui.sh.
+        #
+        # AGENTBOT_TUI is the exact signal for that, because it is what puts the
+        # relay in the chain -- agentbot_menu_install runs the backend under
+        # tui_run_to_output only when it is set. The test used to be
+        # `sys.stdout.isatty()`, which is false for *any* pipe and so declined
+        # in every redirected run, relay or not. A Dotfiles full update is one:
+        # start_action_log does `exec > >(tee -a "$RAW_LOG_FILE")`, so stdout is
+        # a pipe for the whole run and no Agentbot relay exists -- `agentbot
+        # full` dispatches straight to the backend. Both halves stepped aside
+        # and the longest silences in the run had no animation at all, beside a
+        # Dotfiles step that did. The sibling product gates on the terminal
+        # alone (_step_spinner_start in logging.sh) and is why. Frames still go
+        # to /dev/tty, never stdout, so a tee'd log inherits none of them.
+        if os.environ.get("AGENTBOT_TUI"):
             return None
         try:
             self._tty = open("/dev/tty", "w", encoding="utf-8")
