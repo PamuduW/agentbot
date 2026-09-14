@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "aws_knowledge",
+  "publisher": "Amazon Web Services",
+  "reviewed_on": "2026-09-14",
+  "sources": [
+    "https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server"
+  ],
+  "filter": {
+    "catalog_id": "aws_knowledge",
+    "origin": "https://knowledge-mcp.global.api.aws",
+    "tools": [
+      {
+        "name": "aws___read_documentation",
+        "descriptor_fingerprint": "sha256:98ef53842ad808f68162f4ff693d2dbe76fc83d2635702b1f4f8bafb11ea28f1"
+      },
+      {
+        "name": "aws___search_documentation",
+        "descriptor_fingerprint": "sha256:2fe2ce757e00bc17a6f676ca0ed11df07c6ddc02f0c91b8b4f707eeec745613a"
+      },
+      {
+        "name": "aws___list_regions",
+        "descriptor_fingerprint": "sha256:d8ce0ae19a17a1663743c0f2d68b96c151a8c419ab7789dd0aedec804f8d57e5"
+      },
+      {
+        "name": "aws___get_regional_availability",
+        "descriptor_fingerprint": "sha256:e1e2216610769b684f08212337eedc9418b9d7510a1c5760fbae5ba8c83764af"
+      },
+      {
+        "name": "aws___retrieve_skill",
+        "descriptor_fingerprint": "sha256:42ecd823166f3395ab4940de5a403ba363d2576c1d0d75d6c567e9f8fcf7a593"
+      }
+    ],
+    "timeout_seconds": 60,
+    "max_response_bytes": 4194304
+  },
+  "prohibited_capabilities": [
+    "AWS account access",
+    "AWS API execution",
+    "agent scripts",
+    "infrastructure mutation",
+    "pricing operations",
+    "SigV4 signing",
+    "presigned URL generation"
+  ],
+  "limitations": [
+    "Public documentation queries are sent to AWS and are subject to rate limits.",
+    "AWS documentation and retrieved agent skills are untrusted remote content.",
+    "The remote service is not package-pinned, so descriptor drift fails closed."
+  ]
+}

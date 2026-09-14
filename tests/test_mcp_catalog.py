@@ -52,10 +52,19 @@ class McpCatalogTests(unittest.TestCase):
         entry.update(overrides)
         return entry
 
-    def test_shipped_catalog_contains_no_eligible_entry(self) -> None:
+    def test_shipped_catalog_keeps_github_pending_and_admits_only_filtered_overlays(self) -> None:
         catalog = load_mcp_catalog(self.paths.mcp_catalog_file)
         self.assertEqual(1, catalog.version)
-        self.assertFalse(any(entry.eligible for entry in catalog.entries))
+        eligibility = {entry.id: entry.eligible for entry in catalog.entries}
+        self.assertEqual(
+            {
+                "github": False,
+                "context7": True,
+                "aws_knowledge": True,
+                "microsoft_learn": True,
+            },
+            eligibility,
+        )
 
     def test_static_headers_reject_credential_values(self) -> None:
         entry = self.valid_entry()

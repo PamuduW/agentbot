@@ -93,6 +93,8 @@ def configure_output(stream: object) -> CollapseBlankLines:
 
 
 def main() -> int:
+    if _requires_raw_stdout(tuple(sys.argv[1:])):
+        return _run()
     original = sys.stdout
     sys.stdout = configure_output(original)
     try:
@@ -100,6 +102,13 @@ def main() -> int:
     finally:
         sys.stdout.flush()
         sys.stdout = original
+
+
+def _requires_raw_stdout(argv: tuple[str, ...]) -> bool:
+    return any(
+        argv[index : index + 2] == ("mcp", "serve")
+        for index in range(len(argv) - 1)
+    )
 
 
 def _run() -> int:
@@ -271,10 +280,18 @@ def _handle_boost(context: CommandContext) -> int:
 
 
 def _handle_mcp(context: CommandContext) -> int:
+    command = context.args.mcp_command
+    if command == "serve":
+        from .mcp_filter import main as run_filter
+
+        return run_filter(
+            ["--catalog-id", context.args.catalog_id],
+            root=context.paths.root,
+        )
+
     from .mcp_service import McpService
 
     service = McpService(context.paths)
-    command = context.args.mcp_command
     json_output = bool(getattr(context.args, "mcp_json", False))
     if command == "catalog":
         print_mcp_catalog(service.catalog(), json_output=json_output)
@@ -602,6 +619,8 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_restore = mcp_sub.add_parser("restore", help="Restore a complete MCP operation backup")
     mcp_restore.add_argument("operation_id")
     mcp_restore.add_argument("--yes", action="store_true", dest="confirm")
+    mcp_serve = mcp_sub.add_parser("serve", help=argparse.SUPPRESS)
+    mcp_serve.add_argument("--catalog-id", required=True)
     cli_config = subparsers.add_parser("cli-config", help="Manage agent CLI configuration")
     cli_config_sub = cli_config.add_subparsers(dest="cli_config_command")
     cli_config_sub.add_parser("status", help="Preview CLI config changes without writing")

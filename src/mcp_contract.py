@@ -91,8 +91,8 @@ def load_filter_contract(path: Path, expected_id: str) -> McpFilterContract:
         outer = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError(f"cannot read MCP filter contract: {error}") from error
-    if not isinstance(outer, dict) or set(outer) != {"filter"}:
-        raise ValueError("MCP filter contract must contain only filter")
+    if not isinstance(outer, dict) or "filter" not in outer:
+        raise ValueError("MCP filter contract must contain filter")
     raw = outer["filter"]
     required = {
         "catalog_id",

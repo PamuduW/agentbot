@@ -1,8 +1,9 @@
 # Agentbot roadmap
 
-**Status:** Phases 0, 1, 2, and 5 are complete. Phase 3 Gate 5.1A now provides
-the default-off MCP control plane; GitHub, filtered knowledge, and GitLab
-admission gates remain. Phase 4 memory remains deferred. Slice 4M is complete, but Slice 4.0A
+**Status:** Phases 0, 1, 2, and 5 are complete. Phase 3 Gates 5.1A and 5.1C now
+provide the default-off MCP control plane and three admitted filtered knowledge
+overlays; GitHub and GitLab admission gates remain. Phase 4 memory remains
+deferred. Slice 4M is complete, but Slice 4.0A
 must not start until the planned cross-agent memory comparison is resolved. The
 current core has one Python lifecycle backend, one diagnostics snapshot, one
 command model, and focused shell adapters and tests.
@@ -31,7 +32,7 @@ must use Agentbot and agentbot.
 | Global machine baseline | global/AGENTS.md and install.sh global | Live |
 | Curated skills | skills.sources.yaml and install.sh skills ... | Live |
 | Dotfiles integration | sibling dotfiles Agentbot bridge | Live |
-| Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Gate 5.1A live; admissions pending |
+| Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Gates 5.1A and 5.1C live; source-control admissions pending |
 | Durable memory | workspace `docs/designs/memory/` design | Pending cross-agent memory comparison |
 | Graphify CLI and assistant integration | sibling dotfiles component plus Agentbot integration | Live (Phase 5) |
 
@@ -187,7 +188,7 @@ The implementation is covered by:
 - Agentbot dispatcher, boot, menu, syntax, and temporary-folder acceptance
   tests.
 
-## Phase 3 — provider-neutral MCP management (Gate 5.1A live)
+## Phase 3 — provider-neutral MCP management (Gates 5.1A and 5.1C live)
 
 **Goal:** Give Claude Code, Codex CLI, and Cursor one Agentbot-owned MCP catalog
 while rendering each client's native schema and preserving configuration that
@@ -208,11 +209,11 @@ Delivered in Gate 5.1A:
 5. offline status and Doctor mapping for ownership, configuration, drift, and
    authentication-reference failures.
 
-The catalog has no eligible entry, so `setup` cannot configure a server yet.
-The GitHub read-only contract is frozen as an ineligible candidate. Remaining
-gates admit it, filtered knowledge overlays, and the GitLab REST-read facade
-only after their exact authority, tool, credential, and three-client contracts
-pass.
+The catalog admits Context7, AWS Knowledge, and Microsoft Learn through the
+local fail-closed filter. Their live public descriptors, bounded calls, and
+isolated Claude, Codex, and Cursor configurations passed on 2026-09-14. They
+remain unselected by default. The GitHub read-only contract is frozen as an
+ineligible candidate; the GitLab REST-read facade is not yet implemented.
 
 The historical files under `archive/catalog/` and `archive/mcp/` are research
 inputs only. Phase 3 must extend the Phase 2 renderer; it must not restore the

@@ -6,7 +6,7 @@
       "name": "agentbot_github",
       "publisher": "GitHub",
       "documentation_url": "https://github.com/github/github-mcp-server/blob/main/docs/server-configuration.md",
-      "license": "MIT",
+      "license": null,
       "terms_url": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
       "reviewed_on": "2026-09-13",
       "eligible": false,
@@ -97,6 +97,153 @@
         "live_tool_list_exact",
         "prohibited_tool_rejected",
         "descriptor_fingerprints_match"
+      ]
+    },
+    {
+      "id": "context7",
+      "name": "agentbot_context7",
+      "publisher": "Upstash",
+      "documentation_url": "https://context7.com/docs/resources/all-clients",
+      "license": "MIT",
+      "terms_url": "https://upstash.com/terms",
+      "reviewed_on": "2026-09-14",
+      "eligible": true,
+      "transport": "local_stdio",
+      "entrypoint": [
+        "agentbot",
+        "mcp",
+        "serve",
+        "--catalog-id",
+        "context7"
+      ],
+      "clients": {
+        "claude": {"enabled": true},
+        "codex": {"enabled": true},
+        "cursor": {"enabled": true}
+      },
+      "credential": {"mode": "none", "environment": []},
+      "allowed_tools": [
+        "resolve-library-id",
+        "query-docs"
+      ],
+      "descriptor_fingerprints": [
+        "sha256:1a7e831848ea3442cf7194efafce33f598f2f39977632330b29626f20569a016",
+        "sha256:60e12e0b14c4612360c5013bcf56fbc471b60320ece424090c15e08a0c9d7ab3"
+      ],
+      "read_only_authority": "Agentbot's local filter exposes only two descriptor-pinned documentation lookup tools from the fixed Context7 HTTPS origin",
+      "limitations": [
+        "Anonymous access is rate limited",
+        "Remote library documentation is untrusted input"
+      ],
+      "timeout_seconds": 60,
+      "max_response_bytes": 4194304,
+      "doctor_rules": [
+        "filter_contract_present",
+        "anonymous_origin_exact",
+        "live_tool_list_exact",
+        "descriptor_fingerprints_match",
+        "hidden_tool_rejected"
+      ]
+    },
+    {
+      "id": "aws_knowledge",
+      "name": "agentbot_aws_knowledge",
+      "publisher": "Amazon Web Services",
+      "documentation_url": "https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server",
+      "license": null,
+      "terms_url": "https://aws.amazon.com/terms/",
+      "reviewed_on": "2026-09-14",
+      "eligible": true,
+      "transport": "local_stdio",
+      "entrypoint": [
+        "agentbot",
+        "mcp",
+        "serve",
+        "--catalog-id",
+        "aws_knowledge"
+      ],
+      "clients": {
+        "claude": {"enabled": true},
+        "codex": {"enabled": true},
+        "cursor": {"enabled": true}
+      },
+      "credential": {"mode": "none", "environment": []},
+      "allowed_tools": [
+        "aws___read_documentation",
+        "aws___search_documentation",
+        "aws___list_regions",
+        "aws___get_regional_availability",
+        "aws___retrieve_skill"
+      ],
+      "descriptor_fingerprints": [
+        "sha256:98ef53842ad808f68162f4ff693d2dbe76fc83d2635702b1f4f8bafb11ea28f1",
+        "sha256:2fe2ce757e00bc17a6f676ca0ed11df07c6ddc02f0c91b8b4f707eeec745613a",
+        "sha256:d8ce0ae19a17a1663743c0f2d68b96c151a8c419ab7789dd0aedec804f8d57e5",
+        "sha256:e1e2216610769b684f08212337eedc9418b9d7510a1c5760fbae5ba8c83764af",
+        "sha256:42ecd823166f3395ab4940de5a403ba363d2576c1d0d75d6c567e9f8fcf7a593"
+      ],
+      "read_only_authority": "Agentbot's local filter exposes only descriptor-pinned public AWS documentation, region knowledge, and published skill retrieval tools from the fixed AWS Knowledge HTTPS origin",
+      "limitations": [
+        "No AWS account, API execution, pricing, signing, or infrastructure tools are exposed",
+        "Remote AWS content is untrusted input"
+      ],
+      "timeout_seconds": 60,
+      "max_response_bytes": 4194304,
+      "doctor_rules": [
+        "filter_contract_present",
+        "anonymous_origin_exact",
+        "knowledge_tools_only",
+        "live_tool_list_exact",
+        "descriptor_fingerprints_match",
+        "hidden_tool_rejected"
+      ]
+    },
+    {
+      "id": "microsoft_learn",
+      "name": "agentbot_microsoft_learn",
+      "publisher": "Microsoft",
+      "documentation_url": "https://learn.microsoft.com/en-us/training/support/mcp",
+      "license": null,
+      "terms_url": "https://learn.microsoft.com/en-us/legal/termsofuse",
+      "reviewed_on": "2026-09-14",
+      "eligible": true,
+      "transport": "local_stdio",
+      "entrypoint": [
+        "agentbot",
+        "mcp",
+        "serve",
+        "--catalog-id",
+        "microsoft_learn"
+      ],
+      "clients": {
+        "claude": {"enabled": true},
+        "codex": {"enabled": true},
+        "cursor": {"enabled": true}
+      },
+      "credential": {"mode": "none", "environment": []},
+      "allowed_tools": [
+        "microsoft_docs_search",
+        "microsoft_code_sample_search",
+        "microsoft_docs_fetch"
+      ],
+      "descriptor_fingerprints": [
+        "sha256:c51097b359ca6a9b39062c180113fca83e5ac40f33014b9ddb37f267d59fe172",
+        "sha256:d4886260c3c25d496ebafbe145d113829dff6fbec40025560b188432238a4880",
+        "sha256:7b9a414f1d7326040ba98acd713e448e4c6cde57e649585818ab20a4849fa0c6"
+      ],
+      "read_only_authority": "Agentbot's local filter exposes only three descriptor-pinned Microsoft Learn search, article, and code-sample tools from the fixed Microsoft HTTPS origin",
+      "limitations": [
+        "The public service can change its dynamic tool descriptors",
+        "Remote Microsoft documentation and code samples are untrusted input"
+      ],
+      "timeout_seconds": 60,
+      "max_response_bytes": 4194304,
+      "doctor_rules": [
+        "filter_contract_present",
+        "anonymous_origin_exact",
+        "live_tool_list_exact",
+        "descriptor_fingerprints_match",
+        "hidden_tool_rejected"
       ]
     }
   ]

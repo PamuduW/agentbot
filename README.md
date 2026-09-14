@@ -84,10 +84,11 @@ input is masked, and normal output shows only a fingerprint.
 
 ## MCP management
 
-Gate 5.1A provides a provider-neutral, default-off MCP control plane for Claude
-Code, Codex CLI, and Cursor CLI. The catalog can contain reviewed candidates,
-but Agentbot currently selects, owns, and writes no MCP server. Each candidate
-must pass its admission gate before `setup` can configure it.
+Agentbot provides a provider-neutral, default-off MCP control plane for Claude
+Code, Codex CLI, and Cursor CLI. The catalog contains reviewed candidates, but
+Agentbot selects, owns, and writes no MCP server until the operator names both
+the server and target clients. Each candidate must pass its admission gate
+before `setup` can configure it.
 
 ```bash
 agentbot mcp catalog
@@ -109,6 +110,44 @@ all selected client files and state under a mode-`0700`
 `backups/mcp/OPERATION_ID/` directory before writing. A failed multi-client
 operation restores every original file; deliberate restore refuses if a
 destination changed afterward.
+
+### Filtered knowledge overlays
+
+Context7, AWS Knowledge, and Microsoft Learn are admitted catalog entries. They
+need no credential in the shipped anonymous configuration. Each client starts
+the same local Agentbot stdio filter, which connects only to the candidate's
+fixed HTTPS origin and exposes only the exact descriptor-pinned tools recorded
+in `mcp/contracts/`. Missing tools or changed descriptors stop the filter
+before it serves any tool.
+
+AWS Knowledge exposes public documentation, region availability, and published
+AWS skill retrieval only. It does not expose an AWS account, AWS API execution,
+pricing, signing, agent-script, or infrastructure-mutation tool. Microsoft
+Learn exposes documentation search, article fetch, and code-sample search.
+Context7 exposes library resolution and documentation queries; its optional API
+key is deliberately outside the managed anonymous contract.
+
+To opt in to all three on all supported clients:
+
+```bash
+agentbot mcp plan \
+  --select context7 aws_knowledge microsoft_learn \
+  --targets claude codex cursor
+agentbot mcp setup \
+  --select context7 aws_knowledge microsoft_learn \
+  --targets claude codex cursor \
+  --yes
+```
+
+The public live and installed-client gates remain opt-in test commands because
+they require network access and all three CLIs:
+
+```bash
+AGENTBOT_TEST_MCP_OVERLAYS=1 \
+  python3 -m unittest tests.integration.test_mcp_overlays_live -v
+AGENTBOT_TEST_MCP_CLIENTS=1 \
+  python3 -m unittest tests.integration.test_mcp_overlay_clients -v
+```
 
 The catalog and state store environment-variable names only. Claude, Codex,
 and Cursor receive their native reference forms; Agentbot never writes a token

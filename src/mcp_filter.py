@@ -204,7 +204,7 @@ def main(argv: list[str] | None = None, *, root: Path | None = None) -> int:
     args = parser.parse_args(argv)
     paths = default_paths(root)
     contract = load_filter_contract(
-        paths.root / "mcp" / "contracts" / f"{args.catalog_id}.filter.json",
+        paths.root / "mcp" / "contracts" / f"{args.catalog_id}.json",
         args.catalog_id,
     )
     asyncio.run(run_stdio_filter(FilteredMcpServer(contract, SdkRemoteUpstream(contract))))

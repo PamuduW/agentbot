@@ -7,6 +7,7 @@ from collections.abc import Callable
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool, ToolAnnotations
 
 from mcp import Client, MCPError
+from src.cli import _requires_raw_stdout
 from src.mcp_contract import McpFilterContract, descriptor_fingerprint
 from src.mcp_filter import (
     CrossOriginRedirectError,
@@ -61,6 +62,12 @@ class FakeUpstream:
 
 
 class McpFilterTests(unittest.IsolatedAsyncioTestCase):
+    def test_internal_stdio_server_bypasses_human_output_wrapping(self) -> None:
+        self.assertTrue(
+            _requires_raw_stdout(("--root", "/opt/agentbot", "mcp", "serve"))
+        )
+        self.assertFalse(_requires_raw_stdout(("mcp", "status")))
+
     def contract(self, *tools: Tool, **overrides: object) -> McpFilterContract:
         values: dict[str, object] = {
             "catalog_id": "docs",

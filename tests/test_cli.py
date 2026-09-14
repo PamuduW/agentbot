@@ -227,7 +227,7 @@ class CliTests(unittest.TestCase):
                     "Graphify CLI and Agent Skills integration are not installed.",
                 ),
                 ("boost", "status"): (0, "Boost CLI is not installed."),
-                ("mcp", "catalog"): (0, "No MCP servers are eligible."),
+                ("mcp", "catalog"): (0, "context7"),
                 ("mcp", "status"): (0, "No MCP servers are selected or managed."),
             }
             for args, (expected_returncode, expected_stdout) in cases.items():

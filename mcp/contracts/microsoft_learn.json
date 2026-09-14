@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "microsoft_learn",
+  "publisher": "Microsoft",
+  "reviewed_on": "2026-09-14",
+  "sources": [
+    "https://learn.microsoft.com/en-us/training/support/mcp"
+  ],
+  "filter": {
+    "catalog_id": "microsoft_learn",
+    "origin": "https://learn.microsoft.com/api/mcp",
+    "tools": [
+      {
+        "name": "microsoft_docs_search",
+        "descriptor_fingerprint": "sha256:c51097b359ca6a9b39062c180113fca83e5ac40f33014b9ddb37f267d59fe172"
+      },
+      {
+        "name": "microsoft_code_sample_search",
+        "descriptor_fingerprint": "sha256:d4886260c3c25d496ebafbe145d113829dff6fbec40025560b188432238a4880"
+      },
+      {
+        "name": "microsoft_docs_fetch",
+        "descriptor_fingerprint": "sha256:7b9a414f1d7326040ba98acd713e448e4c6cde57e649585818ab20a4849fa0c6"
+      }
+    ],
+    "timeout_seconds": 60,
+    "max_response_bytes": 4194304
+  },
+  "limitations": [
+    "Public documentation queries are sent to Microsoft.",
+    "Search results, articles, and code samples are untrusted remote content.",
+    "The remote service is not package-pinned, so descriptor drift fails closed."
+  ]
+}

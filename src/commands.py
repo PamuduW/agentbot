@@ -242,7 +242,15 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("agentbot mcp catalog", "agentbot mcp status", "agentbot mcp plan --select github --targets claude codex"),
         ("doctor", "status"),
         "public",
-        ("mcp catalog", "mcp status", "mcp plan", "mcp setup", "mcp off", "mcp restore"),
+        (
+            "mcp catalog",
+            "mcp status",
+            "mcp plan",
+            "mcp setup",
+            "mcp off",
+            "mcp restore",
+            "mcp serve",
+        ),
     ),
     CommandSpec(
         "cli-config",

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "context7",
+  "publisher": "Upstash",
+  "reviewed_on": "2026-09-14",
+  "sources": [
+    "https://context7.com/docs/resources/all-clients",
+    "https://context7.com/docs/overview"
+  ],
+  "filter": {
+    "catalog_id": "context7",
+    "origin": "https://mcp.context7.com/mcp",
+    "tools": [
+      {
+        "name": "resolve-library-id",
+        "descriptor_fingerprint": "sha256:1a7e831848ea3442cf7194efafce33f598f2f39977632330b29626f20569a016"
+      },
+      {
+        "name": "query-docs",
+        "descriptor_fingerprint": "sha256:60e12e0b14c4612360c5013bcf56fbc471b60320ece424090c15e08a0c9d7ab3"
+      }
+    ],
+    "timeout_seconds": 60,
+    "max_response_bytes": 4194304
+  },
+  "limitations": [
+    "Anonymous access is rate limited; an optional API key is deliberately outside this contract.",
+    "Queries and returned third-party library documentation are sent to and supplied by a remote service.",
+    "The remote service is not package-pinned, so descriptor drift fails closed."
+  ]
+}

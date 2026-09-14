@@ -74,6 +74,12 @@ class McpService:
                             )
                         )
                     continue
+                destination = self._client_destination(client)
+                if record is None and not destination.exists() and not destination.is_symlink():
+                    items.append(
+                        self._item(entry.id, client, entry.name, "not-selected", "not selected")
+                    )
+                    continue
                 from .mcp_render import entry_fingerprint
 
                 try:
@@ -191,14 +197,7 @@ class McpService:
     def _native_entry(self, client: str, name: str) -> tuple[Path, object | None]:
         from .mcp_render import parse_mcp_config
 
-        if client == "claude":
-            destination = self.paths.claude_home.parent / ".claude.json"
-        elif client == "codex":
-            destination = self.paths.codex_home / "config.toml"
-        elif client == "cursor":
-            destination = self.paths.cursor_home / "mcp.json"
-        else:
-            raise ValueError(f"unsupported MCP client: {client}")
+        destination = self._client_destination(client)
         if destination.is_symlink():
             raise ValueError(f"MCP configuration must not be a symlink: {destination}")
         if destination.exists() and not destination.is_file():
@@ -210,6 +209,15 @@ class McpService:
         document = parse_mcp_config(client, text)
         servers = document.get("mcp_servers" if client == "codex" else "mcpServers")
         return destination, None if servers is None else servers.get(name)
+
+    def _client_destination(self, client: str) -> Path:
+        if client == "claude":
+            return self.paths.claude_home.parent / ".claude.json"
+        if client == "codex":
+            return self.paths.codex_home / "config.toml"
+        if client == "cursor":
+            return self.paths.cursor_home / "mcp.json"
+        raise ValueError(f"unsupported MCP client: {client}")
 
     @staticmethod
     def _require_confirmation(confirmed: bool) -> None:
