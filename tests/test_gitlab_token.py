@@ -30,6 +30,25 @@ class ShapeTests(unittest.TestCase):
         self.assertFalse(store.is_valid("glpat-short"))
         self.assertFalse(store.is_valid(""))
 
+    def test_a_routable_token_with_dots_is_accepted(self) -> None:
+        """The refusal this catches was real: GitLab's newer routable tokens
+        embed a period-separated payload, and a character class without the dot
+        rejected a valid credential while reporting only "invalid"."""
+        for value in (
+            "glpat-AABBCCDDEEFFGG.01.1a2b3c4d5e6f7g8h9i",
+            "AABBCCDDEEFFGG.01.1a2b3c4d5e6f7g8h9i0j",
+        ):
+            with self.subTest(value=value[:12]):
+                self.assertTrue(store.is_valid(value))
+
+    def test_a_refusal_says_what_the_rule_is_without_echoing_the_value(self) -> None:
+        with self.assertRaises(store.TokenError) as caught:
+            store.write(Path("/nonexistent"), "glpat-short")
+
+        message = str(caught.exception)
+        self.assertIn("at least 20 characters", message)
+        self.assertNotIn("glpat-short", message)
+
     def test_a_value_carrying_shell_or_newline_characters_is_refused(self) -> None:
         for value in (f"{_TOKEN} extra", f"{_TOKEN}\nGITLAB=x", f"{_TOKEN};id", "a" * 19):
             with self.subTest(value=value):

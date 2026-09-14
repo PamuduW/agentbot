@@ -30,12 +30,21 @@ from pathlib import Path
 #: admission test both read, so a saved credential can be exported unchanged.
 TOKEN_KEY = "GITLAB_MCP_READ_TOKEN"
 
-#: GitLab personal, project, and group tokens all carry this prefix. The looser
-#: second form covers a self-managed instance configured with its own prefix;
-#: both require enough length that a truncated paste is refused rather than
+#: GitLab personal, project, and group tokens carry the first prefix. The
+#: looser second form covers a self-managed instance configured with its own.
+#: Both require enough length that a truncated paste is refused rather than
 #: saved and discovered later against a live endpoint.
-_PREFIXED = re.compile(r"^glpat-[A-Za-z0-9_-]{20,}$")
-_GENERIC = re.compile(r"^[A-Za-z0-9_-]{20,}$")
+#:
+#: The dot is not decoration: GitLab's newer routable tokens embed a
+#: period-separated payload, so a character class of letters, digits, dash and
+#: underscore rejected a perfectly valid credential with nothing to say why.
+_TOKEN_BODY = r"[A-Za-z0-9._-]"
+_PREFIXED = re.compile(rf"^glpat-{_TOKEN_BODY}{{20,}}$")
+_GENERIC = re.compile(rf"^{_TOKEN_BODY}{{20,}}$")
+
+#: What a refusal tells the operator. A bare "invalid" gives them nothing to
+#: act on, and the one thing that must never appear in the message is the value.
+SHAPE_RULE = "expected at least 20 characters of letters, digits, dot, dash or underscore"
 
 DEFAULT_ORIGIN = "https://gitlab.com"
 VERIFY_TIMEOUT_SECONDS = 10
@@ -81,7 +90,7 @@ def fingerprint(token: str) -> str:
     """`…cd34 (sha256:9f86d081)` -- enough to tell two tokens apart, never enough
     to reconstruct one. The same shape the GitHub helper prints."""
     if not is_valid(token):
-        raise TokenError("token value is invalid")
+        raise TokenError(f"token value is invalid: {SHAPE_RULE}")
     digest = sha256(token.encode("utf-8")).hexdigest()[:8]
     return f"…{token[-4:]} (sha256:{digest})"
 
@@ -143,7 +152,7 @@ def write(config_home: Path, token: str) -> Path:
     briefly world-readable.
     """
     if not is_valid(token):
-        raise TokenError("token value is invalid")
+        raise TokenError(f"token value is invalid: {SHAPE_RULE}")
     path = token_file(config_home)
     directory = path.parent
     if directory.exists() or directory.is_symlink():
@@ -192,7 +201,7 @@ def verify(token: str, *, origin: str = DEFAULT_ORIGIN) -> VerifyResult:
     are the thing worth showing.
     """
     if not is_valid(token):
-        return VerifyResult(False, "token value is invalid")
+        return VerifyResult(False, f"token value is invalid: {SHAPE_RULE}")
     base = origin.rstrip("/")
     try:
         identity = _get(f"{base}/api/v4/user", token)
