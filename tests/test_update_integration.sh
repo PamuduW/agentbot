@@ -354,6 +354,9 @@ test_repo_table_is_the_shared_one_the_sibling_draws() (
 test_full_runs_install_then_update_with_one_restart_budget() (
 	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
 	local events="$TEST_ROOT/full.events"
+	# The real seam execs and never returns. Replacing it exercises the budget
+	# in process; that the real one execs is covered separately below.
+	agentbot_restart_full() { printf 'restart:%s\n' "$1" >>"$events"; }
 
 	# both stages clean
 	: >"$events"
@@ -373,7 +376,7 @@ test_full_runs_install_then_update_with_one_restart_budget() (
 		return 0
 	}
 	run_full >/dev/null || return 1
-	[[ "$(<"$events")" == $'install\ninstall\nupdate:update --yes' ]] || return 1
+	[[ "$(<"$events")" == $'install\nrestart:1\ninstall\nupdate:update --yes' ]] || return 1
 
 	# a second repository change exhausts the budget and stops
 	: >"$events"
@@ -383,7 +386,8 @@ test_full_runs_install_then_update_with_one_restart_budget() (
 	}
 	local rc=0
 	run_full >/dev/null 2>&1 || rc=$?
-	[[ "$rc" -eq 1 && "$(wc -l <"$events")" -eq 2 ]] || return 1
+	# One restart, then the budget stops it: install, the restart, install.
+	[[ "$rc" -eq 1 && "$(<"$events")" == $'install\nrestart:1\ninstall' ]] || return 1
 
 	# a genuine failure propagates unchanged, without running update
 	: >"$events"
@@ -404,6 +408,9 @@ test_full_reports_each_stage_to_a_caller_that_asks() (
 	run_install() { :; }
 	check_skills_deps() { :; }
 	run_update_backend_as() { :; }
+	# The real seam execs and never returns; in process it falls through to the
+	# retry, which is what exec would have produced.
+	agentbot_restart_full() { :; }
 
 	AGENTBOT_TIMING_FILE="$file" run_full >/dev/null 2>&1 || return 1
 	# Both stages, in the order they ran, whatever they measured.
@@ -414,6 +421,34 @@ test_full_reports_each_stage_to_a_caller_that_asks() (
 	: >"$file"
 	run_full >/dev/null 2>&1 || return 1
 	[[ ! -s "$file" ]]
+)
+
+test_the_restart_seam_replaces_the_process() (
+	# The budget tests replace this seam, so the thing it exists for is pinned
+	# here: a restart must exec install.sh rather than loop. Looping re-ran the
+	# functions the pre-pull file had defined in memory while sourcing the new
+	# tree on demand, and logged "restarting from the updated checkout" while
+	# doing it.
+	#
+	# The real bash execs a stub install.sh, rather than a fake bash exec'ing
+	# the real installer: a fake bash is re-entered by its own shebang, and the
+	# real installer would have run an install.
+	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
+	local sandbox="$TEST_ROOT/restart-sandbox" log="$TEST_ROOT/restart-exec.log"
+	mkdir -p "$sandbox"
+	cat >"$sandbox/install.sh" <<FAKE
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$log"
+printf 'restarts=%s\n' "\${AGENTBOT_FULL_RESTARTS:-unset}" >>"$log"
+FAKE
+	: >"$log"
+	# exec replaces this subshell, so the assertions run after it exits.
+	(
+		REPO_ROOT="$sandbox"
+		agentbot_restart_full 1
+	) >/dev/null 2>&1
+	[[ "$(sed -n '1p' "$log")" == 'full' ]] || return 1
+	[[ "$(sed -n '2p' "$log")" == 'restarts=1' ]]
 )
 
 test_a_restarted_stage_reports_the_attempt_that_finished() (
@@ -429,6 +464,9 @@ test_a_restarted_stage_reports_the_attempt_that_finished() (
 	}
 	check_skills_deps() { :; }
 	run_update_backend_as() { :; }
+	# The real seam execs and never returns; in process it falls through to the
+	# retry, which is what exec would have produced.
+	agentbot_restart_full() { :; }
 
 	AGENTBOT_TIMING_FILE="$file" run_full >/dev/null 2>&1 || return 1
 	# One install line, not two: the restart wrote nothing.
@@ -437,6 +475,7 @@ test_a_restarted_stage_reports_the_attempt_that_finished() (
 
 check 'full runs install then update with a one-restart budget' test_full_runs_install_then_update_with_one_restart_budget
 check 'full reports each stage to a caller that asks' test_full_reports_each_stage_to_a_caller_that_asks
+check 'the restart seam replaces the process' test_the_restart_seam_replaces_the_process
 check 'a restarted stage reports the attempt that finished' test_a_restarted_stage_reports_the_attempt_that_finished
 check 'repo gate short-circuits stopped and changed-repository states' test_repo_gate_short_circuits_unsafe_states
 check 'dirty update reports changes and remote history before blocking backend work' test_dirty_state_reports_changes_remote_history_and_blocks_backend

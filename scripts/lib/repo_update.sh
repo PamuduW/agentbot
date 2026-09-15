@@ -263,3 +263,61 @@ agentbot_repo_update_run() {
 	printf -v "$reason_name" '%s' "$reason"
 	return "$rc"
 }
+
+# Filled by the gate, read by callers that report the shared repository.
+declare -gA AGENTBOT_SHARED_REPO_RESULT=()
+
+_agentbot_repo_gate_adopt() {
+	local -n _adopt_dst="$1"
+	local -n _adopt_src="$2"
+	local key
+	_adopt_dst=()
+	for key in "${!_adopt_src[@]}"; do
+		_adopt_dst["$key"]="${_adopt_src[$key]}"
+	done
+}
+
+# Every command that touches this checkout gates the repositories it depends on
+# together, before any work: the shared library first, because either product
+# loads code from it, then this repository. Only the ones present are checked.
+#
+# One gate rather than one per repository, and up front rather than when each is
+# first needed: the operator learns everything that will move before anything
+# moves, and a change costs one restart instead of one per repository.
+#
+# Contract matches agentbot_repo_update_run: 0 continue, 1 stopped, 2 a checkout
+# moved and the caller must restart. Pulling replaces files a running shell has
+# already sourced, and the CONTRACT compatibility checked at startup was checked
+# against the checkout the pull just replaced.
+agentbot_repo_gate() {
+	local decision_fn="$1" outcome_name="$2" reason_name="$3"
+	local shared_outcome shared_reason rc=0 changed=0
+
+	# shellcheck disable=SC2034  # Read by callers reporting the shared row.
+	AGENTBOT_SHARED_REPO_RESULT=()
+	if [[ -n "${DOTFILES_SHARED_ROOT:-}" ]]; then
+		agentbot_repo_update_run "$DOTFILES_SHARED_ROOT" "$decision_fn" \
+			shared_outcome shared_reason dotfiles-shared || rc=$?
+		_agentbot_repo_gate_adopt AGENTBOT_SHARED_REPO_RESULT _AGENTBOT_REPO_RESULT
+		case "$rc" in
+		0) ;;
+		2) changed=1 ;;
+		*)
+			printf -v "$outcome_name" '%s' "$shared_outcome"
+			printf -v "$reason_name" '%s' "$shared_reason"
+			return "$rc"
+			;;
+		esac
+	fi
+
+	rc=0
+	agentbot_repo_update_run "$REPO_ROOT" "$decision_fn" "$outcome_name" "$reason_name" agentbot || rc=$?
+	case "$rc" in
+	0) ;;
+	2) changed=1 ;;
+	*) return "$rc" ;;
+	esac
+
+	((changed)) && return 2
+	return 0
+}

@@ -210,7 +210,7 @@ test_install_repo_gate_link_and_failure_status() (
 	local calls="$TEST_ROOT/install.calls" output rc
 	: >"$calls"
 	agentbot_repo_update_run() {
-		printf 'repo\n' >>"$calls"
+		printf 'repo:%s\n' "${5:-agentbot}" >>"$calls"
 		printf -v "$3" '%s' current
 		printf -v "$4" '%s' current
 	}
@@ -222,7 +222,9 @@ test_install_repo_gate_link_and_failure_status() (
 	output="$(run_install 2>&1)"
 	rc=$?
 	set -e
-	[[ "$rc" -eq 7 && "$(<"$calls")" == $'repo\nbackend' ]] || return 1
+	# The shared library is gated before this repository, so both are checked
+	# before any backend work starts.
+	[[ "$rc" -eq 7 && "$(<"$calls")" == $'repo:dotfiles-shared\nrepo:agentbot\nbackend' ]] || return 1
 	[[ "$output" == *'Agentbot install failed (exit 7)'* && "$output" != *'Agentbot install complete'* ]] || return 1
 	[[ "$(readlink "$HOME/bin/agentbot")" == "$ROOT/bin/agentbot" ]]
 )

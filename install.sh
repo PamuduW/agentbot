@@ -300,7 +300,7 @@ run_install_repo_gate() {
 	local update_outcome update_reason repo_rc=0
 	AGENTBOT_REPOSITORY_UPDATE_DECLINED=false
 	AGENTBOT_REPOSITORY_UPDATE_DECLINE_REPORTED=false
-	agentbot_repo_update_run "$REPO_ROOT" run_install_decision update_outcome update_reason agentbot || repo_rc=$?
+	agentbot_repo_gate run_install_decision update_outcome update_reason || repo_rc=$?
 	case "$repo_rc" in
 	0) return 0 ;;
 	2)
@@ -348,7 +348,7 @@ run_update_backend_as() {
 	done
 	[[ "$confirm" == yes ]] && export AGENTBOT_UPDATE_CONFIRM=yes
 
-	agentbot_repo_update_run "$REPO_ROOT" run_update_decision update_outcome update_reason || repo_rc=$?
+	agentbot_repo_gate run_update_decision update_outcome update_reason || repo_rc=$?
 	case "$repo_rc" in
 	2)
 		agentbot_repo_update_print_changed
@@ -406,8 +406,19 @@ _agentbot_now_seconds() {
 	printf '%s\n' "${EPOCHSECONDS:-$(date +%s)}"
 }
 
+# exec, not another pass through the loop: a pull replaced install.sh on disk,
+# and looping would re-run the functions the old file had already defined in
+# memory while sourcing the new tree on demand -- the mixed state the gate
+# stops for. The restart count rides across the replacement so the budget
+# survives it.
+agentbot_restart_full() {
+	AGENTBOT_FULL_RESTARTS="$1" exec bash "$REPO_ROOT/install.sh" full
+}
+
 run_full() {
-	local stage rc restarts=0 stage_started
+	# Carried across the exec below, so a second change stops the run rather
+	# than restarting forever.
+	local stage rc restarts="${AGENTBOT_FULL_RESTARTS:-0}" stage_started
 	# This command restarts itself when the checkout moves, so the repository
 	# gate must not tell the operator to run setup again.
 	export REPO_UPDATE_CALLER_RESTARTS=1
@@ -436,6 +447,10 @@ run_full() {
 				fi
 				restarts=$((restarts + 1))
 				log_info 'restarting from the updated checkout'
+				# Never returns in a real run. A suite replaces this seam to
+				# exercise the budget in process, and falls through to the
+				# loop below, which is the behaviour exec would have produced.
+				agentbot_restart_full "$restarts"
 				;;
 			*) return "$rc" ;;
 			esac
