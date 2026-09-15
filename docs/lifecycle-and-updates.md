@@ -43,6 +43,13 @@ follows it: a pull moves the checkout and restarts the run, which would throw a
 selection away. `AGENTBOT_INSTALL_GATE_ONLY=1` is the seam — it stops `install`
 immediately after the gate.
 
+The gate covers **every repository this checkout depends on, in one pass**. The
+shared library goes first, because Agentbot loads its terminal stack, token
+storage and repository machinery from
+[`dotfiles-shared`](https://github.com/PamuduW/dotfiles-shared); this
+repository follows. Only the checkouts present are gated, so Agentbot installed
+on its own is gated on two. Whichever repository stops is the one reported.
+
 The install plan reports what each selected component will do against local
 state and asks once, in the same shortcut format the Dotfiles execution plan
 uses:
@@ -98,7 +105,11 @@ verifies those backups before reset. It does not run `git clean`, delete
 recovery data, commit, push, or force-push.
 
 When an update changes the checkout, the old process exits with status 2 so a
-caller can restart from the new code. Detached HEAD, missing upstream,
+caller can restart from the new code. `agentbot full` restarts itself by
+`exec`-ing `install.sh`, which is the only thing that loads a script a pull has
+replaced — it used to loop over its own in-memory functions, which were the
+pre-pull ones. The restart count rides across the replacement so the budget of
+one survives it. Detached HEAD, missing upstream,
 declined recovery, failed fetch, or failed backup stops downstream work.
 
 `dotfiles full-update` is the system-maintenance orchestrator. It can authorize
