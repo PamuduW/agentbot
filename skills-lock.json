@@ -1,5 +1,5 @@
 {
-  "_comment": "Project lock stub (v1, sources: []). Authoritative pins for global (-g) installs live in ~/.agents/.skill-lock.json (v3). Future: populate this file for CI reproducibility. See README.md and archive/docs/LOCKFILE-NOTES.md.",
+  "_comment": "Project lock stub (v1, sources: []). Authoritative pins for global (-g) installs live in ~/.agents/.skill-lock.json (v3). Future: populate this file for CI reproducibility. See README.md and docs/skills.md.",
   "version": 1,
   "sources": []
 }
