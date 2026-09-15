@@ -83,7 +83,7 @@ workspaces|agentbot_menu_workspaces_dispatch|back
 MENUS
 
 # A derived menu is only worth deriving if it tracks its source. Every public
-# command must appear in the Command Lib and every bootstrap one in its
+# command must appear in the Command lib and every bootstrap one in its
 # submenu -- that is the property the derivation buys, so it is the one to
 # check rather than the entries it happens to have today.
 for surface in public bootstrap; do

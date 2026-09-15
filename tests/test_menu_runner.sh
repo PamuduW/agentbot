@@ -48,7 +48,7 @@ run_menu() {
 			MENU_SIMPLE_TITLE="Agentbot"
 			MENU_SIMPLE_BREADCRUMB="Agentbot"
 			MENU_SIMPLE_TYPES=()
-			MENU_SIMPLE_LABELS=("Check Status" "Install Agentbot" "Quit")
+			MENU_SIMPLE_LABELS=("Check status" "Install Agentbot" "Quit")
 			MENU_SIMPLE_KEYS=(status install quit)
 			MENU_SIMPLE_DESCS=(
 				$'"'"'Check the installed Agentbot components and baseline.\nRead-only status; no updates or writes are performed.'"'"'

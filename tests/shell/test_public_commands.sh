@@ -40,7 +40,7 @@ test_symlink_resolves_repository_root() {
 	output="$(AGENTBOT_TTY=0 "$link" status 2>&1)"
 	rc=$?
 	set -e
-	[[ "$rc" -eq 0 && "$output" == *'=== Check Status ==='* && "$output" != *'No such file or directory'* ]]
+	[[ "$rc" -eq 0 && "$output" == *'=== Check status ==='* && "$output" != *'No such file or directory'* ]]
 }
 
 test_dispatch_matrix() (
@@ -92,7 +92,7 @@ test_dispatch_matrix() (
 test_install_menu_routes_to_the_component_selector() (
 	# Break caught: the only way to reach the selector was the main menu, so a
 	# caller that had already decided on an install had to hand the operator
-	# Check Status, Prune Skills and Quit alongside it.
+	# Check status, Prune Skills and Quit alongside it.
 	AGENTBOT_SOURCE_ONLY=1 source "$AGENTBOT"
 	local calls="$TEST_ROOT/install-menu.calls"
 	: >"$calls"

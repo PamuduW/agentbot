@@ -27,7 +27,7 @@ from src.ui import menu_select
 SPEC = {
     "title": "Agentbot",
     "breadcrumb": "Agentbot",
-    "labels": ["Check Status", "Install Agentbot", "Update", "Quit"],
+    "labels": ["Check status", "Install Agentbot", "Update", "Quit"],
     "keys": ["status", "install", "update", "quit"],
     "descs": ["Status.", "Install.", "Update.", "Quit."],
     "cols": 80,

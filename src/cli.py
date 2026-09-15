@@ -449,7 +449,7 @@ def _handle_update(context: CommandContext) -> int:
         return 0
 
     # The work phase opens with its own heading and legend, as the sibling
-    # product's `=== Upgrade ===` does. The [STEP] lines used to start directly
+    # product's `=== Updating ===` does. The [STEP] lines used to start directly
     # under the plan table, so the table the operator had just approved and the
     # run that followed it read as one block.
     title = f"Applying {command}"
@@ -460,7 +460,7 @@ def _handle_update(context: CommandContext) -> int:
     outcome = context.lifecycle.apply_update(plan, progress=applying.stage)
     # One result block, closing on one rollup. The outcome, the reconciliation
     # and the resync each used to print their own, and the resync brought a
-    # second `=== Workspace Resync ===` heading with it -- so one update ended
+    # second `=== Workspace resync ===` heading with it -- so one update ended
     # on three unrelated summaries, the last of which counted only the resync
     # while reading as the verdict on the whole run.
     print_header("Update result", f"Agentbot › {command.capitalize()} › Result")
@@ -643,7 +643,7 @@ def build_parser() -> argparse.ArgumentParser:
     help_parser.add_argument("help_topic", nargs="*", metavar="COMMAND")
     help_parser.add_argument(
         "--format",
-        # `menu` was the tab-separated dump the Command Lib used to parse into
+        # `menu` was the tab-separated dump the Command lib used to parse into
         # Bash arrays before src/ui/menus.py built the menu directly. Nothing
         # has called for it since; it outlived its only caller.
         choices=("plain", "tui"),
@@ -1105,10 +1105,10 @@ def handle_skills_command(lifecycle: Lifecycle, skills_command: str) -> int:
     if skills_command == "list":
         skills = lifecycle.list_skills()
         if not skills:
-            print_header("Installed Skills", "Agentbot › Installed Skills")
+            print_header("Installed skills", "Agentbot › Installed skills")
             print("  No installed skills found.")
             return 0
-        print_header("Installed Skills", "Agentbot › Installed Skills")
+        print_header("Installed skills", "Agentbot › Installed skills")
         for skill in skills:
             print(f"  {skill}")
         return 0
@@ -1215,7 +1215,7 @@ def run_agentbot_install(
 
 def print_skills_doctor(diagnostics: Diagnostics) -> int:
     issues = diagnostics.skills_doctor_issues()
-    print_header("Skills Doctor", "Agentbot › Skills Doctor")
+    print_header("Skills doctor", "Agentbot › Skills doctor")
     if not issues:
         print("  No issues found.")
         return 0

@@ -21,11 +21,11 @@ test_main_menu_snapshot() {
 	# Eight entries: Platform's seven actions became install components and
 	# status rows, and MCP followed them -- it was an entry that only showed
 	# status, and install, update and status manage it directly now.
-	[[ "$output" == *'1. Check Status'* && "$output" == *'8. Quit'* ]] || return 1
-	# Token Config, not GitHub Token Config: the entry opens a provider list
+	[[ "$output" == *'1. Check status'* && "$output" == *'8. Quit'* ]] || return 1
+	# Token Config, not GitHub token config: the entry opens a provider list
 	# now that a GitLab credential exists beside the GitHub one.
 	[[ "$output" == *'Prune Skills'* && "$output" == *'Token Config'* ]] || return 1
-	[[ "$output" != *'GitHub Token Config'* ]] || return 1
+	[[ "$output" != *'GitHub token config'* ]] || return 1
 	[[ "$output" != *'MCP Servers'* ]] || return 1
 	[[ "$output" != *'Platform'* ]] || return 1
 	[[ "$output" == *'Libraries'* ]] || return 1
@@ -38,19 +38,19 @@ test_width_and_palette_snapshots() (
 		NO_COLOR=1
 		tui_init_colors
 		output="$({
-			tui_header 'Check Status' 'Agentbot › Check Status' "$cols"
+			tui_header 'Check status' 'Agentbot › Check status' "$cols"
 			tui_section Health "$cols"
 		} | strip_ansi_stream)"
-		[[ "$output" == *'=== Check Status ==='* && "$output" == *'Health'* ]] || return 1
+		[[ "$output" == *'=== Check status ==='* && "$output" == *'Health'* ]] || return 1
 		while IFS= read -r line; do ((${#line} <= cols)) || return 1; done <<<"$output"
 
 		unset NO_COLOR
 		tui_init_colors
 		output="$(
-			tui_header 'Check Status' 'Agentbot › Check Status' "$cols"
+			tui_header 'Check status' 'Agentbot › Check status' "$cols"
 			tui_section Health "$cols"
 		)"
-		[[ "$output" == *$'\033[1m\033[38;5;208m=== Check Status ==='* ]] || return 1
+		[[ "$output" == *$'\033[1m\033[38;5;208m=== Check status ==='* ]] || return 1
 		[[ "$output" == *$'\033[1m\033[33mHealth'* ]] || return 1
 		while IFS= read -r line; do
 			plain="$(strip_ansi_stream <<<"$line")"

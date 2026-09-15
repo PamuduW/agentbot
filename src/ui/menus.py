@@ -42,7 +42,7 @@ MENUS: dict[str, Menu] = {
         title="Agentbot",
         breadcrumb="Agentbot",
         labels=(
-            "Check Status",
+            "Check status",
             "Install Agentbot",
             "Update",
             "Prune Skills",
@@ -95,7 +95,7 @@ MENUS: dict[str, Menu] = {
     "libraries": Menu(
         title="Libraries",
         breadcrumb="Agentbot › Libraries",
-        labels=("Command Lib", "Graphify Lib"),
+        labels=("Command lib", "Graphify Lib"),
         keys=("command_lib", "graphify_lib"),
         descs=(
             "Show Agentbot commands and whether they read or mutate state.\n"
@@ -145,7 +145,7 @@ MENUS: dict[str, Menu] = {
 }
 
 
-# Some menus are not written down, they are derived: the Command Lib lists the
+# Some menus are not written down, they are derived: the Command lib lists the
 # commands this build actually has. Those come from the same metadata the help
 # output does, so a command added to src/commands.py appears in the menu with
 # nothing else edited -- which is the whole reason not to write them out here.
@@ -184,8 +184,8 @@ def _command_lib() -> Menu:
     """
     entries = _command_entries("public")
     return Menu(
-        title="Command Lib",
-        breadcrumb="Agentbot › Command Lib",
+        title="Command lib",
+        breadcrumb="Agentbot › Command lib",
         labels=(*(label for _, label, _ in entries), "Bootstrap commands"),
         keys=(*(name for name, _, _ in entries), "__bootstrap__"),
         descs=(
@@ -200,7 +200,7 @@ def _command_lib_bootstrap() -> Menu:
     entries = _command_entries("bootstrap")
     return Menu(
         title="Bootstrap commands",
-        breadcrumb="Agentbot › Command Lib › Bootstrap commands",
+        breadcrumb="Agentbot › Command lib › Bootstrap commands",
         labels=tuple(label for _, label, _ in entries),
         keys=tuple(name for name, _, _ in entries),
         descs=tuple(desc for _, _, desc in entries),

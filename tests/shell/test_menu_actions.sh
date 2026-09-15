@@ -574,7 +574,7 @@ check 'a submenu that does not declare pause ownership still gets one' test_unde
 check 'repository changes reach the outer menu without a stale pause' test_repository_change_reaches_the_outer_menu_without_pause
 check 'TUI install and update preserve the repository-change exit contract' test_tui_install_and_update_preserve_repository_change_exit
 check 'TUI update carries effective descriptors into Python confirmation' test_tui_update_carries_effective_descriptors_into_python_confirmation
-check 'Command Lib selects and renders one detail page' test_command_lib_selects_one_detail
+check 'Command lib selects and renders one detail page' test_command_lib_selects_one_detail
 check 'Graphify Lib rows match supported command families' test_graphify_library_is_data_driven_and_supported
 check 'token entry is hidden and reveal is confirmed' test_token_entry_is_hidden_and_reveal_requires_confirmation
 check 'token menu outcomes survive the redraw' test_token_menu_outcomes_survive_the_redraw

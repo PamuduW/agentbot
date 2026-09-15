@@ -91,7 +91,7 @@ class WorkspaceCliTests(unittest.TestCase):
 
         self.assertEqual(0, rc)
         service.resync_workspaces.assert_called_once_with(apply=False, paths=())
-        self.assertIn("Workspace Resync", stdout)
+        self.assertIn("Workspace resync", stdout)
 
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")

@@ -137,7 +137,7 @@ class DoctorSummaryTests(unittest.TestCase):
         issues = [DoctorIssue(level="warning", scope="skills", message="a warning")]
         embedded, _ = _capture(print_doctor_summary, issues, include_header=False)
         self.assertIn("=== Doctor issues ===", embedded)
-        self.assertIn("Agentbot › Check Status › Doctor issues", embedded)
+        self.assertIn("Agentbot › Check status › Doctor issues", embedded)
         self.assertNotIn("──", embedded)
 
     def test_any_error_fails(self):
@@ -228,7 +228,7 @@ class ManualSkillRemovalReportTests(unittest.TestCase):
         text, rc = _capture(print_manual_skill_removal_report, self._report())
 
         self.assertEqual(0, rc)
-        self.assertIn("Remove Manual Skills", text)
+        self.assertIn("Remove manual skills", text)
         self.assertIn("select exact skill names and rerun with --yes", text)
         self.assertNotIn("--include-manual", text)
 
@@ -560,7 +560,7 @@ class EmbeddedResyncTests(unittest.TestCase):
     """The resync renders standalone or inside a larger surface.
 
     `agentbot resync` is its own screen and keeps its heading and its rollup.
-    The update run embeds it, where a second `=== Workspace Resync ===` in the
+    The update run embeds it, where a second `=== Workspace resync ===` in the
     middle of the result split one outcome across two screens, and a rollup
     counting only the resync read as the verdict on the whole update.
     """
@@ -579,7 +579,7 @@ class EmbeddedResyncTests(unittest.TestCase):
     def test_standalone_keeps_its_heading_and_rollup(self):
         text, _ = _capture(print_workspace_resync_report, self._report())
         rendered = strip_ansi(text)
-        self.assertIn("=== Workspace Resync ===", rendered)
+        self.assertIn("=== Workspace resync ===", rendered)
         self.assertRegex(rendered, r"(\d+ ok|All \d+ component)")
 
     def test_embedded_drops_both_and_returns_its_counts(self):
@@ -589,7 +589,7 @@ class EmbeddedResyncTests(unittest.TestCase):
                 self._report(), include_header=False, include_rollup=False
             )
         rendered = strip_ansi(buffer.getvalue())
-        self.assertNotIn("=== Workspace Resync ===", rendered)
+        self.assertNotIn("=== Workspace resync ===", rendered)
         self.assertNotRegex(rendered, r"(\d+ ok|All \d+ component)")
         # Handed back so the surface that embedded it can close on one rollup.
         self.assertEqual(3, len(counts))
@@ -774,7 +774,7 @@ class StatusSummaryTests(unittest.TestCase):
             manual_skill_count=0,
             doctor_issue_count=0,
         )
-        self.assertIn("Check Status", text)
+        self.assertIn("Check status", text)
 
     def test_missing_pieces_are_visible(self):
         text, _ = _capture(
@@ -790,7 +790,7 @@ class StatusSummaryTests(unittest.TestCase):
             manual_skill_count=2,
             doctor_issue_count=3,
         )
-        self.assertIn("Check Status", text)
+        self.assertIn("Check status", text)
         self.assertIn("Prunable skills", text)
         self.assertNotIn("Manual skills", text)
 

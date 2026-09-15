@@ -243,7 +243,7 @@ class HandlerTests(unittest.TestCase):
         self.assertIn("[Legend]", rendered)
         self.assertIn("=== Update result ===", rendered)
         # One heading for the result, not a second one inside it.
-        self.assertNotIn("=== Workspace Resync ===", rendered)
+        self.assertNotIn("=== Workspace resync ===", rendered)
         self.assertEqual(1, len(re.findall(r"\d+ ok|All \d+ component", rendered)))
 
     def test_update_requires_confirmation_for_source_owned_changes(self):

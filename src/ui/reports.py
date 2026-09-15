@@ -34,7 +34,7 @@ from .table import (
 
 def print_command_help(spec: CommandSpec | None = None) -> None:
     if spec is None:
-        print_header("Agentbot Help", "Agentbot › Help")
+        print_header("Agentbot help", "Agentbot › Help")
         print("  Usage: agentbot <command> [options]")
         surfaces: tuple[tuple[Literal["public", "bootstrap"], str], ...] = (
             ("public", "── Commands ──"),
@@ -159,14 +159,14 @@ def print_status_summary(
         lock_detail = "~/.agents/.skill-lock.json (unreadable)"
 
     table = Table(
-        title="Check Status",
-        breadcrumb="Agentbot › Check Status",
+        title="Check status",
+        breadcrumb="Agentbot › Check status",
         sections=(
             TableSection(
                 # No section rule: the L10 contract gives a rule to a surface
                 # with two or more groups, because a rule earns its place by
                 # separating things. This surface has one table, and the header
-                # above it already says "Check Status".
+                # above it already says "Check status".
                 label="",
                 rows=(
                     (
@@ -267,7 +267,7 @@ def print_doctor_summary(issues: list, *, include_header: bool = True) -> int:
         # problem, so it appears when there is one.
         if not issues:
             return 0
-        print_header("Doctor issues", "Agentbot › Check Status › Doctor issues")
+        print_header("Doctor issues", "Agentbot › Check status › Doctor issues")
     # print_header does not emit column names; print_table must.
     show_columns = True
     if not issues:
@@ -775,12 +775,12 @@ def print_workspace_resync_report(
     """Render a resync, standalone or as part of a larger surface.
 
     `agentbot resync` is its own surface and keeps both. The update run embeds
-    it, where a second `=== Workspace Resync ===` in the middle of the result
+    it, where a second `=== Workspace resync ===` in the middle of the result
     split one outcome into two screens, and a rollup counting only the resync
     read as the rollup for the whole update.
     """
     if include_header:
-        print_header("Workspace Resync", "Agentbot › Workspace Resync")
+        print_header("Workspace resync", "Agentbot › Workspace resync")
     print_section_block("── Workspaces ──")
     rows: list[tuple[str, str, str]] = []
     for result in report.results:
@@ -1049,12 +1049,11 @@ def print_update_plan(plan, *, command: str = "update") -> None:
         ),
     ]
     print_four_column_table(rows)
-    # A closing line, not a rollup: the sibling's report says "0 verified
-    # upgrades; 5 checks or refreshes remain." for the same reason. "All 3
-    # component(s) look good" would be a verdict on work that has not happened,
-    # and this is the last thing read before approving it.
-    # The sibling's report closes on "0 verified upgrades; 5 checks or refreshes
-    # remain." -- a count of what approving it will do, not a health verdict.
+    # A closing line, not a rollup: the sibling's report closes on "0 verified
+    # updates; 5 checks or refreshes remain." for the same reason -- a count of
+    # what approving it will do, not a health verdict. "All 3 component(s) look
+    # good" would be a verdict on work that has not happened, and this is the
+    # last thing read before approving it.
     changes = skill_changes + graphify_changes + workspace_writes
     verified = 3 - sum(1 for count in (skill_changes, graphify_changes, workspace_writes) if count)
     print()
@@ -1063,7 +1062,7 @@ def print_update_plan(plan, *, command: str = "update") -> None:
 
 def print_skill_prune_report(report, *, include_manual: bool = False) -> int:
     """Render the prune plan or result. Returns the command's exit code."""
-    print_header("Skills Prune", "Agentbot › Skills Prune")
+    print_header("Skills prune", "Agentbot › Skills prune")
 
     if report.blocked_reason is not None:
         print_table(
@@ -1121,7 +1120,7 @@ def print_skill_prune_report(report, *, include_manual: bool = False) -> int:
 
 def print_manual_skill_removal_report(report) -> int:
     """Render a selective manual-skill preview or applied result."""
-    print_header("Remove Manual Skills", "Agentbot › Remove Manual Skills")
+    print_header("Remove manual skills", "Agentbot › Remove manual skills")
     if not report.candidates:
         print_table(
             [("Skill store", "no removable manual skills found", "ok")],

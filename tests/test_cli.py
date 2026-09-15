@@ -219,7 +219,7 @@ class CliTests(unittest.TestCase):
             env = isolated_launcher_env(isolated_root)
             self.assertEqual([str(isolated_root / "path-bin")], env["PATH"].split(os.pathsep))
             cases = {
-                ("status",): (0, "Agentbot › Check Status"),
+                ("status",): (0, "Agentbot › Check status"),
                 ("status", "--json"): (0, None),
                 ("doctor",): (1, "Agentbot › Doctor"),
                 ("graphify", "status"): (
@@ -954,7 +954,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(0, status_rc)
         self.assertEqual(0, update_rc)
-        self.assertIn("Agentbot › Check Status", status_stdout)
+        self.assertIn("Agentbot › Check status", status_stdout)
         self.assertIn("Agentbot › Update", update_stdout)
 
     def test_status_labels_trial_skills_outside_managed_sources(self) -> None:
@@ -1109,7 +1109,7 @@ class CliTests(unittest.TestCase):
 
         table = Table(
             "Status",
-            "Agentbot › Check Status",
+            "Agentbot › Check status",
             (TableSection("Health", (("Agentbot", "current", "ok"),)),),
         )
 

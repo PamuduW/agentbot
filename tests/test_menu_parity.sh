@@ -142,7 +142,7 @@ SPEC
 # to need fitting at 40 columns, and two-line descriptions.
 compare_menu 'the Agentbot main menu' '{
  "title": "Agentbot", "breadcrumb": "Agentbot",
- "labels": ["Check Status", "Install Agentbot", "Update", "Prune Skills", "Quit"],
+ "labels": ["Check status", "Install Agentbot", "Update", "Prune Skills", "Quit"],
  "descs": ["Check the installed Agentbot components and baseline.\nRead-only status; no updates or writes are performed.",
            "Choose what to set up, then install: skills, Graphify, Boost.\nManaged outputs, Doctor and the launcher link always run.",
            "Update the repository, reconcile skills, and refresh workspaces plus global outputs.\nA preview and explicit confirmation are required before mutation.",
