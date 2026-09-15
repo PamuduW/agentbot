@@ -106,7 +106,12 @@ class FilteredMcpServer:
             )
         except asyncio.CancelledError:
             raise
-        except TimeoutError as error:
+        # asyncio.TimeoutError, not the builtin: the two are the same object
+        # only from 3.11. On the 3.10 this project still supports, wait_for
+        # raises concurrent.futures.TimeoutError, which the builtin does not
+        # catch -- so a timed-out call fell through to the generic arm below and
+        # was reported as an upstream failure with the wrong code.
+        except asyncio.TimeoutError as error:
             raise MCPError(-32001, f"approved tool timed out: {name}") from error
         except CrossOriginRedirectError as error:
             raise MCPError(-32003, f"cross-origin redirect blocked: {name}") from error
