@@ -70,7 +70,9 @@ jobs:
     # prefix for secret names and refuses to create one. The test reads that
     # name from the environment, which is unrestricted, so the secret is mapped
     # onto it below.
-    if: github.event_name == 'schedule'
+    # Dispatch as well as schedule: a gate you cannot run on demand is a gate
+    # you cannot verify, and this one was unverifiable until its secret existed.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
