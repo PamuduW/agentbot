@@ -15,6 +15,10 @@ set -uo pipefail
 # and a read-only command that reports rather than builds.
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=scripts/lib/shared_resolve.sh
+source "$ROOT/scripts/lib/shared_resolve.sh"
+dotfiles_shared_require "$ROOT" || exit 1
 passed=0
 failed=0
 
@@ -162,6 +166,10 @@ FAKE
 		cd "$home" || exit 1
 		AGENTBOT_PYTHON="$TEST_ROOT/nodeps/python"
 		export AGENTBOT_PYTHON
+		# The fixture is a partial copy with no sibling shared checkout, and
+		# this test is about provisioning, not resolution. Name the real one.
+		DOTFILES_SHARED_DIR="$DOTFILES_SHARED_ROOT"
+		export DOTFILES_SHARED_DIR
 		bash install.sh status 2>&1
 	)"
 	[[ ! -e "$home/.venv" ]] || return 1

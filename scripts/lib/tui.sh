@@ -4,13 +4,17 @@
 
 # Agentbot TUI.
 #
-# The implementation is the shared terminal stack in scripts/lib/shared/tui/,
-# which is kept byte-identical with the sibling repository (see
-# scripts/sync-shared.sh; the gate fails if the copies diverge). This file is
-# the Agentbot-facing naming layer over it, so existing tui_* callers and the
-# AGENTBOT_* environment seams keep working.
+# The implementation is the shared terminal stack in the dotfiles-shared
+# repository, which this CLI and the Dotfiles installer both resolve at
+# runtime. This file is the Agentbot-facing naming layer over it, so existing
+# tui_* callers and the AGENTBOT_* environment seams keep working.
 
-_AGENTBOT_TUI_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/shared/tui" && pwd)"
+if [[ -z "${DOTFILES_SHARED_LIB:-}" ]]; then
+	# shellcheck source=scripts/lib/shared_resolve.sh
+	source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/shared_resolve.sh"
+	dotfiles_shared_require "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)" || return 1
+fi
+_AGENTBOT_TUI_DIR="$DOTFILES_SHARED_LIB/tui"
 
 # One TTY adapter, two addressing forms. Preserve the caller's Dotfiles seam
 # before resolving Agentbot overrides: refresh must restore that stable base

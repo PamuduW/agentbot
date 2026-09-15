@@ -322,7 +322,7 @@ declare -F agentbot_repo_update_run >/dev/null || agentbot_repo_update_run() {
 }
 
 test_the_binding_shadows_nothing_shared() {
-	# scripts/lib/shared/repo_update.sh is byte-identical in both repositories
+	# dotfiles-shared repo_update.sh is the one copy both repositories load
 	# and the drift check enforces that. Identical text used not to mean
 	# identical behaviour: this binding sourced the shared machine and then
 	# redefined four of its functions with different signatures, so in Agentbot
@@ -338,7 +338,7 @@ test_the_binding_shadows_nothing_shared() {
 	# The wrappers are agentbot_-prefixed now, so the invariant is the strong
 	# one rather than a list: the binding defines no name the shared machine
 	# defines, and any new collision fails here instead of being pinned.
-	local shared="$ROOT/scripts/lib/shared/repo_update.sh"
+	local shared="$DOTFILES_SHARED_LIB/repo_update.sh"
 	local binding="$ROOT/scripts/lib/repo_update.sh"
 	local collisions
 

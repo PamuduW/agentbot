@@ -14,12 +14,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..models import Table
+from ..shared_paths import shared_python_path
 
-# The layout itself is shared with the Bash renderer's repository through
-# scripts/lib/shared/, which sync-shared.sh holds byte-identical. Loaded by path
-# because that tree is deliberately outside the package: it is vendored code,
-# not part of src/.
-_SHARED_PY = Path(__file__).resolve().parents[2] / "scripts" / "lib" / "shared" / "python"
+# The layout itself is shared with the Bash renderer through the
+# dotfiles-shared repository. Loaded by path because that tree is a separate
+# checkout resolved at runtime, not part of this package.
+_SHARED_PY = shared_python_path(Path(__file__).resolve().parents[2])
 if str(_SHARED_PY) not in sys.path:
     sys.path.insert(0, str(_SHARED_PY))
 import report_table as _shared  # noqa: E402
@@ -96,7 +96,7 @@ def _table_widths() -> tuple[int, int, int]:
 
     The non-interactive case used to return fixed constants instead, which put
     the column boundary one place left of the Bash renderer in
-    scripts/lib/shared/tui/report_table.sh: 22/40/10 against 21/41/10. Both are
+    dotfiles-shared tui/report_table.sh: 22/40/10 against 21/41/10. Both are
     80 columns wide, so nothing overflowed -- the two tools just did not line up
     when a `dotfiles full-update` printed them one after the other.
 
@@ -479,7 +479,7 @@ def _color_action_cell(line: str, action: str, widths) -> str:
 def format_shortcuts(*pairs: str) -> str:
     """`c confirm   e edit   q back`, keys lit, exactly as the Bash helper draws.
 
-    Mirrors ui_format_shortcuts in scripts/lib/shared/tui/ui.sh: three spaces
+    Mirrors ui_format_shortcuts in dotfiles-shared tui/ui.sh: three spaces
     between pairs, the key in cyan and the label plain. The two products put
     these prompts in the same terminal, so they are the same shape.
     """

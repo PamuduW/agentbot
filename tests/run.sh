@@ -80,7 +80,7 @@ fi
 if require_tool shfmt "Formatting"; then
 	run_check "Formatting" shfmt -d "${shell_files[@]}"
 fi
-run_check "Shared library drift" bash "$ROOT/scripts/sync-shared.sh" --check
+run_check "Shared contract" bash "$ROOT/tests/check_shared_contract.sh"
 run_check "Whitespace errors" git diff --check
 
 printf '\nAll Agentbot checks passed in %ss.\n' "$((SECONDS - total_started))"

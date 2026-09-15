@@ -4,6 +4,13 @@ set -euo pipefail
 AGENTBOT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export AGENTBOT_HOME
 REPO_ROOT="$AGENTBOT_HOME"
+# Shared code lives in the dotfiles-shared checkout and is loaded from the very
+# first source below, so resolve it here: a missing checkout must name itself
+# and the clone that fixes it, not die on `source: No such file`.
+# shellcheck source=scripts/lib/shared_resolve.sh
+source "${REPO_ROOT}/scripts/lib/shared_resolve.sh"
+dotfiles_shared_require "$REPO_ROOT" || exit 1
+
 # shellcheck source=scripts/lib/github_token.sh
 source "${REPO_ROOT}/scripts/lib/github_token.sh"
 
@@ -22,8 +29,8 @@ fi
 source "${REPO_ROOT}/scripts/lib/python_env.sh"
 # shellcheck source=scripts/lib/repo_update.sh
 source "${REPO_ROOT}/scripts/lib/repo_update.sh"
-# shellcheck source=scripts/lib/shared/tui/tty.sh
-source "${REPO_ROOT}/scripts/lib/shared/tui/tty.sh"
+# shellcheck source=/dev/null
+source "$DOTFILES_SHARED_LIB/tui/tty.sh"
 
 github_token_child() (
 	github_token_export_if_valid
@@ -241,9 +248,13 @@ run_repo_update_prompt() {
 	replace-local) prompt="Back up local work and replace it with ${REPO_UPDATE_UPSTREAM:-upstream}?" ;;
 	*) return 1 ;;
 	esac
+	# Read by the shared TTY adapter, which now lives in a checkout shellcheck
+	# cannot follow, so it no longer sees these consumed.
+	# shellcheck disable=SC2034
 	if [[ -n "${AGENTBOT_UPDATE_TTY_INPUT:-}" ]]; then
 		DOTFILES_TTY_INPUT="$AGENTBOT_UPDATE_TTY_INPUT"
 	fi
+	# shellcheck disable=SC2034
 	if [[ -n "${AGENTBOT_UPDATE_TTY_OUTPUT:-}" ]]; then
 		DOTFILES_TTY_OUTPUT="$AGENTBOT_UPDATE_TTY_OUTPUT"
 	fi

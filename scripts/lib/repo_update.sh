@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034  # REPO_UPDATE_* globals are this module's published output.
 # Agentbot binding for the shared repository-update state machine.
 #
-# The state machine itself lives in scripts/lib/shared/repo_update.sh and is
+# The state machine itself lives in dotfiles-shared's repo_update.sh and is
 # shared verbatim with the sibling repository. This file supplies the Agentbot
 # identity and keeps the calling convention Agentbot's callers already use:
 #
@@ -15,9 +15,9 @@
 # they used to be called repo_update_run and the rest, which are names the
 # shared file also defines with different signatures. Sourcing the shared
 # machine and then redefining four of its functions meant that in Agentbot the
-# shared versions never ran, while `sync-shared.sh --check` proved the shared
-# file byte-identical in both repositories and so read as "both behave the
-# same". Nothing said otherwise at any call site. Now the name does.
+# shared versions never ran, while the two repositories both loaded the same
+# file and so read as "both behave the same". Nothing said otherwise at any
+# call site. Now the name does.
 
 if [[ "${_AGENTBOT_REPO_UPDATE_LOADED:-0}" == 1 ]]; then
 	return 0
@@ -41,8 +41,8 @@ export REPO_UPDATE_RECOVERY_PREFIX
 
 _agentbot_repo_update_no_report() { :; }
 
-# shellcheck source=scripts/lib/shared/repo_update.sh
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/shared/repo_update.sh"
+# shellcheck source=/dev/null
+source "$DOTFILES_SHARED_LIB/repo_update.sh"
 
 REPO_UPDATE_STATE=stopped
 REPO_UPDATE_AHEAD=0

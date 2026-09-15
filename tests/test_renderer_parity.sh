@@ -3,7 +3,7 @@
 set -uo pipefail
 
 # The same three-column report is rendered twice: in Bash
-# (scripts/lib/shared/tui/report_table.sh) and in Python (src/ui/table.py).
+# (dotfiles-shared tui/report_table.sh) and in Python (src/ui/table.py).
 # ADR-0001 consolidates on the Python one, and until that migration finishes
 # both must produce identical bytes -- otherwise a `dotfiles full-update`, which
 # prints tables from both tools in one session, shows two subtly different
@@ -18,9 +18,13 @@ set -uo pipefail
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "$TEST_DIR/.." && pwd)"
 
+# shellcheck source=scripts/lib/shared_resolve.sh
+source "$REPO_DIR/scripts/lib/shared_resolve.sh"
+dotfiles_shared_require "$REPO_DIR" || exit 1
+
 # Both renderers live in this repository: the Bash one in
-# scripts/lib/shared/tui/report_table.sh, and the Python one in src/ui/table.py.
-# sync-shared.sh keeps the Bash copy byte-identical with Dotfiles, so checking
+# dotfiles-shared tui/report_table.sh, and the Python one in src/ui/table.py.
+# Both repositories load that one Bash copy, so checking
 # this copy covers both repositories without either looking at the other.
 # No bytecode in the shared tree. It is vendored code held byte-identical
 # between two repositories, and a stale __pycache__ masked an edit during this
@@ -51,7 +55,7 @@ Home itself|$HOME|ok
 ROWS
 
 NO_COLOR=1 bash -c '
-	source "'"$REPO_DIR"'/scripts/lib/shared/tui/report_table.sh"
+	source "'"$DOTFILES_SHARED_LIB"'/tui/report_table.sh"
 	rt_print_table_columns
 	while IFS="|" read -r component detail result; do
 		rt_print_table_row "$component" "$detail" "$result"
@@ -111,7 +115,7 @@ ROWS
 # compare a 100-column table against an 80-column one the moment COLUMNS was
 # set, which is a difference in the test, not in the colours it is about.
 FORCE_COLOR=1 DOTFILES_REPORT_COLS=80 bash -c '
-	source "'"$REPO_DIR"'/scripts/lib/shared/tui/report_table.sh"
+	source "'"$DOTFILES_SHARED_LIB"'/tui/report_table.sh"
 	while IFS="|" read -r component detail result; do
 		rt_print_table_row "$component" "$detail" "$result"
 	done
@@ -139,7 +143,7 @@ fi
 # the rule changes shape below 64 columns.
 for cols in 32 48 60 80 100 120 200; do
 	NO_COLOR=1 DOTFILES_REPORT_COLS="$cols" bash -c '
-		source "'"$REPO_DIR"'/scripts/lib/shared/tui/report_table.sh"
+		source "'"$DOTFILES_SHARED_LIB"'/tui/report_table.sh"
 		declare -a w=()
 		rt_four_column_widths w
 		rt_print_four_column_header "${w[0]}" component "${w[1]}" installed \
@@ -149,7 +153,7 @@ done >"$work/4bash.out"
 
 python3 - >"$work/4py.out" <<PYEOF
 import sys
-sys.path.insert(0, '$sibling/scripts/lib/shared/python')
+sys.path.insert(0, '$DOTFILES_SHARED_LIB/python')
 import report_table as rt
 for cols in (32, 48, 60, 80, 100, 120, 200):
     w = rt.four_column_widths(max(32, cols))
@@ -174,7 +178,7 @@ fi
 width_failures=0
 for width in 60 80 100 132; do
 	COLUMNS="$width" NO_COLOR=1 bash -c '
-		source "'"$REPO_DIR"'/scripts/lib/shared/tui/report_table.sh"
+		source "'"$DOTFILES_SHARED_LIB"'/tui/report_table.sh"
 		rt_print_table_columns
 	' >"$work/wbash.out" 2>&1
 	COLUMNS="$width" NO_COLOR=1 python3 -c "

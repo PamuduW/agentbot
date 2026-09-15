@@ -4,7 +4,7 @@
 set -uo pipefail
 
 # The Agentbot menu frame is drawn twice while it moves to Python: in Bash
-# (scripts/lib/shared/tui/menu_simple.sh) and in src/ui/menu.py. Byte parity is
+# (dotfiles-shared tui/menu_simple.sh) and in src/ui/menu.py. Byte parity is
 # the oracle, exactly as it was for the report table -- an interactive menu has
 # no other cheap one, and "it looked right when I ran it" is not a test.
 #
@@ -16,6 +16,10 @@ set -uo pipefail
 
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "$TEST_DIR/.." && pwd)"
+
+# shellcheck source=scripts/lib/shared_resolve.sh
+source "$REPO_DIR/scripts/lib/shared_resolve.sh"
+dotfiles_shared_require "$REPO_DIR" || exit 1
 export PYTHONDONTWRITEBYTECODE=1
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -24,23 +28,23 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/colors.sh"
+source "$DOTFILES_SHARED_LIB/tui/colors.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/tty.sh"
+source "$DOTFILES_SHARED_LIB/tui/tty.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/menu_render.sh"
+source "$DOTFILES_SHARED_LIB/tui/menu_render.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/ui.sh"
+source "$DOTFILES_SHARED_LIB/tui/ui.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/menu_descriptions.sh"
+source "$DOTFILES_SHARED_LIB/tui/menu_descriptions.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/menu_paging.sh"
+source "$DOTFILES_SHARED_LIB/tui/menu_paging.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/menu_checkbox.sh"
+source "$DOTFILES_SHARED_LIB/tui/menu_checkbox.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/menu_keys.sh"
+source "$DOTFILES_SHARED_LIB/tui/menu_keys.sh"
 # shellcheck source=/dev/null
-source "$REPO_DIR/scripts/lib/shared/tui/menu_simple.sh"
+source "$DOTFILES_SHARED_LIB/tui/menu_simple.sh"
 
 passed=0
 failed=0

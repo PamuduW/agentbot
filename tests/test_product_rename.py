@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.shared_paths import shared_root
+
 ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_ROOTS = (
     ROOT / "install.sh",
@@ -81,7 +83,7 @@ class ProductRenameTests(unittest.TestCase):
         self.assertIn('slug="PamuduW/${repository}"', adapter)
         self.assertNotIn("agent" "_bootstrap", adapter)
 
-        core = (ROOT / "scripts/lib/shared/repo_update.sh").read_text(encoding="utf-8")
+        core = (shared_root(ROOT) / "scripts/lib/shared/repo_update.sh").read_text(encoding="utf-8")
         for form in (
             '"git@github.com:${expected_slug}"',
             '"git@github.com:${expected_slug}.git"',

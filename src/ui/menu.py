@@ -7,7 +7,7 @@ this repository until `python3` and PyYAML are there -- so its menus can move,
 and this is the first piece of them.
 
 Frames only. Reading keys and looping is still
-`scripts/lib/shared/tui/menu_simple.sh`; what is here is the half that decides
+`dotfiles-shared tui/menu_simple.sh`; what is here is the half that decides
 what a frame looks like, which is the half that can be compared byte for byte
 against the Bash it replaces. tests/test_menu_parity.sh does exactly that, the
 same oracle that made the table migration verifiable rather than hopeful.
@@ -25,7 +25,7 @@ CLEAR_EOL = "\x1b[K"
 DESC_LINES = 2
 DEFAULT_HINT = "Up/Down navigate   Enter confirm"
 
-# Mirrors ui_color_input_hint in scripts/lib/shared/tui/ui.sh, transcribed
+# Mirrors ui_color_input_hint in dotfiles-shared tui/ui.sh, transcribed
 # rather than derived: the replacements run in this order there, and the order
 # is load-bearing. `[q] back` is listed before `[q] back_to_menu`, so a hint
 # carrying the longer phrase is lit by the shorter rule and the longer one then

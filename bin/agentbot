@@ -13,7 +13,13 @@ fi
 export AGENTBOT_HOME
 
 # shellcheck source=/dev/null
-source "$AGENTBOT_HOME/scripts/lib/shared/tui/tty.sh"
+if [[ -z "${DOTFILES_SHARED_LIB:-}" ]]; then
+	# shellcheck source=scripts/lib/shared_resolve.sh
+	source "$AGENTBOT_HOME/scripts/lib/shared_resolve.sh"
+	dotfiles_shared_require "$AGENTBOT_HOME" || exit 1
+fi
+# shellcheck source=/dev/null
+source "$DOTFILES_SHARED_LIB/tui/tty.sh"
 # shellcheck source=/dev/null
 source "$AGENTBOT_HOME/scripts/lib/python_env.sh"
 

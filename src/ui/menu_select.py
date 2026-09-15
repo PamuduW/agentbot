@@ -2,7 +2,7 @@
 
 The frames come from `menu.py`; this is the loop around them, and the two are
 separate because only one of them can be compared byte for byte. Ported from
-scripts/lib/shared/tui/menu_simple.sh and menu_keys.sh, whose behaviour it
+dotfiles-shared tui/menu_simple.sh and menu_keys.sh, whose behaviour it
 matches key for key -- including the parts that look odd and are not:
 
 * A read that fails is `confirm`, not an error. That is how a menu behaves when

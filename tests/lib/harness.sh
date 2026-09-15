@@ -4,8 +4,13 @@ TEST_HARNESS_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BA
 export TEST_HARNESS_LIB
 
 # Reporting and assertions are shared verbatim with the sibling repository.
-# shellcheck source=tests/lib/shared/assert.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared/assert.sh"
+if [[ -z "${DOTFILES_SHARED_ROOT:-}" ]]; then
+	# shellcheck source=scripts/lib/shared_resolve.sh
+	source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib" && pwd)/shared_resolve.sh"
+	dotfiles_shared_require "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || return 1
+fi
+# shellcheck source=/dev/null
+source "$DOTFILES_SHARED_ROOT/tests/lib/shared/assert.sh"
 
 _harness_sanitize() {
 	local value="${1-}"

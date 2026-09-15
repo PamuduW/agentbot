@@ -323,7 +323,7 @@ test_repo_table_is_the_shared_one_the_sibling_draws() (
 	# four-column layout -- widths proportional to the terminal -- and its own
 	# colour mapping, against the shared fixed widths the sibling product draws
 	# through. The same repository state was rendered two ways depending on
-	# which product printed it, and `sync-shared.sh --check` proved the shared
+	# which product printed it, and both repositories loaded the same shared
 	# file byte-identical the whole time, because the divergence was here.
 	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
 	local ours theirs

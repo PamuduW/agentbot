@@ -62,7 +62,7 @@ src/lifecycle.py  src/mcp_service.py
   as `name\x1fvalue` lines, Python draws and reads it, and the chosen key comes
   back. One process per menu display, not one per keystroke. Dispatch stays in
   Bash. Shared code that runs a menu takes it from `MENU_SIMPLE_RUNNER`, which
-  defaults to the Bash `menu_simple_run` so `scripts/lib/shared/tui/` stays
+  defaults to the Bash `menu_simple_run` so the dotfiles-shared `tui/` stays
   language-neutral and Dotfiles keeps its Bash loop.
 
   Without `python3`, or if the Python side fails (exit 3, as opposed to exit 1

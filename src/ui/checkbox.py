@@ -35,7 +35,7 @@ STATUS_COL_WIDTH = 16
 MID_SEP = " · "
 DEFAULT_HINT = "Up/Down navigate   Space toggle   a all   n none   Enter confirm   q back"
 
-# Mirrors _menu_cb_status_context in scripts/lib/shared/tui/menu_checkbox.sh,
+# Mirrors _menu_cb_status_context in dotfiles-shared tui/menu_checkbox.sh,
 # including the order, which is load-bearing: "not backed up" contains "backed
 # up", so the negative reading has to be tested first or a missing backup is
 # drawn in green. Both sides were written the other way round and were corrected
