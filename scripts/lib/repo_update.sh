@@ -267,57 +267,50 @@ agentbot_repo_update_run() {
 # Filled by the gate, read by callers that report the shared repository.
 declare -gA AGENTBOT_SHARED_REPO_RESULT=()
 
-_agentbot_repo_gate_adopt() {
-	local -n _adopt_dst="$1"
-	local -n _adopt_src="$2"
-	local key
-	_adopt_dst=()
-	for key in "${!_adopt_src[@]}"; do
-		_adopt_dst["$key"]="${_adopt_src[$key]}"
-	done
+# shellcheck source=/dev/null
+source "$DOTFILES_SHARED_LIB/repo_gate.sh"
+
+_AGENTBOT_GATE_DECISION=''
+_AGENTBOT_GATE_OUTCOME=''
+_AGENTBOT_GATE_REASON=''
+
+# One repository, named the way this product names them. The ordering, the
+# aggregation and the exit contract belong to repo_gate_run.
+_agentbot_gate_one() {
+	local rc=0 shared_outcome shared_reason
+	case "$1" in
+	shared)
+		agentbot_repo_update_run "$DOTFILES_SHARED_ROOT" "$_AGENTBOT_GATE_DECISION" \
+			shared_outcome shared_reason dotfiles-shared || rc=$?
+		repo_gate_adopt AGENTBOT_SHARED_REPO_RESULT _AGENTBOT_REPO_RESULT
+		# A stop here is the one the caller reports, so it is published before
+		# the gate returns and this repository is never reached.
+		if ((rc != 0 && rc != 2)); then
+			printf -v "$_AGENTBOT_GATE_OUTCOME" '%s' "$shared_outcome"
+			printf -v "$_AGENTBOT_GATE_REASON" '%s' "$shared_reason"
+		fi
+		;;
+	own)
+		agentbot_repo_update_run "$REPO_ROOT" "$_AGENTBOT_GATE_DECISION" \
+			"$_AGENTBOT_GATE_OUTCOME" "$_AGENTBOT_GATE_REASON" agentbot || rc=$?
+		;;
+	esac
+	return "$rc"
 }
 
 # Every command that touches this checkout gates the repositories it depends on
-# together, before any work: the shared library first, because either product
-# loads code from it, then this repository. Only the ones present are checked.
-#
-# One gate rather than one per repository, and up front rather than when each is
-# first needed: the operator learns everything that will move before anything
-# moves, and a change costs one restart instead of one per repository.
-#
-# Contract matches agentbot_repo_update_run: 0 continue, 1 stopped, 2 a checkout
-# moved and the caller must restart. Pulling replaces files a running shell has
-# already sourced, and the CONTRACT compatibility checked at startup was checked
-# against the checkout the pull just replaced.
+# together, before any work: the shared library first, because this CLI loads
+# code from it, then this repository. Only the ones present are checked.
 agentbot_repo_gate() {
-	local decision_fn="$1" outcome_name="$2" reason_name="$3"
-	local shared_outcome shared_reason rc=0 changed=0
+	_AGENTBOT_GATE_DECISION="$1"
+	_AGENTBOT_GATE_OUTCOME="$2"
+	_AGENTBOT_GATE_REASON="$3"
+	local -a targets=()
 
 	# shellcheck disable=SC2034  # Read by callers reporting the shared row.
 	AGENTBOT_SHARED_REPO_RESULT=()
-	if [[ -n "${DOTFILES_SHARED_ROOT:-}" ]]; then
-		agentbot_repo_update_run "$DOTFILES_SHARED_ROOT" "$decision_fn" \
-			shared_outcome shared_reason dotfiles-shared || rc=$?
-		_agentbot_repo_gate_adopt AGENTBOT_SHARED_REPO_RESULT _AGENTBOT_REPO_RESULT
-		case "$rc" in
-		0) ;;
-		2) changed=1 ;;
-		*)
-			printf -v "$outcome_name" '%s' "$shared_outcome"
-			printf -v "$reason_name" '%s' "$shared_reason"
-			return "$rc"
-			;;
-		esac
-	fi
+	[[ -n "${DOTFILES_SHARED_ROOT:-}" ]] && targets+=(shared)
+	targets+=(own)
 
-	rc=0
-	agentbot_repo_update_run "$REPO_ROOT" "$decision_fn" "$outcome_name" "$reason_name" agentbot || rc=$?
-	case "$rc" in
-	0) ;;
-	2) changed=1 ;;
-	*) return "$rc" ;;
-	esac
-
-	((changed)) && return 2
-	return 0
+	repo_gate_run _agentbot_gate_one "${targets[@]}"
 }
