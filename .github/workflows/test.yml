@@ -63,8 +63,13 @@ jobs:
     # changed every one of them at the same time. Catching that on a Monday is
     # the difference between a known upstream change and a mid-task mystery.
     #
-    # Add GITHUB_MCP_TOKEN as a repository secret to turn this on. Without it
-    # the job is skipped, not failed.
+    # Add MCP_GITHUB_TOKEN as a repository secret to turn this on. Without it
+    # the job reports that and exits clean rather than failing.
+    #
+    # The secret cannot be called GITHUB_MCP_TOKEN: GitHub reserves the GITHUB_
+    # prefix for secret names and refuses to create one. The test reads that
+    # name from the environment, which is unrestricted, so the secret is mapped
+    # onto it below.
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -88,10 +93,10 @@ jobs:
         working-directory: agentbot
         env:
           AGENTBOT_TEST_GITHUB_MCP: "1"
-          GITHUB_MCP_TOKEN: ${{ secrets.GITHUB_MCP_TOKEN }}
+          GITHUB_MCP_TOKEN: ${{ secrets.MCP_GITHUB_TOKEN }}
         run: |
           if [ -z "${GITHUB_MCP_TOKEN:-}" ]; then
-            echo "GITHUB_MCP_TOKEN is not set; skipping the live descriptor gate."
+            echo "MCP_GITHUB_TOKEN is not set; skipping the live descriptor gate."
             echo "Add it as a repository secret to turn this job on."
             exit 0
           fi
