@@ -21,16 +21,27 @@ jobs:
         python-version: ["3.10", "3.12"]
 
     steps:
+      # Both products resolve shared code from a dotfiles-shared checkout beside
+      # their own, so CI lays the workspace out the way a real machine does
+      # rather than special-casing the path.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: agentbot
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PamuduW/dotfiles-shared
+          path: dotfiles-shared
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install dependencies
+        working-directory: agentbot
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
           sudo apt-get update
           sudo apt-get install --yes shellcheck shfmt ripgrep
       - name: Run the full gate
+        working-directory: agentbot
         run: bash tests/run.sh
