@@ -222,6 +222,69 @@ GITLAB_TOOL_SPECS = (
 )
 
 
+#: Field names whose string value is a credential. Matched case-insensitively
+#: as substrings, because GitLab spells them several ways across endpoints.
+#:
+#: This exists because "read-only" constrains mutation, not disclosure. The
+#: facade returned GitLab's project payload verbatim -- 125 fields -- and
+#: `runners_token` was among them: a live runner registration token, which is
+#: effectively arbitrary code execution in the project's CI, handed to whatever
+#: client asked for project metadata. A token the caller may read is still a
+#: token the caller should not be handed in a transcript.
+_SECRET_NAME_PARTS = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "credential",
+    "private_key",
+    "access_key",
+    "api_key",
+    "apikey",
+    "authorization",
+)
+
+#: Names that are always redacted, whatever their shape.
+_ALWAYS_SECRET = frozenset({"runners_token"})
+
+#: What replaces a redacted value. Deliberately not an empty string: a caller
+#: should be able to tell "absent" from "withheld", and a support request
+#: should be able to quote this without quoting a secret.
+REDACTED = "[redacted by agentbot: credential field]"
+
+
+def _is_secret_name(name: str) -> bool:
+    lowered = name.lower()
+    if lowered in _ALWAYS_SECRET:
+        return True
+    return any(part in lowered for part in _SECRET_NAME_PARTS)
+
+
+def redact_secrets(payload: object) -> object:
+    """Strip credential values from a GitLab response, recursively.
+
+    Only non-empty **string** values are replaced. GitLab names plenty of
+    harmless settings after tokens -- `ci_job_token_scope_enabled` is a
+    boolean, `runner_token_expiration_interval` is null, and
+    `ci_id_token_sub_claim_components` is a list of field names -- and
+    redacting those would destroy useful metadata to protect nothing. A secret
+    is a string; a policy flag is not.
+    """
+    if isinstance(payload, dict):
+        redacted: dict[str, object] = {}
+        for key, value in payload.items():
+            if isinstance(key, str) and _is_secret_name(key) and isinstance(value, str) and value:
+                redacted[key] = REDACTED
+            else:
+                redacted[key] = redact_secrets(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_secrets(item) for item in payload]
+    if isinstance(payload, tuple):
+        return tuple(redact_secrets(item) for item in payload)
+    return payload
+
+
 class GitLabReadMcp:
     def __init__(self, client: object) -> None:
         self.client = client
@@ -262,7 +325,11 @@ class GitLabReadMcp:
         except Exception as error:
             raise MCPError(-32603, f"GitLab tool failed: {name}") from error
         return CallToolResult(
-            content=[TextContent(text=json.dumps(payload, ensure_ascii=False, sort_keys=True))]
+            content=[
+                TextContent(
+                    text=json.dumps(redact_secrets(payload), ensure_ascii=False, sort_keys=True)
+                )
+            ]
         )
 
     @staticmethod

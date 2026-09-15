@@ -2,7 +2,7 @@
   "version": 1,
   "id": "gitlab_read",
   "publisher": "Agentbot",
-  "reviewed_on": "2026-09-14",
+  "reviewed_on": "2026-09-15",
   "sources": [
     "https://docs.gitlab.com/api/rest/authentication/",
     "https://docs.gitlab.com/security/tokens/access_token_scopes/",
@@ -15,21 +15,66 @@
     "token_scope": "read_api"
   },
   "tools": [
-    {"name": "gitlab_project", "descriptor_fingerprint": "sha256:616a1d125d0b2f83cbd880bad8bb414aeda91d49ebd7f138308d5e62ec763755"},
-    {"name": "gitlab_repository_tree", "descriptor_fingerprint": "sha256:c52c6e6c299c790b802cc676c98a2ee344bfd902f5b06cb0caf99fed1f7887f8"},
-    {"name": "gitlab_repository_file", "descriptor_fingerprint": "sha256:a282529aec5d1c2ef6bb15dc6f9ddd8ce2c6d03e066be3fc975f87648d5e961b"},
-    {"name": "gitlab_commits", "descriptor_fingerprint": "sha256:eb03a62504e83d179c2f4b05674b96a5a4e009cf51704fca902106452d19f16e"},
-    {"name": "gitlab_refs", "descriptor_fingerprint": "sha256:13e572aad8c2986a1866fcc8b30a55fc6f76c03d83830e92d5e5f06da994fffd"},
-    {"name": "gitlab_issues", "descriptor_fingerprint": "sha256:78e10b483f74aadc51cd0bf260fef1cf9951a384a38abcc361d9d82732c07130"},
-    {"name": "gitlab_merge_requests", "descriptor_fingerprint": "sha256:420e24417451e8c4e66e7aa25e98c7d4f2f1a412b2451572675e63502ab568c5"},
-    {"name": "gitlab_merge_request_diff", "descriptor_fingerprint": "sha256:689d769c855cde104a7240665e1d8ccaeea72763aaa0f86c27a3fff3e54396da"},
-    {"name": "gitlab_notes", "descriptor_fingerprint": "sha256:513c64932b03227a3358e5affffc4f87566919fa77dbc0b41f160bd859c5d152"},
-    {"name": "gitlab_members", "descriptor_fingerprint": "sha256:eecdd2f602bb3bba6d5fa5f72032fbb5235006cd3fcc824d9110d443a70981c8"},
-    {"name": "gitlab_releases", "descriptor_fingerprint": "sha256:6dcb25d233f9c12f80cee1f133abaf7952e104c8533bcaa427cdb3b251e81826"},
-    {"name": "gitlab_pipelines", "descriptor_fingerprint": "sha256:406dbea7eef399a1a76e7c5a65bc1972851442642e3768a2141bbd08d579819e"},
-    {"name": "gitlab_jobs", "descriptor_fingerprint": "sha256:e8887c902544fd81420ef26d63d6cad4f0fd80a442b5640ce4e9b2407e47d3d8"},
-    {"name": "gitlab_job_log", "descriptor_fingerprint": "sha256:e8e1662bc2574b501f28c290517d00064c867300e8bc7230803fb317a62415f9"},
-    {"name": "gitlab_search", "descriptor_fingerprint": "sha256:8339f92fdfb9111960459b89d617391bb60d44f2410b410848421e8b1c60c12d"}
+    {
+      "name": "gitlab_project",
+      "descriptor_fingerprint": "sha256:616a1d125d0b2f83cbd880bad8bb414aeda91d49ebd7f138308d5e62ec763755"
+    },
+    {
+      "name": "gitlab_repository_tree",
+      "descriptor_fingerprint": "sha256:c52c6e6c299c790b802cc676c98a2ee344bfd902f5b06cb0caf99fed1f7887f8"
+    },
+    {
+      "name": "gitlab_repository_file",
+      "descriptor_fingerprint": "sha256:a282529aec5d1c2ef6bb15dc6f9ddd8ce2c6d03e066be3fc975f87648d5e961b"
+    },
+    {
+      "name": "gitlab_commits",
+      "descriptor_fingerprint": "sha256:eb03a62504e83d179c2f4b05674b96a5a4e009cf51704fca902106452d19f16e"
+    },
+    {
+      "name": "gitlab_refs",
+      "descriptor_fingerprint": "sha256:13e572aad8c2986a1866fcc8b30a55fc6f76c03d83830e92d5e5f06da994fffd"
+    },
+    {
+      "name": "gitlab_issues",
+      "descriptor_fingerprint": "sha256:78e10b483f74aadc51cd0bf260fef1cf9951a384a38abcc361d9d82732c07130"
+    },
+    {
+      "name": "gitlab_merge_requests",
+      "descriptor_fingerprint": "sha256:420e24417451e8c4e66e7aa25e98c7d4f2f1a412b2451572675e63502ab568c5"
+    },
+    {
+      "name": "gitlab_merge_request_diff",
+      "descriptor_fingerprint": "sha256:689d769c855cde104a7240665e1d8ccaeea72763aaa0f86c27a3fff3e54396da"
+    },
+    {
+      "name": "gitlab_notes",
+      "descriptor_fingerprint": "sha256:513c64932b03227a3358e5affffc4f87566919fa77dbc0b41f160bd859c5d152"
+    },
+    {
+      "name": "gitlab_members",
+      "descriptor_fingerprint": "sha256:eecdd2f602bb3bba6d5fa5f72032fbb5235006cd3fcc824d9110d443a70981c8"
+    },
+    {
+      "name": "gitlab_releases",
+      "descriptor_fingerprint": "sha256:6dcb25d233f9c12f80cee1f133abaf7952e104c8533bcaa427cdb3b251e81826"
+    },
+    {
+      "name": "gitlab_pipelines",
+      "descriptor_fingerprint": "sha256:406dbea7eef399a1a76e7c5a65bc1972851442642e3768a2141bbd08d579819e"
+    },
+    {
+      "name": "gitlab_jobs",
+      "descriptor_fingerprint": "sha256:e8887c902544fd81420ef26d63d6cad4f0fd80a442b5640ce4e9b2407e47d3d8"
+    },
+    {
+      "name": "gitlab_job_log",
+      "descriptor_fingerprint": "sha256:e8e1662bc2574b501f28c290517d00064c867300e8bc7230803fb317a62415f9"
+    },
+    {
+      "name": "gitlab_search",
+      "descriptor_fingerprint": "sha256:8339f92fdfb9111960459b89d617391bb60d44f2410b410848421e8b1c60c12d"
+    }
   ],
   "prohibited": [
     "arbitrary HTTP",
@@ -48,5 +93,9 @@
     "default_file_bytes": 524288,
     "max_file_bytes": 2097152,
     "max_job_log_lines": 2000
-  }
+  },
+  "limitations": [
+    "Responses are redacted before leaving the facade: a string value under a field named for a token, secret, password, credential, private key, access key, api key or authorization is replaced with a marker. Added 2026-09-15 after an audit found gitlab_project returning a live runners_token, which registers CI runners and so amounts to code execution in the project.",
+    "Read-only authority constrains mutation, not disclosure. A field the credential is permitted to read is not automatically safe to hand to a client."
+  ]
 }

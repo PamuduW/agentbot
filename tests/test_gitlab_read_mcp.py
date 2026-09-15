@@ -150,3 +150,100 @@ class GitLabReadMcpTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RedactionTests(unittest.TestCase):
+    """Credential values must not leave the facade.
+
+    Found by an audit, not by a test: `gitlab_project` returned GitLab's project
+    payload verbatim, and `runners_token` -- a live runner registration token,
+    which is effectively arbitrary code execution in that project's CI -- was in
+    it. Read-only access constrains mutation, not disclosure. Every probe up to
+    that point had asked whether writes were refused; none had asked what the
+    reads returned.
+    """
+
+    def test_a_token_value_is_replaced(self) -> None:
+        from src.gitlab_read_mcp import REDACTED, redact_secrets
+
+        cleaned = redact_secrets({"id": 1, "runners_token": "GR1348941abcdefghij"})
+
+        self.assertEqual({"id": 1, "runners_token": REDACTED}, cleaned)
+
+    def test_policy_fields_named_after_tokens_survive(self) -> None:
+        """GitLab names plenty of harmless settings after tokens. Redacting a
+        boolean protects nothing and destroys useful metadata."""
+        from src.gitlab_read_mcp import redact_secrets
+
+        payload = {
+            "ci_job_token_scope_enabled": False,
+            "ci_push_repository_for_job_token_allowed": False,
+            "runner_token_expiration_interval": None,
+            "ci_id_token_sub_claim_components": ["project_path", "ref_type"],
+        }
+
+        self.assertEqual(payload, redact_secrets(payload))
+
+    def test_every_spelling_of_a_credential_is_caught(self) -> None:
+        from src.gitlab_read_mcp import REDACTED, redact_secrets
+
+        payload = {
+            "runners_token": "a",
+            "private_token": "b",
+            "access_key": "c",
+            "api_key": "d",
+            "apiKey": "e",
+            "client_secret": "f",
+            "password": "g",
+            "passwd": "h",
+            "authorization": "i",
+            "private_key": "j",
+            "some_credential": "k",
+        }
+
+        cleaned = redact_secrets(payload)
+
+        self.assertEqual({REDACTED}, set(cleaned.values()))
+        self.assertEqual(set(payload), set(cleaned))
+
+    def test_nested_and_listed_values_are_reached(self) -> None:
+        """A single top-level pass would miss a token inside a member list or a
+        nested settings object."""
+        from src.gitlab_read_mcp import REDACTED, redact_secrets
+
+        cleaned = redact_secrets(
+            {
+                "members": [{"name": "a", "access_token": "secret-one"}],
+                "settings": {"nested": {"runners_token": "secret-two"}},
+            }
+        )
+
+        self.assertEqual(REDACTED, cleaned["members"][0]["access_token"])
+        self.assertEqual(REDACTED, cleaned["settings"]["nested"]["runners_token"])
+        self.assertEqual("a", cleaned["members"][0]["name"])
+
+    def test_an_empty_value_is_left_alone(self) -> None:
+        """An empty string says the field is unset, which is information. The
+        marker would imply something was withheld."""
+        from src.gitlab_read_mcp import redact_secrets
+
+        self.assertEqual({"runners_token": ""}, redact_secrets({"runners_token": ""}))
+
+    def test_the_facade_redacts_before_the_response_leaves(self) -> None:
+        """The property that matters: not that the helper works, but that every
+        tool's payload passes through it."""
+        import asyncio
+        import json as _json
+
+        from src.gitlab_read_mcp import REDACTED, GitLabReadMcp
+
+        class LeakyClient:
+            def project(self, **_: object) -> dict[str, object]:
+                return {"id": 7, "runners_token": "GR1348941leakyvalue"}
+
+        facade = GitLabReadMcp(LeakyClient())
+        result = asyncio.run(facade.call_tool("gitlab_project", {"project_id": "x/y"}))
+        text = result.content[0].text
+
+        self.assertNotIn("GR1348941leakyvalue", text)
+        self.assertEqual(REDACTED, _json.loads(text)["runners_token"])
