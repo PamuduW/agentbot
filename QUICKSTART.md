@@ -4,9 +4,13 @@ See **[README.md](README.md)** for the full slim bootstrap guide.
 
 **TL;DR:**
 
+Agentbot loads shared code from a `dotfiles-shared` checkout resolved at
+runtime. `dotfiles/bootstrap.sh` clones it; clone it yourself otherwise.
+
 **Sibling of dotfiles (recommended):**
 
 ```bash
+git clone https://github.com/PamuduW/dotfiles-shared ~/dotfiles-shared
 git clone <your-remote>/agentbot ~/agentbot   # next to ~/dotfiles
 cd ~/agentbot
 ./install.sh install
@@ -15,9 +19,11 @@ cd ~/agentbot
 `dotfiles full-update` resolves Agentbot as the sibling of the Dotfiles
 checkout, so keep the two directories under the same parent.
 
-**Standalone anywhere:**
+**Standalone anywhere.** The shared checkout is found beside Agentbot, at
+`$HOME/dotfiles-shared`, or wherever `DOTFILES_SHARED_DIR` points:
 
 ```bash
+git clone https://github.com/PamuduW/dotfiles-shared /any/path/dotfiles-shared
 git clone <your-remote>/agentbot /any/path/agentbot
 cd /any/path/agentbot
 ./install.sh install

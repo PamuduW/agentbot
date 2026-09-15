@@ -30,10 +30,18 @@ Agentbot then resolves through it and provisions nothing.
 ## Quick start
 
 ```bash
+git clone https://github.com/PamuduW/dotfiles-shared ~/dotfiles-shared
 git clone <your-remote>/agentbot ~/agentbot
 cd ~/agentbot
 ./install.sh install
 ```
+
+Agentbot loads its terminal stack, token storage and repository-update machinery
+from [`dotfiles-shared`](https://github.com/PamuduW/dotfiles-shared), a separate
+repository resolved at runtime. `dotfiles/bootstrap.sh` clones it; clone it
+yourself when installing Agentbot on its own. It is found beside this checkout,
+at `$HOME/dotfiles-shared`, or wherever `DOTFILES_SHARED_DIR` points, and a
+missing one stops with the clone command rather than part-way through.
 
 Install validates the checkout, installs enabled skill sources, refreshes
 optional Graphify and Boost integrations when their CLIs exist, reconciles the
