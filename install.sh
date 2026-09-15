@@ -422,6 +422,14 @@ run_full() {
 	# This command restarts itself when the checkout moves, so the repository
 	# gate must not tell the operator to run setup again.
 	export REPO_UPDATE_CALLER_RESTARTS=1
+	# Inside a full run both of these are repeats. Install has just printed a
+	# summary of every component, so a thirteen-row status between the two
+	# stages restates it, and the Doctor table it prints appears again in the
+	# caller's postflight. Both still run -- their exit codes decide the run --
+	# they just stop narrating themselves, which is what the sibling product's
+	# full update does with its own phases.
+	export AGENTBOT_UPDATE_SHOW_STATUS=0
+	export AGENTBOT_INSTALL_SHOW_DOCTOR=0
 	for stage in install update; do
 		while true; do
 			rc=0

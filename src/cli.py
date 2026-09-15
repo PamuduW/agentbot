@@ -1194,7 +1194,13 @@ def run_agentbot_install(
     # One table for everything the run did, then the doctor, then the time.
     ok, check, miss = print_install_summary(outcome)
     print_install_closing_line(ok=ok, check=check, miss=miss)
-    doctor_rc = print_doctor_summary(list(outcome.diagnostics.issues))
+    # The table is skipped inside a full run, where the caller's postflight
+    # prints the same one. The result still decides the exit code: this is a
+    # quieter surface, not a dropped check.
+    if os.environ.get("AGENTBOT_INSTALL_SHOW_DOCTOR", "1") == "0":
+        doctor_rc = 1 if outcome.diagnostics.issues else 0
+    else:
+        doctor_rc = print_doctor_summary(list(outcome.diagnostics.issues))
     # Last, after the report it describes -- the same place the sibling
     # product's install puts it.
     print_timing("Install", log.seconds, log.total)
