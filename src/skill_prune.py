@@ -131,10 +131,7 @@ def plan_prune(paths: AgentbotPaths, config: SkillsSourcesConfig) -> PruneReport
 
     active_repos = {source.repo: source for source in config.active_sources() if source.repo}
     declared_names = {
-        name
-        for source in config.active_sources()
-        for name in source.skills
-        if name != "*"
+        name for source in config.active_sources() for name in source.skills if name != "*"
     }
     candidates: list[PruneCandidate] = []
 
@@ -236,9 +233,7 @@ def _bridge_is_owned(link: Path, owned_root: Path) -> bool:
     return True
 
 
-def _prepare_lock_update(
-    lock_file: Path, removed: list[str], *, required: bool
-) -> Path | None:
+def _prepare_lock_update(lock_file: Path, removed: list[str], *, required: bool) -> Path | None:
     """Write the updated lock beside the destination without replacing it."""
     if not lock_file.exists() and not lock_file.is_symlink():
         if required:
@@ -280,9 +275,7 @@ def _stage_path(path: Path, staging_roots: dict[Path, Path]) -> tuple[Path, Path
     """Move one path into a private directory on the same filesystem."""
     staging_root = staging_roots.get(path.parent)
     if staging_root is None:
-        staging_root = Path(
-            tempfile.mkdtemp(prefix=".agentbot-prune-", dir=path.parent)
-        )
+        staging_root = Path(tempfile.mkdtemp(prefix=".agentbot-prune-", dir=path.parent))
         staging_roots[path.parent] = staging_root
     staged = staging_root / str(len(tuple(staging_root.iterdir())))
     path.rename(staged)
@@ -310,9 +303,7 @@ def apply_prune(
         include_manual
     )
     if selectors > 1:
-        raise ValueError(
-            "include_manual, manual_names, and candidate_names cannot be combined"
-        )
+        raise ValueError("include_manual, manual_names, and candidate_names cannot be combined")
 
     if candidate_names is not None:
         candidates_by_name = {item.name: item for item in report.candidates}
@@ -367,6 +358,4 @@ def apply_prune(
     for staging_root in staging_roots.values():
         shutil.rmtree(staging_root)
 
-    return PruneReport(
-        candidates=report.candidates, removed=tuple(sorted(removed)), applied=True
-    )
+    return PruneReport(candidates=report.candidates, removed=tuple(sorted(removed)), applied=True)

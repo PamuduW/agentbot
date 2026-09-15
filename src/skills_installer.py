@@ -48,13 +48,7 @@ class SkillsUpdateReport:
     @property
     def deleted_skills(self) -> tuple[str, ...]:
         return tuple(
-            sorted(
-                {
-                    skill
-                    for _source, skills in self.deleted_by_source
-                    for skill in skills
-                }
-            )
+            sorted({skill for _source, skills in self.deleted_by_source for skill in skills})
         )
 
 
@@ -167,9 +161,7 @@ def parse_update_output(*outputs: str) -> SkillsUpdateReport:
     return SkillsUpdateReport(
         updated_skills=tuple(sorted(updated)),
         deleted_by_source=tuple(
-            (source, tuple(sorted(skills)))
-            for source, skills in sorted(deleted.items())
-            if skills
+            (source, tuple(sorted(skills))) for source, skills in sorted(deleted.items()) if skills
         ),
     )
 
@@ -221,9 +213,7 @@ def _require_global_lock(global_lock_file: Path | None) -> Path:
     into the real user lock instead of its own sandbox.
     """
     if global_lock_file is None:
-        raise SkillsInstallError(
-            "global lock path is required to record a source-owned skill pin"
-        )
+        raise SkillsInstallError("global lock path is required to record a source-owned skill pin")
     return global_lock_file
 
 
@@ -235,7 +225,9 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
 
         lock = json.loads(lock_file.read_text(encoding="utf-8")) if lock_file.is_file() else {}
     except (OSError, ValueError) as error:
-        raise SkillsInstallError(f"unable to read global skill lock {lock_file}: {error}") from error
+        raise SkillsInstallError(
+            f"unable to read global skill lock {lock_file}: {error}"
+        ) from error
     if not isinstance(lock, dict):
         raise SkillsInstallError(f"global skill lock {lock_file} must be a JSON object")
     skills = lock.setdefault("skills", {})
@@ -244,16 +236,23 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
 
     wanted = None if source.skills == ["*"] else set(source.skills)
     installed_skills_home = lock_file.parent / "skills"
-    installed_names = {
-        entry.name
-        for entry in installed_skills_home.iterdir()
-        if entry.is_dir() and (entry / "SKILL.md").is_file()
-    } if installed_skills_home.is_dir() else set()
+    installed_names = (
+        {
+            entry.name
+            for entry in installed_skills_home.iterdir()
+            if entry.is_dir() and (entry / "SKILL.md").is_file()
+        }
+        if installed_skills_home.is_dir()
+        else set()
+    )
 
     checkout_skills: dict[str, Path] = {}
     for skill_file in sorted(
         checkout.rglob("SKILL.md"),
-        key=lambda path: (len(path.relative_to(checkout).parts), path.relative_to(checkout).as_posix()),
+        key=lambda path: (
+            len(path.relative_to(checkout).parts),
+            path.relative_to(checkout).as_posix(),
+        ),
     ):
         name = skill_name_from_file(skill_file)
         if (wanted is None or name in wanted) and name in installed_names:
@@ -263,7 +262,11 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
     # ignores. Only pin names that the successful command actually installed.
     # Reconcile earlier fallback pins for this source at the same time.
     for name, entry in list(skills.items()):
-        if isinstance(entry, dict) and entry.get("source") == source.repo and name not in checkout_skills:
+        if (
+            isinstance(entry, dict)
+            and entry.get("source") == source.repo
+            and name not in checkout_skills
+        ):
             del skills[name]
 
     now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -472,9 +475,7 @@ def install_source(
             argv[4] = str(checkout)
             result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
             if result.returncode == 0 and global_scope:
-                _record_checkout_lock(
-                    source, checkout, _require_global_lock(global_lock_file)
-                )
+                _record_checkout_lock(source, checkout, _require_global_lock(global_lock_file))
             result = InstallResult(
                 source_id=result.source_id,
                 command=build_add_argv(
@@ -495,12 +496,12 @@ def install_source(
                 argv[4] = str(checkout)
                 result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
                 if result.returncode == 0 and global_scope:
-                    _record_checkout_lock(
-                        source, checkout, _require_global_lock(global_lock_file)
-                    )
+                    _record_checkout_lock(source, checkout, _require_global_lock(global_lock_file))
                 result = InstallResult(
                     source_id=result.source_id,
-                    command=build_add_argv(source, agents=agents, global_scope=global_scope, npx=npx),
+                    command=build_add_argv(
+                        source, agents=agents, global_scope=global_scope, npx=npx
+                    ),
                     returncode=result.returncode,
                     stdout=result.stdout,
                     stderr=result.stderr,
@@ -588,9 +589,7 @@ def install_skills(
     # install.sh path does not set, so exactly the long unattended run reported
     # nothing at all. Emit whenever someone is watching.
     progress = (
-        _print_install_progress
-        if os.environ.get("AGENTBOT_TUI") or sys.stdout.isatty()
-        else None
+        _print_install_progress if os.environ.get("AGENTBOT_TUI") or sys.stdout.isatty() else None
     )
     results = install_all(
         config,
@@ -672,7 +671,9 @@ def doctor_skills(paths: AgentbotPaths) -> list[DoctorIssue]:
             config = load_skills_sources(paths.skills_sources_file)
         except ValueError as error:
             issues.append(
-                DoctorIssue(level="error", scope="skills", message=f"Invalid skills sources file: {error}")
+                DoctorIssue(
+                    level="error", scope="skills", message=f"Invalid skills sources file: {error}"
+                )
             )
 
     if shutil.which("npx") is None:
@@ -684,7 +685,10 @@ def doctor_skills(paths: AgentbotPaths) -> list[DoctorIssue]:
             )
         )
 
-    for label, lock_file in (("project", paths.skills_lock_file), ("global", paths.global_skill_lock)):
+    for label, lock_file in (
+        ("project", paths.skills_lock_file),
+        ("global", paths.global_skill_lock),
+    ):
         if not lock_file.is_file():
             continue
         try:
@@ -705,11 +709,7 @@ def doctor_skills(paths: AgentbotPaths) -> list[DoctorIssue]:
     if config is not None and config.scope == "global":
         locked = _lock_skill_names(paths.global_skill_lock)
         if locked is not None and paths.global_skill_lock.is_file():
-            declared = {
-                skill
-                for source in config.active_sources()
-                for skill in source.skills
-            }
+            declared = {skill for source in config.active_sources() for skill in source.skills}
             declared.discard("*")
             for skill in sorted(declared - locked):
                 issues.append(

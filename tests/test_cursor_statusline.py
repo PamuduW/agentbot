@@ -125,7 +125,9 @@ class CursorStatuslineTests(unittest.TestCase):
 
     def test_a_drifted_script_reads_as_stale(self) -> None:
         install_cursor_statusline(self.paths)
-        statusline_destination(self.paths).write_text("#!/bin/bash\necho drifted\n", encoding="utf-8")
+        statusline_destination(self.paths).write_text(
+            "#!/bin/bash\necho drifted\n", encoding="utf-8"
+        )
 
         self.assertEqual(inspect_cursor_statusline(self.paths).state, "stale")
 
@@ -147,7 +149,9 @@ class CursorStatuslineTests(unittest.TestCase):
         """Two separate surfaces; installing one must not disturb the other."""
         claude_settings = self.paths.claude_home / "settings.json"
         claude_settings.parent.mkdir(parents=True, exist_ok=True)
-        claude_settings.write_text('{"statusLine": {"command": "~/.claude/x.sh"}}', encoding="utf-8")
+        claude_settings.write_text(
+            '{"statusLine": {"command": "~/.claude/x.sh"}}', encoding="utf-8"
+        )
         claude_script = self.paths.claude_home / "statusline-command.sh"
         claude_script.write_text("claude\n", encoding="utf-8")
 

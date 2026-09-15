@@ -108,7 +108,11 @@ class WorkspaceRenderTests(unittest.TestCase):
     def test_each_compatibility_target_uses_a_sibling_review_name(self) -> None:
         targets = (
             ("claude", "CLAUDE.md", "CLAUDE_temp.md"),
-            ("cursor", ".cursor/rules/agentbot-policy.mdc", ".cursor/rules/agentbot-policy_temp.mdc"),
+            (
+                "cursor",
+                ".cursor/rules/agentbot-policy.mdc",
+                ".cursor/rules/agentbot-policy_temp.mdc",
+            ),
         )
 
         for target, relative_path, review_path in targets:
@@ -239,10 +243,7 @@ class WorkspaceRenderTests(unittest.TestCase):
         self.assertIn(MANAGED_BEGIN, second.action_for("AGENTS.md").content or "")
 
     def test_malformed_agents_markers_get_a_review_template(self) -> None:
-        malformed = (
-            f"{MANAGED_BEGIN}\n"
-            "# incomplete\n"
-        )
+        malformed = f"{MANAGED_BEGIN}\n# incomplete\n"
 
         plan = build_workspace_render_plan(
             self.base_agents,
@@ -274,10 +275,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             self.root,
             first,
         )
-        current = {
-            path: (self.root / path).read_text(encoding="utf-8")
-            for path in first.paths()
-        }
+        current = {path: (self.root / path).read_text(encoding="utf-8") for path in first.paths()}
 
         second = build_workspace_render_plan(
             self.base_agents,

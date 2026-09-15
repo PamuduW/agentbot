@@ -61,7 +61,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
             ),
         ),
         "May install skills, reconcile editor surfaces, and write managed global outputs and the launcher link.",
-        ("agentbot install", "agentbot install --components skills,boost", "agentbot install --menu"),
+        (
+            "agentbot install",
+            "agentbot install --components skills,boost",
+            "agentbot install --menu",
+        ),
         ("status", "doctor"),
         "public",
         ("install",),
@@ -215,7 +219,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Inspect, set up, or remove the optional Boost shell-output integration.",
         (
             option("status", "Inspect CLI, safety config, and per-host state.", "default"),
-            option("setup", "Wire Boost for whichever of Claude, Codex, and Cursor are installed.", "explicit"),
+            option(
+                "setup",
+                "Wire Boost for whichever of Claude, Codex, and Cursor are installed.",
+                "explicit",
+            ),
             option("off", "Remove Boost integration, including leftover host files.", "explicit"),
         ),
         "Status is read-only; setup/off may update Boost config and agent hooks.",
@@ -236,10 +244,16 @@ COMMANDS: tuple[CommandSpec, ...] = (
             option("--select ID...", "Choose one or more catalog IDs.", "required"),
             option("--targets CLIENT...", "Choose Claude, Codex, or Cursor.", "required"),
             option("setup|off --yes", "Apply or remove owned entries.", "confirmation required"),
-            option("restore ID --yes", "Restore one complete guarded backup.", "confirmation required"),
+            option(
+                "restore ID --yes", "Restore one complete guarded backup.", "confirmation required"
+            ),
         ),
         "Reads the catalog and private ownership state; confirmed mutations may update native client configuration and secure backups.",
-        ("agentbot mcp catalog", "agentbot mcp status", "agentbot mcp plan --select github --targets claude codex"),
+        (
+            "agentbot mcp catalog",
+            "agentbot mcp status",
+            "agentbot mcp plan --select github --targets claude codex",
+        ),
         ("doctor", "status"),
         "public",
         (
@@ -260,7 +274,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
         (
             option("status", "Show whether a token is saved, by fingerprint only.", "read-only"),
             option("set", "Save a token read from standard input.", "stdin only"),
-            option("check", "Ask GitLab whether the saved token is accepted, and for what scopes.", "network"),
+            option(
+                "check",
+                "Ask GitLab whether the saved token is accepted, and for what scopes.",
+                "network",
+            ),
             option("reveal", "Print the saved token once.", "explicit"),
             option("remove", "Delete the saved token.", "explicit"),
         ),
@@ -283,7 +301,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Merge the declared Claude, Codex, and Cursor CLI configuration keys.",
         (
             option("status", "Preview what a run would change. Writes nothing.", "default"),
-            option("apply", "Merge the declared keys, rolling back if any target fails.", "explicit"),
+            option(
+                "apply", "Merge the declared keys, rolling back if any target fails.", "explicit"
+            ),
         ),
         "Status is read-only; apply merges owned keys into each CLI config after backing it up.",
         ("agentbot cli-config status", "agentbot cli-config apply"),
@@ -298,7 +318,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Inspect or install the managed Cursor CLI statusline.",
         (
             option("status", "Report the Cursor statusline state. Read-only.", "default"),
-            option("statusline", "Install the managed statusline and point Cursor at it.", "explicit"),
+            option(
+                "statusline", "Install the managed statusline and point Cursor at it.", "explicit"
+            ),
         ),
         "Status is read-only; statusline writes ~/.cursor/statusline-command.sh and the statusLine block in cli-config.json.",
         ("agentbot cursor status", "agentbot cursor statusline"),
@@ -314,7 +336,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         (
             option("status", "Preview what a run would change. Writes nothing.", "default"),
             option("seed", "Record the currently installed extensions in vscode.yaml.", "explicit"),
-            option("apply", "Install missing extensions and merge owned settings keys.", "explicit"),
+            option(
+                "apply", "Install missing extensions and merge owned settings keys.", "explicit"
+            ),
         ),
         "Status is read-only; apply installs extensions and merges owned settings after backing files up.",
         ("agentbot vscode status", "agentbot vscode seed", "agentbot vscode apply"),
@@ -421,7 +445,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "mutating",
         "List, preview, or selectively remove user-placed global skills.",
         (
-            option("SKILL ...", "Select exact manual skill names.", "all in preview; none on apply"),
+            option(
+                "SKILL ...", "Select exact manual skill names.", "all in preview; none on apply"
+            ),
             option("--yes", "Permanently remove the selected skills.", "off"),
             option("--names0", "Print eligible names separated by NUL bytes.", "off"),
         ),

@@ -144,8 +144,7 @@ def build_workspace_render_plan(
             )
         )
         if (
-            existing is not None
-            and not _is_agentbot_owned_compatibility(relative_path, existing)
+            existing is not None and not _is_agentbot_owned_compatibility(relative_path, existing)
         ) or _has_review_template(relative_path, existing_files):
             actions.append(
                 build_review_template_action(
@@ -244,11 +243,7 @@ def build_review_template_action(
                     stamped,
                     f"refresh {candidate} review template",
                 )
-            state = (
-                "edited-current"
-                if recorded_digest == desired_digest
-                else "edited-stale"
-            )
+            state = "edited-current" if recorded_digest == desired_digest else "edited-stale"
 
         if state == "edited-current":
             return RenderAction(
@@ -261,10 +256,7 @@ def build_review_template_action(
 
 
 def _has_review_template(relative_path: str, existing_files: Mapping[str, str]) -> bool:
-    return any(
-        is_review_template_path(relative_path, candidate)
-        for candidate in existing_files
-    )
+    return any(is_review_template_path(relative_path, candidate) for candidate in existing_files)
 
 
 def resolve_agents_policy(
@@ -279,10 +271,7 @@ def resolve_agents_policy(
 
     has_marker = MANAGED_BEGIN in existing_content or MANAGED_END in existing_content
     if has_marker:
-        if (
-            existing_content.count(MANAGED_BEGIN) != 1
-            or existing_content.count(MANAGED_END) != 1
-        ):
+        if existing_content.count(MANAGED_BEGIN) != 1 or existing_content.count(MANAGED_END) != 1:
             raise ValueError("AGENTS.md has an invalid Agentbot marker pair")
         begin = existing_content.index(MANAGED_BEGIN)
         end = existing_content.index(MANAGED_END)
@@ -292,11 +281,7 @@ def resolve_agents_policy(
         suffix = existing_content[suffix_start:]
         if PROJECT_HEADING.search(suffix) is None:
             raise ValueError("managed AGENTS.md must contain a ## Project section after markers")
-        replacement = (
-            f"{MANAGED_BEGIN}\n\n"
-            f"{base_prefix.rstrip()}\n\n"
-            f"{MANAGED_END}"
-        )
+        replacement = f"{MANAGED_BEGIN}\n\n{base_prefix.rstrip()}\n\n{MANAGED_END}"
         return (
             existing_content[:begin] + replacement + existing_content[suffix_start:],
             "managed",
@@ -307,8 +292,7 @@ def resolve_agents_policy(
     if (
         base_match is not None
         and existing_match is not None
-        and existing_content[: existing_match.start()]
-        == base_template[: base_match.start()]
+        and existing_content[: existing_match.start()] == base_template[: base_match.start()]
     ):
         project_section = existing_content[existing_match.start() :].lstrip("\n")
         return render_managed_agents(base_prefix, project_section), "managed"
@@ -401,8 +385,7 @@ def _validate_existing_paths(existing_files: Mapping[str, str]) -> None:
     allowed = set(OUTPUT_PATHS.values())
     for path in existing_files:
         if path not in allowed and not any(
-            is_review_template_path(output_path, path)
-            for output_path in allowed
+            is_review_template_path(output_path, path) for output_path in allowed
         ):
             raise ValueError(f"unsupported workspace target: {path}")
 

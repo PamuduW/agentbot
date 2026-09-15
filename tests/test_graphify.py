@@ -31,12 +31,16 @@ class GraphifyIntegrationTests(unittest.TestCase):
         executable = self.fake_bin / "graphify"
         executable.write_text(
             "#!/usr/bin/env bash\n"
-            "if [[ \"$1\" == --version ]]; then printf 'graphify %s\\n' '" + version + "'; exit 0; fi\n"
+            "if [[ \"$1\" == --version ]]; then printf 'graphify %s\\n' '"
+            + version
+            + "'; exit 0; fi\n"
             "if [[ \"$1 $2 $3\" == 'install --platform agents' ]]; then\n"
-            "  mkdir -p \"$HOME/.agents/skills/graphify\"\n"
+            '  mkdir -p "$HOME/.agents/skills/graphify"\n'
             "  printf '# graphify\\n' >\"$HOME/.agents/skills/graphify/SKILL.md\"\n"
-            "  printf '%s\\n' '" + version + "' >\"$HOME/.agents/skills/graphify/.graphify_version\"\n"
-            "  printf '%s\\n' \"$*\" >>\"$GRAPHIFY_TEST_LOG\"\n"
+            "  printf '%s\\n' '"
+            + version
+            + '\' >"$HOME/.agents/skills/graphify/.graphify_version"\n'
+            '  printf \'%s\\n\' "$*" >>"$GRAPHIFY_TEST_LOG"\n'
             "  exit 0\n"
             "fi\n"
             "exit 23\n",
@@ -62,8 +66,9 @@ class GraphifyIntegrationTests(unittest.TestCase):
 
         paths = self._paths()
         before = sorted(path.relative_to(self.root) for path in self.root.rglob("*"))
-        with patch("src.graphify.shutil.which", return_value=None), patch.dict(
-            os.environ, self._env(), clear=False
+        with (
+            patch("src.graphify.shutil.which", return_value=None),
+            patch.dict(os.environ, self._env(), clear=False),
         ):
             status = GraphifyIntegration(paths).status()
         after = sorted(path.relative_to(self.root) for path in self.root.rglob("*"))
@@ -135,8 +140,9 @@ class GraphifyIntegrationTests(unittest.TestCase):
     def test_setup_fails_with_actionable_message_when_cli_is_absent(self) -> None:
         from src.graphify import GraphifyIntegration
 
-        with patch("src.graphify.shutil.which", return_value=None), patch.dict(
-            os.environ, self._env(), clear=False
+        with (
+            patch("src.graphify.shutil.which", return_value=None),
+            patch.dict(os.environ, self._env(), clear=False),
         ):
             status = GraphifyIntegration(self._paths()).setup()
 
@@ -164,10 +170,13 @@ class GraphifyIntegrationTests(unittest.TestCase):
             "Graphify CLI is installed.",
         )
 
-        with patch.object(integration, "status", return_value=current), patch.dict(
-            os.environ,
-            {"AGENTBOT_GRAPHIFY_TIMEOUT_SECONDS": "17"},
-            clear=False,
+        with (
+            patch.object(integration, "status", return_value=current),
+            patch.dict(
+                os.environ,
+                {"AGENTBOT_GRAPHIFY_TIMEOUT_SECONDS": "17"},
+                clear=False,
+            ),
         ):
             status = integration.setup()
 
@@ -182,11 +191,14 @@ class GraphifyIntegrationTests(unittest.TestCase):
         self._write_graphify()
         log = self.root / "graphify-service.log"
         service = Lifecycle(self._paths())
-        with patch.dict(
-            os.environ,
-            {**self._env(), "GRAPHIFY_TEST_LOG": str(log)},
-            clear=False,
-        ), patch.object(service, "refresh_outputs") as refresh:
+        with (
+            patch.dict(
+                os.environ,
+                {**self._env(), "GRAPHIFY_TEST_LOG": str(log)},
+                clear=False,
+            ),
+            patch.object(service, "refresh_outputs") as refresh,
+        ):
             status = service.setup_graphify()
 
         self.assertEqual("ready", status.state)
@@ -198,18 +210,20 @@ class GraphifyIntegrationTests(unittest.TestCase):
         self._write_graphify()
         log = self.root / "graphify-sync.log"
         service = Lifecycle(self._paths())
-        with patch.dict(
-            os.environ,
-            {**self._env(), "GRAPHIFY_TEST_LOG": str(log)},
-            clear=False,
-        ), patch.object(
-            service, "refresh_outputs"
-        ) as refresh:
+        with (
+            patch.dict(
+                os.environ,
+                {**self._env(), "GRAPHIFY_TEST_LOG": str(log)},
+                clear=False,
+            ),
+            patch.object(service, "refresh_outputs") as refresh,
+        ):
             status = service.sync_graphify_if_cli_available()
 
         self.assertEqual("ready", status.state)
         self.assertEqual("install --platform agents", log.read_text(encoding="utf-8").strip())
         refresh.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

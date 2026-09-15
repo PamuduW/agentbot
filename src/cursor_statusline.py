@@ -152,7 +152,9 @@ def install_cursor_statusline(paths: AgentbotPaths) -> CursorStatuslineState:
 
     destination = statusline_destination(paths)
     if destination.is_symlink():
-        return CursorStatuslineState("broken", f"refusing to write through a symlink: {destination}")
+        return CursorStatuslineState(
+            "broken", f"refusing to write through a symlink: {destination}"
+        )
     write_text_atomic(destination, source.read_text(encoding="utf-8"), backup=destination.is_file())
     destination.chmod(0o755)
 

@@ -110,7 +110,9 @@ class GraphifyReferenceTests(unittest.TestCase):
             self.assertEqual(
                 graphify_lib.main(["--section", "shell", "--command", "graphify hook status"]), 0
             )
-        self.assertEqual(out.getvalue().strip(), "Hook status\x1fInspect repository hook integration.")
+        self.assertEqual(
+            out.getvalue().strip(), "Hook status\x1fInspect repository hook integration."
+        )
 
     def test_an_unknown_command_fails_rather_than_printing_a_blank_page(self) -> None:
         self.assertEqual(graphify_lib.main(["--section", "shell", "--command", "nope"]), 1)

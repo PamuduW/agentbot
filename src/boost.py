@@ -227,10 +227,7 @@ class BoostIntegration:
                 f"Boost hook files are installed for {hosts} but no hook is registered, "
                 "so nothing is filtered. Rerun 'agentbot boost setup'."
             )
-        elif any(
-            host_state in {"missing", "partial", "orphaned"}
-            for _, host_state in host_states
-        ):
+        elif any(host_state in {"missing", "partial", "orphaned"} for _, host_state in host_states):
             hosts = self._join_host_names(
                 name
                 for name, host_state in host_states
@@ -324,9 +321,7 @@ class BoostIntegration:
             # The quoted subtable name is the section, so the existing writer
             # handles these without a second TOML path. Only `user` is written;
             # `remote` stays JFrog's to set.
-            updated = self._set_section_bool(
-                updated, f'feature_flags."{flag}"', "user", value
-            )
+            updated = self._set_section_bool(updated, f'feature_flags."{flag}"', "user", value)
         try:
             parsed = tomllib.loads(updated)
         except tomllib.TOMLDecodeError as error:
@@ -418,9 +413,7 @@ class BoostIntegration:
                 state="broken",
                 message="Boost dry run contains forbidden BoostGraph, MCP, or indexing behavior.",
             )
-        missing_targets = [
-            host.label for host in selected if host.plan_token not in plan
-        ]
+        missing_targets = [host.label for host in selected if host.plan_token not in plan]
         if missing_targets:
             return replace(
                 self.status(),

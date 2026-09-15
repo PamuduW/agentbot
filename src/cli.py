@@ -105,10 +105,7 @@ def main() -> int:
 
 
 def _requires_raw_stdout(argv: tuple[str, ...]) -> bool:
-    return any(
-        argv[index : index + 2] == ("mcp", "serve")
-        for index in range(len(argv) - 1)
-    )
+    return any(argv[index : index + 2] == ("mcp", "serve") for index in range(len(argv) - 1))
 
 
 def _run() -> int:
@@ -226,9 +223,7 @@ def _handle_cursor(context: CommandContext) -> int:
         else inspect_cursor_statusline(context.paths)
     )
     print_header("Cursor", "Agentbot \u203a Cursor")
-    ok, check, miss = print_table(
-        [("Statusline", f"{state.state}: {state.detail}", state.result)]
-    )
+    ok, check, miss = print_table([("Statusline", f"{state.state}: {state.detail}", state.result)])
     print_rollup(ok=ok, check=check, miss=miss)
     # Non-zero means something is wrong, not something is pending -- the same
     # rule _handle_boost and _handle_vscode follow, and the one
@@ -399,8 +394,10 @@ def _handle_mcp(context: CommandContext) -> int:
 
     selection = tuple(context.args.mcp_select)
     targets = tuple(context.args.mcp_targets)
-    plan = service.plan(selection, targets) if command != "off" else service.plan_off(
-        selection, targets
+    plan = (
+        service.plan(selection, targets)
+        if command != "off"
+        else service.plan_off(selection, targets)
     )
     print_mcp_plan(plan, json_output=json_output)
     if not plan.can_apply:
@@ -509,9 +506,7 @@ def _handle_workspace(context: CommandContext) -> int:
             path, profile=args.profile, targets=targets, register=True
         )
     else:
-        result = context.lifecycle.preview_workspace(
-            path, profile=args.profile, targets=targets
-        )
+        result = context.lifecycle.preview_workspace(path, profile=args.profile, targets=targets)
     print_workspace_report(result)
     return 1 if result.status in {"conflict", "failed"} else 0
 
@@ -1012,9 +1007,7 @@ def handle_skills_prune(
 
     selected_report = report
     if names:
-        selected_report = PruneReport(
-            candidates=tuple(candidates_by_name[name] for name in names)
-        )
+        selected_report = PruneReport(candidates=tuple(candidates_by_name[name] for name in names))
     if apply:
         selected_report = apply_prune(
             paths,
@@ -1085,9 +1078,7 @@ def handle_skills_command(lifecycle: Lifecycle, skills_command: str) -> int:
         # One rollup for both sections, at the end. The sources printed one
         # mid-surface and the output refresh printed none, so the screen closed
         # on a table.
-        print_rollup(
-            ok=ok + refreshed[0], check=check + refreshed[1], miss=miss + refreshed[2]
-        )
+        print_rollup(ok=ok + refreshed[0], check=check + refreshed[1], miss=miss + refreshed[2])
         return install_rc
     if skills_command in {"update", "upgrade"}:
         title = skills_command.capitalize()
@@ -1264,7 +1255,7 @@ def print_status(diagnostics: Diagnostics, *, include_issues: bool = False) -> i
         mcp_managed_count=snapshot.mcp_managed_count,
         # The checkout Diagnostics was built against, so status reports on the
         # repository it actually inspected rather than the process's cwd.
-        repo_root=getattr(getattr(diagnostics, 'paths', None), 'root', None),
+        repo_root=getattr(getattr(diagnostics, "paths", None), "root", None),
         platform=_platform_status_rows(diagnostics),
     )
     if include_issues:

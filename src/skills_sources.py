@@ -82,9 +82,7 @@ class SkillsSourcesConfig:
 
     def active_sources(self) -> list[SkillSourceEntry]:
         return [
-            source
-            for source in self.sources
-            if source.enabled and source.repo and source.skills
+            source for source in self.sources if source.enabled and source.repo and source.skills
         ]
 
 
@@ -99,12 +97,16 @@ def load_skills_sources(path: Path) -> SkillsSourcesConfig:
     return validate_skills_sources(raw, path=path)
 
 
-def validate_skills_sources(raw: dict[str, Any], *, path: Path | None = None) -> SkillsSourcesConfig:
+def validate_skills_sources(
+    raw: dict[str, Any], *, path: Path | None = None
+) -> SkillsSourcesConfig:
     label = str(path) if path is not None else "skills.sources.yaml"
 
     version = raw.get("version")
     if version != SUPPORTED_VERSION:
-        raise SkillsSourcesError(f"{label}: unsupported version {version!r} (expected {SUPPORTED_VERSION})")
+        raise SkillsSourcesError(
+            f"{label}: unsupported version {version!r} (expected {SUPPORTED_VERSION})"
+        )
 
     agents = _require_string_list(raw.get("agents"), field_name="agents", label=label)
     if not agents:
@@ -159,7 +161,9 @@ def validate_skills_sources(raw: dict[str, Any], *, path: Path | None = None) ->
             )
         )
 
-    config = SkillsSourcesConfig(version=version, agents=agents, scope=scope.strip(), sources=sources)
+    config = SkillsSourcesConfig(
+        version=version, agents=agents, scope=scope.strip(), sources=sources
+    )
     _validate_active_skill_ownership(config, label=label)
     return config
 

@@ -31,7 +31,9 @@ class GlobalResyncTests(unittest.TestCase):
     def test_plan_reports_missing_global_outputs_and_statusline(self) -> None:
         from src.render import plan_global_resync_actions
 
-        actions = {action.relative_path: action for action in plan_global_resync_actions(self._paths())}
+        actions = {
+            action.relative_path: action for action in plan_global_resync_actions(self._paths())
+        }
         self.assertEqual("create", actions["~/.codex/AGENTS.md"].kind)
         self.assertEqual("create", actions["~/.claude/CLAUDE.md"].kind)
         # Claude Code reads CLAUDE.md, not AGENTS.md, at the user scope.
@@ -66,10 +68,13 @@ class GlobalResyncTests(unittest.TestCase):
 
         service = Lifecycle(self._paths())
         empty = WorkspaceReport(results=())
-        with mock.patch.object(service.workspace_service, "resync", return_value=empty), mock.patch(
-            "src.lifecycle.resync_global_outputs",
-            return_value=(),
-        ) as global_resync:
+        with (
+            mock.patch.object(service.workspace_service, "resync", return_value=empty),
+            mock.patch(
+                "src.lifecycle.resync_global_outputs",
+                return_value=(),
+            ) as global_resync,
+        ):
             report = service.resync_workspaces(apply=True, paths=())
 
         global_resync.assert_called_once_with(service.paths, apply=True)

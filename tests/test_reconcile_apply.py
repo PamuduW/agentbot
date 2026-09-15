@@ -34,12 +34,20 @@ class ReconcileApplyTests(unittest.TestCase):
         self._skill("keep")
         self._skill("manual")
         self.lock = self.home / ".agents" / ".skill-lock.json"
-        self.lock.write_text(json.dumps({"version": 3, "skills": {
-            "gone": {"source": "owner/repo"},
-            "keep": {"source": "owner/repo"},
-            "manual": {"source": "manual/repo"},
-            "old": {"source": "owner/all"},
-        }}), encoding="utf-8")
+        self.lock.write_text(
+            json.dumps(
+                {
+                    "version": 3,
+                    "skills": {
+                        "gone": {"source": "owner/repo"},
+                        "keep": {"source": "owner/repo"},
+                        "manual": {"source": "manual/repo"},
+                        "old": {"source": "owner/all"},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -62,8 +70,16 @@ class ReconcileApplyTests(unittest.TestCase):
             agents_home=self.root / ".agents",
         )
         patches = (
-            mock.patch.object(type(paths), "agents_skills_home", new_callable=lambda: property(lambda _self: self.agents)),
-            mock.patch.object(type(paths), "global_skill_lock", new_callable=lambda: property(lambda _self: self.lock)),
+            mock.patch.object(
+                type(paths),
+                "agents_skills_home",
+                new_callable=lambda: property(lambda _self: self.agents),
+            ),
+            mock.patch.object(
+                type(paths),
+                "global_skill_lock",
+                new_callable=lambda: property(lambda _self: self.lock),
+            ),
         )
         return paths, patches
 
@@ -82,7 +98,9 @@ class ReconcileApplyTests(unittest.TestCase):
         )
         paths, patches = self._paths()
         with patches[0], patches[1]:
-            result = apply_reconcile_plan(paths, config, plan, checkouts={"wildcard": checkout}, confirm=True)
+            result = apply_reconcile_plan(
+                paths, config, plan, checkouts={"wildcard": checkout}, confirm=True
+            )
         self.assertEqual("applied", result.status)
         self.assertTrue((self.agents / "new").is_dir())
         self.assertFalse((self.agents / "old").exists())
@@ -102,8 +120,7 @@ class ReconcileApplyTests(unittest.TestCase):
         self.lock.write_text(json.dumps(lock), encoding="utf-8")
         manifest = self.root / "skills.sources.yaml"
         manifest.write_text(
-            manifest.read_text(encoding="utf-8")
-            + "    exclude:\n      - alpha\n",
+            manifest.read_text(encoding="utf-8") + "    exclude:\n      - alpha\n",
             encoding="utf-8",
         )
         checkout = self.root / "excluded-checkout"
@@ -206,7 +223,9 @@ class ReconcileApplyTests(unittest.TestCase):
         from src.skills_sources import load_skills_sources
 
         config = load_skills_sources(self.root / "skills.sources.yaml")
-        plan = build_reconcile_plan(config, discovered={"explicit": ("gone",), "wildcard": ("new",)}, lock={"skills": {}})
+        plan = build_reconcile_plan(
+            config, discovered={"explicit": ("gone",), "wildcard": ("new",)}, lock={"skills": {}}
+        )
         paths, patches = self._paths()
         with patches[0], patches[1]:
             result = apply_reconcile_plan(paths, config, plan)
@@ -260,14 +279,20 @@ class ReconcileApplyTests(unittest.TestCase):
 
         (self.root / "AGENTS.md").write_text("| `keep` | keep |\n", encoding="utf-8")
         config = load_skills_sources(self.root / "skills.sources.yaml")
-        plan = build_reconcile_plan(config, discovered={"explicit": ("keep",), "wildcard": ()}, lock=json.loads(self.lock.read_text(encoding="utf-8")))
+        plan = build_reconcile_plan(
+            config,
+            discovered={"explicit": ("keep",), "wildcard": ()},
+            lock=json.loads(self.lock.read_text(encoding="utf-8")),
+        )
         paths, patches = self._paths()
         before = (self.root / "skills.sources.yaml").read_text(encoding="utf-8")
         with patches[0], patches[1]:
             result = apply_reconcile_plan(paths, config, plan, confirm=True)
         self.assertEqual("applied", result.status)
         self.assertFalse((self.agents / "gone").exists())
-        self.assertEqual("| `keep` | keep |\n", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertEqual(
+            "| `keep` | keep |\n", (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        )
         self.assertNotEqual(before, (self.root / "skills.sources.yaml").read_text(encoding="utf-8"))
 
     def test_failed_reconciliation_keeps_backup_outside_repository(self) -> None:
@@ -286,7 +311,9 @@ class ReconcileApplyTests(unittest.TestCase):
             raise RuntimeError("test rollback")
 
         with patches[0], patches[1]:
-            result = apply_reconcile_plan(paths, config, plan, confirm=True, validate=fail_validation)
+            result = apply_reconcile_plan(
+                paths, config, plan, confirm=True, validate=fail_validation
+            )
 
         self.assertEqual("failed", result.status)
         self.assertIsNotNone(result.backup_path)

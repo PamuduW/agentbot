@@ -58,9 +58,7 @@ class InstallLogTests(unittest.TestCase):
         lines = _render()
         opened = [line.split("] ", 1)[1] for line in lines if line.startswith("  [STEP]")]
         closed = [
-            line.split("] ", 1)[1].rsplit(" (", 1)[0]
-            for line in lines
-            if line.startswith("  [OK]")
+            line.split("] ", 1)[1].rsplit(" (", 1)[0] for line in lines if line.startswith("  [OK]")
         ]
         self.assertEqual(opened, closed)
 
@@ -154,9 +152,7 @@ class MarkerColourTests(unittest.TestCase):
         from src.skills_installer import _print_install_progress
         from src.ui.table import BOLD, CYAN
 
-        line = self._render(
-            _print_install_progress, "[STEP] Installing skill source: superpowers"
-        )
+        line = self._render(_print_install_progress, "[STEP] Installing skill source: superpowers")
         self.assertIn(BOLD + CYAN + "[STEP]", line)
         # A line with no marker is printed as it is.
         self.assertEqual("  plain text\n", self._render(_print_install_progress, "plain text"))
@@ -304,9 +300,11 @@ class StepAnimation(unittest.TestCase):
         spinner = _StepSpinner()
         terminal = io.StringIO()
         env = {key: value for key, value in os.environ.items() if key != "AGENTBOT_TUI"}
-        with mock.patch.dict(os.environ, env, clear=True), mock.patch(
-            "sys.stdout", new=io.StringIO()
-        ), mock.patch("builtins.open", return_value=terminal):
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("sys.stdout", new=io.StringIO()),
+            mock.patch("builtins.open", return_value=terminal),
+        ):
             self.assertIs(spinner._terminal(), terminal)
 
     def test_no_terminal_means_no_animation_and_no_error(self) -> None:

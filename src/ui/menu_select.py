@@ -197,6 +197,7 @@ def run(spec: dict, *, input_fd: int | None = None, output_fd: int | None = None
         return None
 
     height = menu.frame_height(labels, breadcrumb=breadcrumb, descs=descs)
+
     def frame(index: int) -> str:
         return menu.draw_simple(
             title=spec["title"],

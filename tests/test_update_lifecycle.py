@@ -96,8 +96,7 @@ class UpdateLifecycleTests(unittest.TestCase):
             root, home, paths = self._fixture(temporary)
             manifest = root / "skills.sources.yaml"
             manifest.write_text(
-                manifest.read_text(encoding="utf-8")
-                + "    exclude:\n      - beta\n",
+                manifest.read_text(encoding="utf-8") + "    exclude:\n      - beta\n",
                 encoding="utf-8",
             )
             graphify = mock.Mock()
@@ -239,9 +238,7 @@ class UpdateLifecycleTests(unittest.TestCase):
                 outcome = lifecycle.apply_update(plan)
 
             self.assertEqual("applied", outcome.status)
-            self.assertEqual(
-                ["checkout", "reconcile", "install", "surfaces"], events
-            )
+            self.assertEqual(["checkout", "reconcile", "install", "surfaces"], events)
             graphify.setup.assert_called_once_with()
             diagnostics.collect.assert_called_once_with()
 

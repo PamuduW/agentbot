@@ -752,15 +752,14 @@ def print_workspace_report(result) -> None:
     # One group, so no section rule: a rule that separates nothing is one the
     # contract does not draw, and the table prints its own column header.
     applied = result.status == "applied"
-    rows: list[tuple[str, str, str]] = []
-    for action in result.actions:
-        rows.append(
-            (
-                action.relative_path,
-                action.detail,
-                workspace_action_result(action.kind, applied=applied),
-            )
+    rows: list[tuple[str, str, str]] = [
+        (
+            action.relative_path,
+            action.detail,
+            workspace_action_result(action.kind, applied=applied),
         )
+        for action in result.actions
+    ]
     if not rows:
         rows.append((str(result.path), result.message, result.status))
     ok, check, miss = print_table(rows, wrap_details=True)
@@ -786,14 +785,14 @@ def print_workspace_resync_report(
     for result in report.results:
         if result.actions:
             applied = result.status == "applied"
-            for action in result.actions:
-                rows.append(
-                    (
-                        f"{result.path}:{action.relative_path}",
-                        action.detail,
-                        workspace_action_result(action.kind, applied=applied),
-                    )
+            rows.extend(
+                (
+                    f"{result.path}:{action.relative_path}",
+                    action.detail,
+                    workspace_action_result(action.kind, applied=applied),
                 )
+                for action in result.actions
+            )
         else:
             rows.append((str(result.path), result.message, result.status))
     ok = check = miss = 0

@@ -305,11 +305,11 @@ def installed_skill_dirs(paths: AgentbotPaths) -> list[Path]:
     if not agents_home.exists():
         return []
 
-    dirs: list[Path] = []
-    for skill_dir in sorted(agents_home.iterdir()):
-        if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-            dirs.append(skill_dir.resolve())
-    return dirs
+    return [
+        skill_dir.resolve()
+        for skill_dir in sorted(agents_home.iterdir())
+        if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists()
+    ]
 
 
 def _sync_codex_skills(paths: AgentbotPaths) -> None:

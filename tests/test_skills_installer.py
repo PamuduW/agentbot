@@ -179,7 +179,9 @@ sources:
         self.assertEqual(str(checkout), mock_run.call_args.args[0][4])
 
     @patch("src.skills_installer.run_install_command")
-    def test_install_source_records_remote_provenance_after_local_checkout(self, mock_install) -> None:
+    def test_install_source_records_remote_provenance_after_local_checkout(
+        self, mock_install
+    ) -> None:
         from src.skills_installer import install_source
         from src.skills_sources import SkillSourceEntry
 
@@ -188,7 +190,9 @@ sources:
             repo="obra/superpowers",
             skills=["brainstorming"],
         )
-        mock_install.return_value = self._success_result("superpowers", ["npx", "skills", "add", "local"])
+        mock_install.return_value = self._success_result(
+            "superpowers", ["npx", "skills", "add", "local"]
+        )
         lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
         installed_skill = lock_file.parent / "skills" / "brainstorming"
         installed_skill.mkdir(parents=True)
@@ -207,7 +211,9 @@ sources:
         self.assertEqual("github", lock["skills"]["brainstorming"]["sourceType"])
 
     @patch("src.skills_installer.run_install_command")
-    def test_install_source_wildcard_does_not_lock_checkout_test_fixtures(self, mock_install) -> None:
+    def test_install_source_wildcard_does_not_lock_checkout_test_fixtures(
+        self, mock_install
+    ) -> None:
         from src.skills_installer import install_source
         from src.skills_sources import SkillSourceEntry
 
@@ -216,7 +222,9 @@ sources:
             repo="owner/skills",
             skills=["*"],
         )
-        mock_install.return_value = self._success_result("wildcard-source", ["npx", "skills", "add", "local"])
+        mock_install.return_value = self._success_result(
+            "wildcard-source", ["npx", "skills", "add", "local"]
+        )
         lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
         lock_file.parent.mkdir(parents=True)
         lock_file.write_text(
@@ -235,7 +243,9 @@ sources:
             fixture_skill.mkdir(parents=True)
             (fixture_skill / "SKILL.md").write_text("---\nname: alpha\n---\n", encoding="utf-8")
 
-        with patch("src.skills_installer._clone_remote_source", side_effect=clone_with_skill_and_fixture):
+        with patch(
+            "src.skills_installer._clone_remote_source", side_effect=clone_with_skill_and_fixture
+        ):
             install_source(source, agents=["codex"], global_lock_file=lock_file)
 
         lock = json.loads(lock_file.read_text(encoding="utf-8"))
@@ -329,7 +339,9 @@ sources:
             lock_file.chmod(0o644)
 
         messages = [issue.message for issue in issues]
-        self.assertTrue(any("Unable to read project skills lock file" in message for message in messages))
+        self.assertTrue(
+            any("Unable to read project skills lock file" in message for message in messages)
+        )
 
     def test_run_install_command_uses_command_runner(self) -> None:
         from src.command_runner import CommandResult
@@ -355,9 +367,10 @@ sources:
 
         runner = MagicMock()
         runner.run.return_value = CommandResult(0, stdout="ok", stderr="full child log")
-        with patch.dict(os.environ, {"AGENTBOT_TUI": "1"}, clear=False), patch(
-            "sys.stdout", new_callable=io.StringIO
-        ) as output:
+        with (
+            patch.dict(os.environ, {"AGENTBOT_TUI": "1"}, clear=False),
+            patch("sys.stdout", new_callable=io.StringIO) as output,
+        ):
             result = run_install_command(
                 ["npx", "skills", "add", "owner/repo"],
                 source_id="repo",
@@ -415,11 +428,15 @@ sources:
         with patch.object(
             type(paths),
             "global_skill_lock",
-            new_callable=lambda: property(lambda self: self.root / "home" / ".agents" / ".skill-lock.json"),
+            new_callable=lambda: property(
+                lambda self: self.root / "home" / ".agents" / ".skill-lock.json"
+            ),
         ):
             messages = [issue.message for issue in doctor_skills(paths)]
 
-        self.assertTrue(any("brainstorming" in message and "absent" in message for message in messages))
+        self.assertTrue(
+            any("brainstorming" in message and "absent" in message for message in messages)
+        )
 
     @patch("src.skills_installer.shutil.which", return_value="/usr/bin/npx")
     def test_doctor_ignores_global_lock_skills_not_declared_by_manifest(self, _mock_which) -> None:
@@ -428,16 +445,22 @@ sources:
         paths = self._paths()
         global_lock = self.root / "home" / ".agents" / ".skill-lock.json"
         global_lock.parent.mkdir(parents=True)
-        global_lock.write_text(json.dumps({"skills": {"brainstorming": {}, "personal": {}}}), encoding="utf-8")
+        global_lock.write_text(
+            json.dumps({"skills": {"brainstorming": {}, "personal": {}}}), encoding="utf-8"
+        )
 
         with patch.object(
             type(paths),
             "global_skill_lock",
-            new_callable=lambda: property(lambda self: self.root / "home" / ".agents" / ".skill-lock.json"),
+            new_callable=lambda: property(
+                lambda self: self.root / "home" / ".agents" / ".skill-lock.json"
+            ),
         ):
             messages = [issue.message for issue in doctor_skills(paths)]
 
-        self.assertFalse(any("personal" in message and "not declared" in message for message in messages))
+        self.assertFalse(
+            any("personal" in message and "not declared" in message for message in messages)
+        )
 
     @patch("src.skills_installer.shutil.which", return_value="/usr/bin/npx")
     def test_doctor_treats_lock_entries_from_an_all_source_as_managed(self, _mock_which) -> None:
@@ -467,12 +490,16 @@ sources:
         with patch.object(
             type(paths),
             "global_skill_lock",
-            new_callable=lambda: property(lambda self: self.root / "home" / ".agents" / ".skill-lock.json"),
+            new_callable=lambda: property(
+                lambda self: self.root / "home" / ".agents" / ".skill-lock.json"
+            ),
         ):
             messages = [issue.message for issue in doctor_skills(paths)]
 
         self.assertFalse(any("'*'" in message for message in messages))
-        self.assertFalse(any("upstream-skill" in message and "not declared" in message for message in messages))
+        self.assertFalse(
+            any("upstream-skill" in message and "not declared" in message for message in messages)
+        )
 
     def test_run_install_command_uses_a_timeout(self) -> None:
         from src.command_runner import CommandResult
@@ -586,7 +613,11 @@ class InstallProgressTests(unittest.TestCase):
                 seen["progress"] = kwargs.get("progress")
                 return []
 
-            for isatty, tui, expected in ((True, None, True), (False, None, False), (False, "1", True)):
+            for isatty, tui, expected in (
+                (True, None, True),
+                (False, None, False),
+                (False, "1", True),
+            ):
                 with self.subTest(isatty=isatty, tui=tui):
                     seen.clear()
                     environment = {"AGENTBOT_TUI": tui} if tui else {}
@@ -623,7 +654,7 @@ class RenamedSourceMigrationTests(unittest.TestCase):
     name list in `render.py`.
     """
 
-    OLD = "PamuduW/agent" "_bootstrap_skills"
+    OLD = "PamuduW/agent_bootstrap_skills"
     NEW = "PamuduW/agentbot_skills"
 
     def _lock(self, root: Path, skills: dict) -> Path:
@@ -701,9 +732,7 @@ class RenamedSourceMigrationTests(unittest.TestCase):
         from src.skills_installer import migrate_renamed_lock_sources
 
         with tempfile.TemporaryDirectory() as temporary:
-            self.assertEqual(
-                (), migrate_renamed_lock_sources(Path(temporary) / "missing.json")
-            )
+            self.assertEqual((), migrate_renamed_lock_sources(Path(temporary) / "missing.json"))
 
     def test_the_manifest_no_longer_names_the_old_repository(self) -> None:
         manifest = Path(__file__).resolve().parents[1] / "skills.sources.yaml"
@@ -797,14 +826,10 @@ class ManagedStateWriteTests(unittest.TestCase):
         for module in sorted(source_root.rglob("*.py")):
             if module.name == "atomic_io.py":
                 continue
-            for number, line in enumerate(
-                module.read_text(encoding="utf-8").splitlines(), start=1
-            ):
+            for number, line in enumerate(module.read_text(encoding="utf-8").splitlines(), start=1):
                 if ".write_text(" not in line:
                     continue
-                if any(
-                    module.name == name and marker in line for name, marker in allowed
-                ):
+                if any(module.name == name and marker in line for name, marker in allowed):
                     continue
                 offenders.append(f"{module.name}:{number}: {line.strip()}")
         self.assertEqual([], offenders)

@@ -21,16 +21,13 @@ class McpOverlayClientTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if os.environ.get("AGENTBOT_TEST_MCP_CLIENTS") != "1":
-            raise unittest.SkipTest(
-                "set AGENTBOT_TEST_MCP_CLIENTS=1 for installed CLI acceptance"
-            )
+            raise unittest.SkipTest("set AGENTBOT_TEST_MCP_CLIENTS=1 for installed CLI acceptance")
         missing = [command for command in CLIENT_COMMANDS if shutil.which(command) is None]
         if missing:
             raise unittest.SkipTest(f"missing installed clients: {', '.join(missing)}")
         cls.root = Path(__file__).resolve().parents[2]
         cls.entries = {
-            entry.id: entry
-            for entry in load_mcp_catalog(cls.root / "mcp" / "catalog.json").entries
+            entry.id: entry for entry in load_mcp_catalog(cls.root / "mcp" / "catalog.json").entries
         }
 
     def run_client(
@@ -57,9 +54,10 @@ class McpOverlayClientTests(unittest.TestCase):
 
     def test_each_overlay_starts_in_all_clients_and_disables_cleanly(self) -> None:
         for candidate in CANDIDATES:
-            with self.subTest(candidate=candidate), tempfile.TemporaryDirectory(
-                prefix="agentbot-mcp-client-"
-            ) as raw_home:
+            with (
+                self.subTest(candidate=candidate),
+                tempfile.TemporaryDirectory(prefix="agentbot-mcp-client-") as raw_home,
+            ):
                 home = Path(raw_home)
                 (home / ".cursor").mkdir()
                 (home / ".codex").mkdir()
@@ -70,9 +68,7 @@ class McpOverlayClientTests(unittest.TestCase):
                 claude_path.write_text(
                     render_mcp_config("claude", "{}", (entry,)), encoding="utf-8"
                 )
-                codex_path.write_text(
-                    render_mcp_config("codex", "", (entry,)), encoding="utf-8"
-                )
+                codex_path.write_text(render_mcp_config("codex", "", (entry,)), encoding="utf-8")
                 cursor_path.write_text(
                     render_mcp_config("cursor", "{}", (entry,)), encoding="utf-8"
                 )
@@ -90,9 +86,7 @@ class McpOverlayClientTests(unittest.TestCase):
                     "XDG_CONFIG_HOME": str(home / ".config"),
                 }
 
-                claude = self.run_client(
-                    ["claude", "mcp", "list"], environment=environment
-                )
+                claude = self.run_client(["claude", "mcp", "list"], environment=environment)
                 self.assertIn(f"{entry.name}:", claude.stdout)
                 self.assertIn("Connected", claude.stdout)
 

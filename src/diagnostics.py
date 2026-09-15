@@ -116,7 +116,9 @@ class Diagnostics:
             # declared" and "current" are not.
             if result == "check":
                 issues.append(
-                    DoctorIssue(level="warning", scope="cli-config", message=f"{component}: {detail}")
+                    DoctorIssue(
+                        level="warning", scope="cli-config", message=f"{component}: {detail}"
+                    )
                 )
         for component, detail, result in doctor_vscode(Path.home(), self.paths.root):
             if result == "check":
@@ -255,9 +257,7 @@ class Diagnostics:
                     directory=source,
                     locked=False,
                 )
-                for source in self._unmanaged_skill_dirs(
-                    set(managed), set(declared_names)
-                )
+                for source in self._unmanaged_skill_dirs(set(managed), set(declared_names))
             )
 
         graphify = GraphifyIntegration(self.paths)

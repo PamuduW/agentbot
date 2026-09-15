@@ -22,9 +22,7 @@ class DiagnosticsTests(unittest.TestCase):
             )
             issues = Diagnostics(paths).doctor_issues()
 
-        self.assertTrue(
-            any(issue.level == "error" and issue.scope == "mcp" for issue in issues)
-        )
+        self.assertTrue(any(issue.level == "error" and issue.scope == "mcp" for issue in issues))
 
     def test_disabled_source_skill_is_reported_as_orphaned_and_prunable(self) -> None:
         """Break caught: Doctor calls a lock-pinned orphan a manual skill."""
@@ -46,9 +44,7 @@ class DiagnosticsTests(unittest.TestCase):
             (skill / "SKILL.md").write_text("# leftover\n", encoding="utf-8")
             paths.global_skill_lock.parent.mkdir(parents=True, exist_ok=True)
             paths.global_skill_lock.write_text(
-                json.dumps(
-                    {"version": 3, "skills": {"leftover": {"source": "owner/retired"}}}
-                ),
+                json.dumps({"version": 3, "skills": {"leftover": {"source": "owner/retired"}}}),
                 encoding="utf-8",
             )
 
@@ -121,19 +117,24 @@ class DiagnosticsTests(unittest.TestCase):
             statusline = StatuslineState(True, True, True, True, True, True)
             diagnostics = Diagnostics(paths)
 
-            with mock.patch(
-                "src.diagnostics.load_skills_sources", wraps=load_skills_sources
-            ) as manifest_load, mock.patch(
-                "src.diagnostics.managed_skill_names", return_value={"alpha"}
-            ) as managed_names, mock.patch(
-                "src.diagnostics.inspect_claude_statusline", return_value=statusline
-            ) as statusline_inspect, mock.patch(
-                "src.claude_statusline.inspect_claude_statusline",
-                return_value=statusline,
-            ) as doctor_statusline_inspect, mock.patch.object(
-                diagnostics, "graphify_status", return_value=mock.Mock(state="ready")
-            ) as graphify_status, mock.patch.object(
-                diagnostics, "skills_doctor_issues", return_value=[]
+            with (
+                mock.patch(
+                    "src.diagnostics.load_skills_sources", wraps=load_skills_sources
+                ) as manifest_load,
+                mock.patch(
+                    "src.diagnostics.managed_skill_names", return_value={"alpha"}
+                ) as managed_names,
+                mock.patch(
+                    "src.diagnostics.inspect_claude_statusline", return_value=statusline
+                ) as statusline_inspect,
+                mock.patch(
+                    "src.claude_statusline.inspect_claude_statusline",
+                    return_value=statusline,
+                ) as doctor_statusline_inspect,
+                mock.patch.object(
+                    diagnostics, "graphify_status", return_value=mock.Mock(state="ready")
+                ) as graphify_status,
+                mock.patch.object(diagnostics, "skills_doctor_issues", return_value=[]),
             ):
                 snapshot = diagnostics.collect()
 
@@ -171,22 +172,25 @@ class DiagnosticsTests(unittest.TestCase):
     def test_collect_combines_general_and_skills_issues_once(self) -> None:
         from src.diagnostics import Diagnostics
         from src.models import DoctorIssue
+
         with isolated_agentbot_paths() as (_root, paths):
             diagnostics = Diagnostics(paths)
             general = (DoctorIssue("warning", "token", "unsafe"),)
             skills = (DoctorIssue("error", "skills", "broken"),)
             statusline = mock.Mock(status_label="ready")
 
-            with mock.patch.object(
-                diagnostics, "_doctor_issues", return_value=list(general)
-            ) as doctor, mock.patch.object(
-                diagnostics, "skills_doctor_issues", return_value=list(skills)
-            ) as skills_doctor, mock.patch.object(
-                diagnostics, "list_skills", return_value=["alpha", "beta"]
-            ) as list_skills, mock.patch(
-                "src.diagnostics.managed_skill_names", return_value={"alpha"}
-            ), mock.patch(
-                "src.diagnostics.inspect_claude_statusline", return_value=statusline
+            with (
+                mock.patch.object(
+                    diagnostics, "_doctor_issues", return_value=list(general)
+                ) as doctor,
+                mock.patch.object(
+                    diagnostics, "skills_doctor_issues", return_value=list(skills)
+                ) as skills_doctor,
+                mock.patch.object(
+                    diagnostics, "list_skills", return_value=["alpha", "beta"]
+                ) as list_skills,
+                mock.patch("src.diagnostics.managed_skill_names", return_value={"alpha"}),
+                mock.patch("src.diagnostics.inspect_claude_statusline", return_value=statusline),
             ):
                 snapshot = diagnostics.collect()
 

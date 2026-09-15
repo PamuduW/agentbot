@@ -56,7 +56,8 @@ class Lifecycle:
         refresh_outputs: Callable[[], OutputRefreshOutcome] | None = None,
         bridge_skills: Callable[..., BridgeResult] = bridge_claude_skills,
         render_global: Callable[[AgentbotPaths], None] = render_global_outputs,
-        catalog_discoverer: Callable[[SkillsSourcesConfig], tuple[SourceCatalog, ...]] | None = None,
+        catalog_discoverer: Callable[[SkillsSourcesConfig], tuple[SourceCatalog, ...]]
+        | None = None,
         repository_head: Callable[[Path], str] | None = None,
         workspace_preview: Callable[[], WorkspaceReport] | None = None,
         update_applier: Callable[[UpdatePlan], UpdateOutcome] | None = None,
@@ -225,9 +226,7 @@ class Lifecycle:
         stage("Running diagnostics")
         diagnostics = self.diagnostics.collect()
         stage("Install complete")
-        return InstallOutcome(
-            skills, graphify, boost, outputs, diagnostics, tuple(platform), mcp
-        )
+        return InstallOutcome(skills, graphify, boost, outputs, diagnostics, tuple(platform), mcp)
 
     def _mcp_install(self, *, apply: bool) -> McpInstallOutcome:
         """The MCP phase, degrading to an empty outcome rather than a failure.
@@ -265,9 +264,7 @@ class Lifecycle:
     def update_skills(self) -> InstallResult:
         return self._update_skills(self.paths)
 
-    def plan_update(
-        self, *, progress: Callable[[str, float], None] | None = None
-    ) -> UpdatePlan:
+    def plan_update(self, *, progress: Callable[[str, float], None] | None = None) -> UpdatePlan:
         config = load_skills_sources(self.paths.skills_sources_file)
         # Planning shallow-clones every source to see what it holds, which was
         # about thirty seconds of silence before anything reached the screen --
@@ -454,8 +451,7 @@ class Lifecycle:
             self.paths.claude_home / "settings.json",
         ]
         for result in plan.workspace_report.results:
-            for action in result.actions:
-                affected.append(result.path / action.relative_path)
+            affected.extend(result.path / action.relative_path for action in result.actions)
         return tuple(dict.fromkeys(affected))
 
     def _update_snapshot(self) -> UpdateSnapshot:

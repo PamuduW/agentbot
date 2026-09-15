@@ -35,7 +35,7 @@ class StatusContextTests(unittest.TestCase):
                 self.assertEqual(checkbox.status_context(status), want)
 
     def test_a_missing_backup_is_a_warning_not_a_success(self) -> None:
-        """"not backed up" contains "backed up", so the order of these tests is
+        """ "not backed up" contains "backed up", so the order of these tests is
         what decides it. Both languages read it as ok until they were corrected
         together; nothing produces the status today, which is why this is the
         only place the correction is visible."""

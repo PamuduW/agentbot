@@ -54,9 +54,7 @@ def select_workspace_profile(
 def _validate_profiles(raw: dict[str, Any], *, label: str) -> WorkspaceProfiles:
     version = raw.get("version")
     if version != SUPPORTED_VERSION:
-        raise ValueError(
-            f"{label}: unsupported version {version!r} (expected {SUPPORTED_VERSION})"
-        )
+        raise ValueError(f"{label}: unsupported version {version!r} (expected {SUPPORTED_VERSION})")
 
     active_profile = raw.get("active_profile")
     if not isinstance(active_profile, str) or not active_profile.strip():

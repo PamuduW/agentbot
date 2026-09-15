@@ -210,7 +210,9 @@ def install_claude_statusline(paths: AgentbotPaths) -> StatuslineInstallResult:
     source = statusline_source(paths)
     if not source.is_file():
         state = inspect_claude_statusline(paths)
-        return StatuslineInstallResult(state=state, script_action="missing_source", settings_action="skipped")
+        return StatuslineInstallResult(
+            state=state, script_action="missing_source", settings_action="skipped"
+        )
 
     desired = source.read_text(encoding="utf-8")
     if not desired.endswith("\n"):

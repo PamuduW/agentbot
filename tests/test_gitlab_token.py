@@ -96,9 +96,7 @@ class StoreTests(unittest.TestCase):
         store.write(self.config_home, _OTHER)
 
         self.assertEqual(_OTHER, store.read(self.config_home))
-        self.assertEqual(
-            ["gitlab.env"], sorted(child.name for child in self.config_home.iterdir())
-        )
+        self.assertEqual(["gitlab.env"], sorted(child.name for child in self.config_home.iterdir()))
 
     def test_an_invalid_token_is_never_written(self) -> None:
         with self.assertRaises(store.TokenError):
@@ -268,10 +266,10 @@ class CommandTests(unittest.TestCase):
 
         from tests.support import run_cli_main
 
-        with mock.patch.dict(
-            "os.environ", {"XDG_CONFIG_HOME": str(self.root / "config")}
-        ), mock.patch("sys.stdin", new=io.StringIO(stdin)), mock.patch.object(
-            store, "verify", return_value=verify or self.VERIFY
+        with (
+            mock.patch.dict("os.environ", {"XDG_CONFIG_HOME": str(self.root / "config")}),
+            mock.patch("sys.stdin", new=io.StringIO(stdin)),
+            mock.patch.object(store, "verify", return_value=verify or self.VERIFY),
         ):
             return run_cli_main(["agentbot", "--root", str(Path.cwd()), *argv])
 

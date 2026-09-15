@@ -63,9 +63,7 @@ class MenuSelectTests(unittest.TestCase):
 
         def run_menu() -> None:
             try:
-                result.append(
-                    menu_select.run(spec or SPEC, input_fd=follower, output_fd=out_write)
-                )
+                result.append(menu_select.run(spec or SPEC, input_fd=follower, output_fd=out_write))
             except BaseException as exc:  # re-raised on the main thread
                 error.append(exc)
             finally:
@@ -130,8 +128,10 @@ class MenuSelectTests(unittest.TestCase):
         from src.ui import menu_select
 
         errors = io.StringIO()
-        with mock.patch.object(menu_select, "run", side_effect=KeyboardInterrupt()), \
-             mock.patch.object(sys, "stderr", errors):
+        with (
+            mock.patch.object(menu_select, "run", side_effect=KeyboardInterrupt()),
+            mock.patch.object(sys, "stderr", errors),
+        ):
             rc = menu_select.main(["--menu", "main", "--cols", "80"])
 
         self.assertEqual(1, rc)
@@ -145,8 +145,10 @@ class MenuSelectTests(unittest.TestCase):
         from src.ui import menu_select
 
         errors = io.StringIO()
-        with mock.patch.object(menu_select, "run", side_effect=RuntimeError("no terminal")), \
-             mock.patch.object(sys, "stderr", errors):
+        with (
+            mock.patch.object(menu_select, "run", side_effect=RuntimeError("no terminal")),
+            mock.patch.object(sys, "stderr", errors),
+        ):
             rc = menu_select.main(["--menu", "main", "--cols", "80"])
 
         self.assertEqual(3, rc)

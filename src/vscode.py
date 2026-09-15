@@ -316,7 +316,9 @@ def _render_value(text: str, start: int, value: object) -> str:
     if "\n" not in rendered:
         return rendered
     line_start = text.rfind("\n", 0, start) + 1
-    indent = text[line_start : len(text[line_start:]) - len(text[line_start:].lstrip()) + line_start]
+    indent = text[
+        line_start : len(text[line_start:]) - len(text[line_start:].lstrip()) + line_start
+    ]
     newline = "\r\n" if "\r\n" in text else "\n"
     head, *rest = rendered.split("\n")
     return newline.join([head] + [indent + line for line in rest])

@@ -354,8 +354,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
                 settings_path = self.claude_home / "settings.json"
                 self.claude_home.mkdir(parents=True, exist_ok=True)
                 settings_path.write_text(
-                    json.dumps({"statusLine": {"type": "command", "command": command}})
-                    + "\n",
+                    json.dumps({"statusLine": {"type": "command", "command": command}}) + "\n",
                     encoding="utf-8",
                 )
 
@@ -562,9 +561,7 @@ class BoostStatuslineSegmentTests(unittest.TestCase):
         self.assertIn("Boost saved 12.4k tokens", self._run())
 
     def test_boost_colors_are_stripped_and_padding_trimmed(self):
-        self._stub_boost(
-            "cat >/dev/null; printf '\\033[32m   Boost saved 3 tokens   \\033[0m\\n'"
-        )
+        self._stub_boost("cat >/dev/null; printf '\\033[32m   Boost saved 3 tokens   \\033[0m\\n'")
         output = self._run()
         self.assertIn("· Boost saved 3 tokens", output)
         self.assertNotIn("   Boost", output)
@@ -590,9 +587,7 @@ class BoostStatuslineSegmentTests(unittest.TestCase):
         self.assertIn("Context 42% used", output)
 
     def test_narrow_output_keeps_the_boost_segment(self):
-        self._stub_boost(
-            "cat >/dev/null; printf 'Boost saved 123456789 tokens total\\n'"
-        )
+        self._stub_boost("cat >/dev/null; printf 'Boost saved 123456789 tokens total\\n'")
         lines = self._run(COLUMNS="48").splitlines()
 
         self.assertEqual(2, len(lines))

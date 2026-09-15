@@ -299,16 +299,16 @@ def highlight_manual_skill_name(detail: str, line: str) -> str:
     return line.replace(skill_name, _c(skill_name, BOLD + CYAN))
 
 
-def print_table_columns(*, headers: tuple[str, str, str] = ("component", "detail", "result")) -> None:
+def print_table_columns(
+    *, headers: tuple[str, str, str] = ("component", "detail", "result")
+) -> None:
     h0, h1, h2 = headers
     label_width, detail_width, result_width = _table_widths()
     h0 = _fit_line(h0, label_width)
     h1 = _fit_line(h1, detail_width)
     h2 = _fit_line(h2, result_width)
     print(f"  {_c(f'{h0:<{label_width}} | {h1:<{detail_width}} | {h2:<{result_width}}', BOLD)}")
-    print(
-        f"  {'-' * label_width}-+-{'-' * detail_width}-+-{'-' * result_width}"
-    )
+    print(f"  {'-' * label_width}-+-{'-' * detail_width}-+-{'-' * result_width}")
 
 
 def print_table(
@@ -382,10 +382,7 @@ def print_rollup(*, ok: int, check: int, miss: int) -> None:
     elif miss == 0 and check == 0:
         print(f"  {_c(f'All {ok} component(s) look good.', GREEN)}")
     elif miss == 0:
-        print(
-            f"  {_c(f'{ok} ok', GREEN)}, "
-            f"{_c(f'{check} need attention', YELLOW)}."
-        )
+        print(f"  {_c(f'{ok} ok', GREEN)}, {_c(f'{check} need attention', YELLOW)}.")
     else:
         print(
             f"  {_c(f'{ok} ok', GREEN)}, "
@@ -514,9 +511,7 @@ def print_table_model(table: Table) -> tuple[int, int, int]:
         # and a rule above it separates nothing.
         if section.label:
             print_section_block(section.label)
-        ok, check, miss = print_table(
-            list(section.rows), show_header=not section.label
-        )
+        ok, check, miss = print_table(list(section.rows), show_header=not section.label)
         total_ok += ok
         total_check += check
         total_miss += miss

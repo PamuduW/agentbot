@@ -63,9 +63,7 @@ class FakeUpstream:
 
 class McpFilterTests(unittest.IsolatedAsyncioTestCase):
     def test_internal_stdio_server_bypasses_human_output_wrapping(self) -> None:
-        self.assertTrue(
-            _requires_raw_stdout(("--root", "/opt/agentbot", "mcp", "serve"))
-        )
+        self.assertTrue(_requires_raw_stdout(("--root", "/opt/agentbot", "mcp", "serve")))
         self.assertFalse(_requires_raw_stdout(("mcp", "status")))
 
     def contract(self, *tools: Tool, **overrides: object) -> McpFilterContract:
@@ -73,9 +71,7 @@ class McpFilterTests(unittest.IsolatedAsyncioTestCase):
             "catalog_id": "docs",
             "origin": "https://docs.example.test/mcp",
             "allowed_tools": tuple(item.name for item in tools),
-            "descriptor_fingerprints": {
-                item.name: descriptor_fingerprint(item) for item in tools
-            },
+            "descriptor_fingerprints": {item.name: descriptor_fingerprint(item) for item in tools},
             "timeout_seconds": 1.0,
             "max_response_bytes": 1024,
         }
@@ -139,9 +135,7 @@ class McpFilterTests(unittest.IsolatedAsyncioTestCase):
         for call, overrides, message in (
             (slow, {"timeout_seconds": 0.01}, "timed out"),
             (
-                lambda _name, _args: CallToolResult(
-                    content=[TextContent(text="x" * 2048)]
-                ),
+                lambda _name, _args: CallToolResult(content=[TextContent(text="x" * 2048)]),
                 {"max_response_bytes": 128},
                 "response limit",
             ),

@@ -34,7 +34,9 @@ class Menu:
         if len(self.labels) != len(self.keys):
             raise ValueError(f"{self.title}: {len(self.labels)} labels, {len(self.keys)} keys")
         if self.descs and len(self.descs) != len(self.labels):
-            raise ValueError(f"{self.title}: {len(self.descs)} descriptions for {len(self.labels)} entries")
+            raise ValueError(
+                f"{self.title}: {len(self.descs)} descriptions for {len(self.labels)} entries"
+            )
 
 
 MENUS: dict[str, Menu] = {

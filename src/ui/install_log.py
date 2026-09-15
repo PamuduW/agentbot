@@ -58,7 +58,18 @@ def log_legend() -> None:
 #: them matters because a full update prints both runs into one terminal, and
 #: two different spinners read as two different tools disagreeing about what
 #: "working" looks like.
-_SPINNER_FRAMES = ("\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f")
+_SPINNER_FRAMES = (
+    "\u280b",
+    "\u2819",
+    "\u2839",
+    "\u2838",
+    "\u283c",
+    "\u2834",
+    "\u2826",
+    "\u2827",
+    "\u2807",
+    "\u280f",
+)
 _SPINNER_INTERVAL = 0.12
 
 
@@ -128,9 +139,7 @@ class _StepSpinner:
         self._stop = threading.Event()
         # Daemon: a run that dies mid-stage must not be held open by the thread
         # that was drawing its spinner.
-        self._thread = threading.Thread(
-            target=self._spin, args=(terminal, message), daemon=True
-        )
+        self._thread = threading.Thread(target=self._spin, args=(terminal, message), daemon=True)
         self._thread.start()
 
     def _spin(self, terminal: TextIO, message: str) -> None:

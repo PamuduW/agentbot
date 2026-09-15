@@ -349,9 +349,7 @@ class PruneTests(unittest.TestCase):
         self.assertEqual((), result.removed)
         self.assertTrue((self.store / "graphify").is_dir())
 
-        result = apply_prune(
-            self.paths, plan_prune(self.paths, config), include_manual=True
-        )
+        result = apply_prune(self.paths, plan_prune(self.paths, config), include_manual=True)
         self.assertEqual(("graphify",), result.removed)
         self.assertFalse((self.store / "graphify").exists())
 

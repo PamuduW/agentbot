@@ -26,9 +26,7 @@ class McpOverlaysLiveTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if os.environ.get("AGENTBOT_TEST_MCP_OVERLAYS") != "1":
-            raise unittest.SkipTest(
-                "set AGENTBOT_TEST_MCP_OVERLAYS=1 for the public overlay gate"
-            )
+            raise unittest.SkipTest("set AGENTBOT_TEST_MCP_OVERLAYS=1 for the public overlay gate")
         cls.root = Path(__file__).resolve().parents[2]
 
     async def test_public_tool_lists_and_safe_calls_match_frozen_contracts(self) -> None:
@@ -50,7 +48,9 @@ class McpOverlaysLiveTests(unittest.IsolatedAsyncioTestCase):
                 filtered = FilteredMcpServer(contract, SdkRemoteUpstream(contract))
                 try:
                     await filtered.start()
-                    self.assertEqual(contract.allowed_tools, tuple(t.name for t in filtered.list_tools()))
+                    self.assertEqual(
+                        contract.allowed_tools, tuple(t.name for t in filtered.list_tools())
+                    )
                     result = await filtered.call_tool(tool_name, arguments)
                     self.assertFalse(result.is_error)
                     self.assertLessEqual(

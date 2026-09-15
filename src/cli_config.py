@@ -276,9 +276,7 @@ class CliConfigReport:
 
     @property
     def failures(self) -> tuple[str, ...]:
-        return tuple(
-            f"{plan.cli}: {plan.error}" for plan in self.plans.values() if plan.error
-        )
+        return tuple(f"{plan.cli}: {plan.error}" for plan in self.plans.values() if plan.error)
 
     @property
     def has_work(self) -> bool:

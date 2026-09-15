@@ -39,9 +39,7 @@ def _graphify(state: str) -> GraphifyStatus:
 
 
 def _workspace_result(status: str) -> WorkspaceResult:
-    return WorkspaceResult(
-        path=Path("/tmp/ws"), status=status, actions=(), message=""
-    )
+    return WorkspaceResult(path=Path("/tmp/ws"), status=status, actions=(), message="")
 
 
 def _plan(*, additions=(), removals=(), manifest=()) -> UpdatePlan:
@@ -77,9 +75,7 @@ class CommandTableTests(unittest.TestCase):
     def test_every_parser_command_has_a_handler(self):
         parser = cli.build_parser()
         subparsers = [
-            action
-            for action in parser._actions
-            if isinstance(action, argparse._SubParsersAction)
+            action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
         ]
         self.assertEqual(len(subparsers), 1)
         names = set(subparsers[0].choices)

@@ -60,9 +60,7 @@ def _header_lines(text: str) -> int:
     The header is column-padded, so match on the parsed first field.
     """
     return sum(
-        1
-        for line in text.splitlines()
-        if "|" in line and line.split("|")[0].strip() == "component"
+        1 for line in text.splitlines() if "|" in line and line.split("|")[0].strip() == "component"
     )
 
 
@@ -81,10 +79,13 @@ class ResponsiveTableTests(unittest.TestCase):
             "refresh-required",
         )
         for columns in (48, 80, 120):
-            with self.subTest(columns=columns), mock.patch.dict(
-                "os.environ",
-                {"AGENTBOT_MENU_COLS": str(columns), "NO_COLOR": "1"},
-                clear=False,
+            with (
+                self.subTest(columns=columns),
+                mock.patch.dict(
+                    "os.environ",
+                    {"AGENTBOT_MENU_COLS": str(columns), "NO_COLOR": "1"},
+                    clear=False,
+                ),
             ):
                 text, _ = _capture(print_table, [row])
                 for line in text.splitlines():
@@ -93,9 +94,7 @@ class ResponsiveTableTests(unittest.TestCase):
                 self.assertNotIn("...", text)
 
     def test_no_color_wins_over_forced_color(self):
-        with mock.patch.dict(
-            "os.environ", {"NO_COLOR": "1", "FORCE_COLOR": "1"}, clear=False
-        ):
+        with mock.patch.dict("os.environ", {"NO_COLOR": "1", "FORCE_COLOR": "1"}, clear=False):
             text, _ = _capture(print_table, [("component", "detail", "warning")])
         self.assertNotIn("\033[", text)
 
@@ -432,9 +431,7 @@ class BlankLineTests(unittest.TestCase):
         return buffer.getvalue()
 
     def test_a_run_of_blanks_becomes_one(self):
-        self.assertEqual(
-            "one\n\ntwo\n", self._collapsed(["one\n", "\n", "\n", "   \n", "two\n"])
-        )
+        self.assertEqual("one\n\ntwo\n", self._collapsed(["one\n", "\n", "\n", "   \n", "two\n"]))
 
     def test_an_opening_blank_is_kept(self):
         """The header's leading blank is the gap under the frame above it."""
@@ -453,9 +450,7 @@ class BlankLineTests(unittest.TestCase):
 
     def test_a_blank_between_content_survives(self):
         """Dropping trailing blanks must not drop the gaps inside."""
-        self.assertEqual(
-            "one\n\ntwo\n", self._collapsed(["one\n", "\n", "two\n", "\n"])
-        )
+        self.assertEqual("one\n\ntwo\n", self._collapsed(["one\n", "\n", "two\n", "\n"]))
 
     def test_a_row_written_in_two_calls_stays_one_line(self):
         """print_table writes a row as a cell with end="" and then the rest."""
@@ -569,9 +564,7 @@ class EmbeddedResyncTests(unittest.TestCase):
     def _report() -> WorkspaceReport:
         return WorkspaceReport(
             results=(
-                WorkspaceResult(
-                    path=Path("/tmp/ws"), status="applied", actions=(), message="done"
-                ),
+                WorkspaceResult(path=Path("/tmp/ws"), status="applied", actions=(), message="done"),
             ),
             global_actions=(),
         )
@@ -625,9 +618,7 @@ class WorkspaceActionResultTests(unittest.TestCase):
         raise AssertionError("RenderAction.kind is no longer a Literal of strings")
 
     def test_the_declared_kinds_are_still_the_four_expected(self):
-        self.assertEqual(
-            {"create", "update", "unchanged", "conflict"}, set(self._kinds())
-        )
+        self.assertEqual({"create", "update", "unchanged", "conflict"}, set(self._kinds()))
 
     def test_every_kind_maps_into_the_vocabulary_in_both_modes(self):
         width = _table_widths()[2]
@@ -648,9 +639,7 @@ class WorkspaceActionResultTests(unittest.TestCase):
 class WorkspaceReportTests(unittest.TestCase):
     @staticmethod
     def _result(status: str) -> WorkspaceResult:
-        return WorkspaceResult(
-            path=Path("/tmp/ws"), status=status, actions=(), message="a message"
-        )
+        return WorkspaceResult(path=Path("/tmp/ws"), status=status, actions=(), message="a message")
 
     def test_single_workspace_report_shows_path_and_message(self):
         text, _ = _capture(print_workspace_report, self._result("preview"))

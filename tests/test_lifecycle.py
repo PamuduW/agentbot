@@ -75,8 +75,12 @@ class LifecycleTests(unittest.TestCase):
             plan = lifecycle.plan_update()
 
             commands = [call.args[0] for call in runner.run.call_args_list]
-            self.assertTrue(any(command[:4] == ["npx", "--yes", "skills", "update"] for command in commands))
-            self.assertTrue(any(command[:3] == ["git", "-C", str(workspace)] for command in commands))
+            self.assertTrue(
+                any(command[:4] == ["npx", "--yes", "skills", "update"] for command in commands)
+            )
+            self.assertTrue(
+                any(command[:3] == ["git", "-C", str(workspace)] for command in commands)
+            )
             self.assertEqual("head123", plan.snapshot.repository_head)
 
     def test_install_reports_each_stage_as_it_starts(self) -> None:

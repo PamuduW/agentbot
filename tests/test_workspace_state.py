@@ -173,7 +173,6 @@ class WorkspaceStateTests(unittest.TestCase):
         self.assertEqual(record, removed)
         self.assertEqual((), store.load())
 
-
     def test_a_stored_retired_target_is_migrated_not_rejected(self) -> None:
         # Dropping a target must not make the whole registry unreadable and take
         # `resync --all` down with it.

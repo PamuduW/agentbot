@@ -440,9 +440,7 @@ class WorkspaceService:
         profile: WorkspaceProfile,
     ) -> WorkspaceResult:
         status: Literal["preview", "conflict"] = (
-            "conflict"
-            if any(action.kind == "conflict" for action in plan.actions)
-            else "preview"
+            "conflict" if any(action.kind == "conflict" for action in plan.actions) else "preview"
         )
         return WorkspaceResult(
             identity.path,

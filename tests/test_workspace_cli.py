@@ -99,9 +99,7 @@ class WorkspaceCliTests(unittest.TestCase):
         service = self._service()
         service_type.return_value = service
 
-        rc, _stdout, _stderr = run_cli_main(
-            ["agentbot", "resync", "--dry-run", "--all"]
-        )
+        rc, _stdout, _stderr = run_cli_main(["agentbot", "resync", "--dry-run", "--all"])
 
         self.assertEqual(0, rc)
         service.resync_workspaces.assert_called_once_with(apply=False, paths=())
@@ -112,9 +110,7 @@ class WorkspaceCliTests(unittest.TestCase):
         service = self._service()
         service_type.return_value = service
 
-        rc, _stdout, _stderr = run_cli_main(
-            ["agentbot", "resync", "--yes", "/repo", "/other"]
-        )
+        rc, _stdout, _stderr = run_cli_main(["agentbot", "resync", "--yes", "/repo", "/other"])
 
         self.assertEqual(0, rc)
         service.resync_workspaces.assert_called_once_with(
@@ -199,9 +195,7 @@ class WorkspaceCliTests(unittest.TestCase):
         )
         service_type.return_value = service
 
-        rc, stdout, stderr = run_cli_main(
-            ["agentbot", "workspaces", "--remove", "/missing/repo"]
-        )
+        rc, stdout, stderr = run_cli_main(["agentbot", "workspaces", "--remove", "/missing/repo"])
 
         self.assertEqual(0, rc)
         service.remove_workspace.assert_called_once_with(Path("/missing/repo"))

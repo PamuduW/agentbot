@@ -263,13 +263,11 @@ class DoctorSeverityTests(unittest.TestCase):
             cursor_lock = agents / "cursor-skills-lock.json"
             global_lock = agents / ".skill-lock.json"
             cursor_lock.write_text(
-                '{"skills":{"other":{"source":"owner/repo",'
-                '"updatedAt":"2026-08-27T08:00:00Z"}}}\n',
+                '{"skills":{"other":{"source":"owner/repo","updatedAt":"2026-08-27T08:00:00Z"}}}\n',
                 encoding="utf-8",
             )
             global_lock.write_text(
-                '{"skills":{"alpha":{"source":"owner/repo",'
-                '"updatedAt":"2026-08-26T08:00:00Z"}}}\n',
+                '{"skills":{"alpha":{"source":"owner/repo","updatedAt":"2026-08-26T08:00:00Z"}}}\n',
                 encoding="utf-8",
             )
             paths = AgentbotPaths(
@@ -283,6 +281,7 @@ class DoctorSeverityTests(unittest.TestCase):
 
             issues = Diagnostics(paths).doctor_issues()
             self.assertEqual([], [issue for issue in issues if issue.scope == "skills-cursor"])
+
 
 if __name__ == "__main__":
     unittest.main()

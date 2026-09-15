@@ -142,7 +142,9 @@ class GitHubMcpLiveTests(unittest.TestCase):
                 )
                 text = json.dumps(response, sort_keys=True).lower()
                 self.assertTrue(
-                    any(marker in text for marker in ("unknown tool", "not found", "does not exist")),
+                    any(
+                        marker in text for marker in ("unknown tool", "not found", "does not exist")
+                    ),
                     f"{name} reached argument validation instead of failing closed",
                 )
 

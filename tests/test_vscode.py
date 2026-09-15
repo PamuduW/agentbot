@@ -346,8 +346,8 @@ class DoctorTests(unittest.TestCase):
         """
         calls = []
         original = vscode_module.resolve_hosts
-        vscode_module.resolve_hosts = lambda *args, **kwargs: calls.append(1) or original(
-            *args, **kwargs
+        vscode_module.resolve_hosts = lambda *args, **kwargs: (
+            calls.append(1) or original(*args, **kwargs)
         )
         self.addCleanup(setattr, vscode_module, "resolve_hosts", original)
 
@@ -536,7 +536,7 @@ class UniversalSettingsTests(unittest.TestCase):
         """A silent move would leave the old block being ignored while the
         report claimed everything was current."""
         manifest_path(self.root).write_text(
-            'version: 1\nsettings:\n  universal:\n    a: 1\n', encoding="utf-8"
+            "version: 1\nsettings:\n  universal:\n    a: 1\n", encoding="utf-8"
         )
 
         report = preview(self.home, self.root, self.mount)

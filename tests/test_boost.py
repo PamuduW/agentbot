@@ -76,9 +76,7 @@ _BOOST_CURSOR_HOOKS = json.dumps(
                     "matcher": "Shell|Read",
                 }
             ],
-            "sessionStart": [
-                {"command": "~/.cursor/hooks/boost-observe-cursor.sh"}
-            ],
+            "sessionStart": [{"command": "~/.cursor/hooks/boost-observe-cursor.sh"}],
             "stop": [
                 {"command": "~/.cursor/hooks/boost-sync.sh"},
                 {"command": "~/.cursor/hooks/boost-observe-cursor.sh"},
@@ -271,9 +269,7 @@ class BoostIntegrationTests(unittest.TestCase):
                 (paths.claude_home / "hooks/boost-hook-claude.sh").write_text("hook\n")
                 (paths.claude_home / "rules").mkdir(parents=True)
                 (paths.claude_home / "rules/boost-awareness.md").write_text("rule\n")
-                (paths.claude_home / "settings.json").write_text(
-                    _BOOST_CLAUDE_SETTINGS
-                )
+                (paths.claude_home / "settings.json").write_text(_BOOST_CLAUDE_SETTINGS)
                 (paths.codex_home / "hooks").mkdir(parents=True)
                 (paths.codex_home / "hooks/boost-hook-codex.sh").write_text("hook\n")
                 (paths.codex_home / "hooks/boost-sync.sh").write_text("hook\n")
@@ -662,7 +658,12 @@ class BoostClaudeRegistrationTests(BoostIntegrationTests):
                     "PreToolUse": [
                         {
                             "matcher": "Bash",
-                            "hooks": [{"type": "command", "command": "~/.claude/hooks/boost-hook-claude.sh"}],
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "~/.claude/hooks/boost-hook-claude.sh",
+                                }
+                            ],
                         }
                     ]
                 }
@@ -768,9 +769,7 @@ class BoostOffCwdTests(BoostIntegrationTests):
 
         home = self.codex.parent
         uninstalls = [
-            call
-            for call in runner.run_interactive.call_args_list
-            if "--uninstall" in call.args[0]
+            call for call in runner.run_interactive.call_args_list if "--uninstall" in call.args[0]
         ]
         self.assertEqual(3, len(uninstalls))
         for call in uninstalls:
@@ -1154,9 +1153,7 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
         )
         status = self._status()
         self.assertIn(("boost-english-abbreviation", True), status.user_flags)
-        self.assertNotIn(
-            "boost-cli-filtering", [name for name, _ in status.user_flags]
-        )
+        self.assertNotIn("boost-cli-filtering", [name for name, _ in status.user_flags])
 
     def test_flags_matching_policy_do_not_diverge(self) -> None:
         from src.diagnostics import Diagnostics
@@ -1341,9 +1338,7 @@ class BoostConfigNewlineTests(BoostIntegrationTests):
                 "ensure_safe_config",
                 side_effect=ValueError("Boost config is invalid TOML: boom"),
             ),
-            mock.patch.object(
-                BoostIntegration, "_cli_version", return_value="boost v0.12.6"
-            ),
+            mock.patch.object(BoostIntegration, "_cli_version", return_value="boost v0.12.6"),
         ):
             status = integration.setup_if_cli_available()
 

@@ -90,7 +90,11 @@ class GitHubMcpContractTests(unittest.TestCase):
         for client, empty in (("claude", "{}"), ("codex", ""), ("cursor", "{}")):
             rendered = render_mcp_config(client, empty, (entry,))
             native = parse_mcp_config(client, rendered)
-            server = native["mcp_servers"][entry.name] if client == "codex" else native["mcpServers"][entry.name]
+            server = (
+                native["mcp_servers"][entry.name]
+                if client == "codex"
+                else native["mcpServers"][entry.name]
+            )
             headers = server["http_headers"] if client == "codex" else server["headers"]
             self.assertEqual("true", headers["X-MCP-Readonly"])
             self.assertEqual(expected_tools, headers["X-MCP-Tools"])

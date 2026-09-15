@@ -13,9 +13,7 @@ class CommandRunnerTests(unittest.TestCase):
         from src.command_runner import CommandRunner
 
         runner = CommandRunner()
-        success = runner.run(
-            [sys.executable, "-c", "print('ready')"], timeout_seconds=5
-        )
+        success = runner.run([sys.executable, "-c", "print('ready')"], timeout_seconds=5)
         failure = runner.run(
             [
                 sys.executable,
@@ -38,9 +36,7 @@ class CommandRunnerTests(unittest.TestCase):
             [sys.executable, "-c", "import time; time.sleep(2)"],
             timeout_seconds=0.01,
         )
-        missing = runner.run(
-            ["agentbot-command-that-does-not-exist"], timeout_seconds=1
-        )
+        missing = runner.run(["agentbot-command-that-does-not-exist"], timeout_seconds=1)
 
         self.assertTrue(timed_out.timed_out)
         self.assertIn("timed out", timed_out.detail())
@@ -132,9 +128,7 @@ class CommandRunnerTests(unittest.TestCase):
         from src.command_runner import CommandRunner
 
         canary = "abc"
-        with mock.patch.dict(
-            os.environ, {"AGENTBOT_TEST_SHORT_CANARY": canary}, clear=True
-        ):
+        with mock.patch.dict(os.environ, {"AGENTBOT_TEST_SHORT_CANARY": canary}, clear=True):
             result = CommandRunner().run(
                 [
                     sys.executable,
@@ -170,7 +164,13 @@ class CommandRunnerTests(unittest.TestCase):
             root = Path(temporary)
             marker = root / "must-not-exist"
             result = CommandRunner().run(
-                [sys.executable, "-c", "import pathlib; print(pathlib.Path.cwd().name)", ";", f"touch {marker}"],
+                [
+                    sys.executable,
+                    "-c",
+                    "import pathlib; print(pathlib.Path.cwd().name)",
+                    ";",
+                    f"touch {marker}",
+                ],
                 cwd=root,
                 timeout_seconds=5,
             )

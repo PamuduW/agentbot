@@ -275,7 +275,9 @@ class CliConfigTests(unittest.TestCase):
     def test_doctor_reports_one_row_per_cli(self) -> None:
         rows = doctor_cli_configs(self.paths)
 
-        self.assertEqual([row[0] for row in rows], ["claude config", "codex config", "cursor config"])
+        self.assertEqual(
+            [row[0] for row in rows], ["claude config", "codex config", "cursor config"]
+        )
 
 
 if __name__ == "__main__":

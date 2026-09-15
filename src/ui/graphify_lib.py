@@ -82,7 +82,9 @@ PLATFORM: tuple[Row, ...] = (
         "graphify install --platform agents",
         "Copy the generic skill into the Agent Skills store.",
     ),
-    Row("Claude", "graphify install --platform claude", "Copy the skill into Claude configuration."),
+    Row(
+        "Claude", "graphify install --platform claude", "Copy the skill into Claude configuration."
+    ),
     Row("Codex", "graphify install --platform codex", "Copy the skill into Codex configuration."),
     Row(
         "Cursor",

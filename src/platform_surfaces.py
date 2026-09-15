@@ -45,9 +45,7 @@ def _vscode(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> tupl
 def _cursor(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> tuple[str, str]:
     from .cursor_statusline import inspect_cursor_statusline, install_cursor_statusline
 
-    state = (
-        install_cursor_statusline(paths) if apply else inspect_cursor_statusline(paths)
-    )
+    state = install_cursor_statusline(paths) if apply else inspect_cursor_statusline(paths)
     return f"{state.state}: {state.detail}", state.result
 
 

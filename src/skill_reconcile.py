@@ -87,9 +87,7 @@ def build_reconcile_plan(
 
     for source in config.active_sources():
         available = {
-            str(name)
-            for name in discovered.get(source.id, ())
-            if not source.excludes(str(name))
+            str(name) for name in discovered.get(source.id, ()) if not source.excludes(str(name))
         }
         if source.skills == ["*"]:
             owned = _source_owned_lock_names(lock or {}, source.repo)
@@ -148,15 +146,9 @@ def _approved_lock_mutations(
         if isinstance(entry, Mapping) and entry.get("source")
     }
     candidates = set(plan.wildcard_removals) | {
-        change.skill
-        for change in plan.manifest_changes
-        if change.action == "remove"
+        change.skill for change in plan.manifest_changes if change.action == "remove"
     }
-    removals = {
-        skill
-        for skill in candidates
-        if owned_by_name.get(skill) in active_repos
-    }
+    removals = {skill for skill in candidates if owned_by_name.get(skill) in active_repos}
     return set(plan.wildcard_additions), removals
 
 
@@ -184,9 +176,7 @@ def _manifest_after_removals(path: Path, removals: set[tuple[str, str]]) -> str:
         selected = source.get("skills")
         if not isinstance(selected, list):
             continue
-        source["skills"] = [
-            skill for skill in selected if (source_id, str(skill)) not in removals
-        ]
+        source["skills"] = [skill for skill in selected if (source_id, str(skill)) not in removals]
     return yaml.safe_dump(raw, sort_keys=False, default_flow_style=False)
 
 
@@ -283,13 +273,13 @@ def apply_reconcile_plan(
     """Apply source-owned skill deltas with a recoverable staged transaction."""
     command_runner = runner or CommandRunner()
     needs_confirmation = bool(
-        plan.wildcard_additions
-        or plan.wildcard_removals
-        or plan.manifest_changes
+        plan.wildcard_additions or plan.wildcard_removals or plan.manifest_changes
     )
     approved = confirm(plan) if callable(confirm) else confirm
     if needs_confirmation and not approved:
-        return ReconcileResult("confirmation_required", (), (), (), message="reconciliation was not confirmed")
+        return ReconcileResult(
+            "confirmation_required", (), (), (), message="reconciliation was not confirmed"
+        )
 
     lock_path = paths.global_skill_lock
     lock = _lock_data(lock_path)
@@ -334,9 +324,7 @@ def apply_reconcile_plan(
             if canonical.exists():
                 affected.append(canonical)
     for skill in sorted(removed | added):
-        affected.extend(
-            [agents_home / skill, codex_home / skill, claude_home / skill]
-        )
+        affected.extend([agents_home / skill, codex_home / skill, claude_home / skill])
     affected.extend(extra_affected)
     affected = list(dict.fromkeys(affected))
     backup = _snapshot(affected, paths.root)
@@ -386,7 +374,9 @@ def apply_reconcile_plan(
                 changed.append(target)
             owner_source = source_by_id.get(checkout_owner.get(skill, ""))
             if owner_source is None or owner_source.repo is None:
-                raise ReconcileError(f"unable to determine source owner for wildcard skill {skill!r}")
+                raise ReconcileError(
+                    f"unable to determine source owner for wildcard skill {skill!r}"
+                )
             lock_skills[skill] = {
                 "source": owner_source.repo,
                 "sourceType": "github",

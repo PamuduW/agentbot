@@ -59,7 +59,9 @@ class WorkspaceRecord:
         if self.last_commit is not None:
             if self.kind == "directory":
                 raise ValueError("directory workspace last_commit must be null")
-            if not isinstance(self.last_commit, str) or not COMMIT_PATTERN.fullmatch(self.last_commit):
+            if not isinstance(self.last_commit, str) or not COMMIT_PATTERN.fullmatch(
+                self.last_commit
+            ):
                 raise ValueError("workspace last_commit must be a short hexadecimal commit")
         if self.last_rendered_at is not None and (
             not isinstance(self.last_rendered_at, str) or not self.last_rendered_at.strip()

@@ -71,9 +71,8 @@ class GraphifyIntegration:
         elif not skill_exists:
             state = "cli-only"
             message = "Graphify CLI is installed; the Agent Skills integration is not set up."
-        elif (
-            skill_version is None
-            or self._version_token(cli_version) != self._version_token(skill_version)
+        elif skill_version is None or self._version_token(cli_version) != self._version_token(
+            skill_version
         ):
             state = "stale"
             message = "Graphify CLI and installed skill versions do not match."

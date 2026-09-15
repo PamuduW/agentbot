@@ -26,9 +26,7 @@ class CliTests(unittest.TestCase):
         setup = parser.parse_args(
             ["mcp", "setup", "--select", "github", "--targets", "cursor", "--yes"]
         )
-        restore = parser.parse_args(
-            ["mcp", "restore", "20260913T120000Z-1234abcd", "--yes"]
-        )
+        restore = parser.parse_args(["mcp", "restore", "20260913T120000Z-1234abcd", "--yes"])
 
         self.assertEqual("plan", plan.mcp_command)
         self.assertEqual(["github"], plan.mcp_select)
@@ -387,6 +385,7 @@ class CliTests(unittest.TestCase):
         subparsers = next(
             action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
         )
+
         def parser_leaf_paths(
             choices: dict[str, argparse.ArgumentParser], prefix: tuple[str, ...] = ()
         ) -> set[str]:
@@ -460,11 +459,7 @@ class CliTests(unittest.TestCase):
     def test_help_aliases_resolve_to_canonical_commands(self) -> None:
         from src.commands import COMMANDS
 
-        aliases = {
-            alias: spec.name
-            for spec in COMMANDS
-            for alias in spec.aliases
-        }
+        aliases = {alias: spec.name for spec in COMMANDS for alias in spec.aliases}
         self.assertEqual({"upgrade": "update", "skills upgrade": "skills update"}, aliases)
         for alias, canonical in aliases.items():
             with self.subTest(alias=alias):
@@ -555,9 +550,7 @@ class CliTests(unittest.TestCase):
 
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")
-    def test_install_skill_failure_is_a_clean_cli_error(
-        self, service_type, _default_paths
-    ) -> None:
+    def test_install_skill_failure_is_a_clean_cli_error(self, service_type, _default_paths) -> None:
         from src.skills_installer import SkillsInstallError
 
         service = MagicMock()
@@ -765,9 +758,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("updated-skill", stdout)
         self.assertIn("removed-skill", stdout)
         service.apply_update.assert_called_once()
-        self.assertEqual(
-            (service.plan_update.return_value,), service.apply_update.call_args.args
-        )
+        self.assertEqual((service.plan_update.return_value,), service.apply_update.call_args.args)
 
     def test_parser_accepts_upgrade_alias(self) -> None:
         from src.cli import build_parser

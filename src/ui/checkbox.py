@@ -200,10 +200,7 @@ def draw(
         f"  {palette.dim}{color_input_hint(fit_indent(hint, cols, 2), palette)}"
         f"{palette.reset}{CLEAR_EOL}"
     )
-    paging = (
-        f"Page {page + 1}/{page_count(count, size)}   "
-        f"Showing {start + 1}-{end + 1} of {count}"
-    )
+    paging = f"Page {page + 1}/{page_count(count, size)}   Showing {start + 1}-{end + 1} of {count}"
     lines.append(f"  {palette.dim}{fit_indent(paging, cols, 2)}{palette.reset}{CLEAR_EOL}")
     lines.append("")
 

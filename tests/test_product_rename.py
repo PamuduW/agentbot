@@ -64,7 +64,10 @@ class ProductRenameTests(unittest.TestCase):
         }
         hits = []
         for path in active_files():
-            if "agent_bootstrap/github.env" in path.read_text(encoding="utf-8", errors="replace") and path not in allowed:
+            if (
+                "agent_bootstrap/github.env" in path.read_text(encoding="utf-8", errors="replace")
+                and path not in allowed
+            ):
                 hits.append(str(path.relative_to(ROOT)))
         self.assertEqual([], hits)
 
@@ -81,7 +84,7 @@ class ProductRenameTests(unittest.TestCase):
         adapter = (ROOT / "scripts/lib/repo_update.sh").read_text(encoding="utf-8")
         self.assertIn('repository="${5:-agentbot}"', adapter)
         self.assertIn('slug="PamuduW/${repository}"', adapter)
-        self.assertNotIn("agent" "_bootstrap", adapter)
+        self.assertNotIn("agent_bootstrap", adapter)
 
         core = (shared_root(ROOT) / "scripts/lib/shared/repo_update.sh").read_text(encoding="utf-8")
         for form in (
@@ -142,7 +145,13 @@ class ProductRenameTests(unittest.TestCase):
 
             def cleanup() -> subprocess.CompletedProcess[str]:
                 return subprocess.run(
-                    ["bash", "-c", 'AGENTBOT_SOURCE_ONLY=1 source "$1/install.sh"; cleanup_owned_old_agentboot_link', "_", str(ROOT)],
+                    [
+                        "bash",
+                        "-c",
+                        'AGENTBOT_SOURCE_ONLY=1 source "$1/install.sh"; cleanup_owned_old_agentboot_link',
+                        "_",
+                        str(ROOT),
+                    ],
                     cwd=ROOT,
                     env={**os.environ, "HOME": str(home)},
                     text=True,
@@ -164,7 +173,10 @@ class ProductRenameTests(unittest.TestCase):
             self.assertEqual("keep", old_link.read_text(encoding="utf-8"))
             old_link.unlink()
 
-            for target in (Path(temporary) / "foreign/agentboot", Path(temporary) / "other/agentbot-checkout/bin/agentboot"):
+            for target in (
+                Path(temporary) / "foreign/agentboot",
+                Path(temporary) / "other/agentbot-checkout/bin/agentboot",
+            ):
                 old_link.symlink_to(target)
                 self.assertEqual(0, cleanup().returncode)
                 self.assertTrue(old_link.is_symlink())

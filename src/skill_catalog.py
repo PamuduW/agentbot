@@ -149,9 +149,7 @@ def _clone_source(repo: str, destination: Path, *, runner: CommandRunner | None 
         env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
     )
     if completed.returncode != 0:
-        raise RuntimeError(
-            f"failed to inspect skill source {repo!r}: {completed.detail()}"
-        )
+        raise RuntimeError(f"failed to inspect skill source {repo!r}: {completed.detail()}")
 
 
 def _revision(checkout: Path, *, runner: CommandRunner | None = None) -> str:
@@ -170,9 +168,7 @@ def skill_name_from_file(skill_file: Path) -> str:
         closing = content.find("\n---", 3)
         if closing != -1:
             frontmatter = content[3:closing]
-            match = re.search(
-                r"^name:\s*([^#\n]+)", frontmatter, flags=re.MULTILINE
-            )
+            match = re.search(r"^name:\s*([^#\n]+)", frontmatter, flags=re.MULTILINE)
             if match:
                 return match.group(1).strip().strip("\"'")
     return skill_file.parent.name
@@ -181,9 +177,5 @@ def skill_name_from_file(skill_file: Path) -> str:
 def discover_checkout_skills(checkout: Path) -> tuple[str, ...]:
     if not checkout.is_dir():
         return ()
-    names = {
-        skill_name_from_file(path)
-        for path in checkout.rglob("SKILL.md")
-        if path.is_file()
-    }
+    names = {skill_name_from_file(path) for path in checkout.rglob("SKILL.md") if path.is_file()}
     return tuple(sorted(name for name in names if name))

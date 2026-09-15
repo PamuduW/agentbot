@@ -19,8 +19,7 @@ class AtomicIoTests(unittest.TestCase):
         self.root = Path(self._temp.name)
         self.path = self.root / "settings.json"
         self.original = (
-            json.dumps({"theme": "dark", "permissions": {"allow": ["Bash"]}}, indent=2)
-            + "\n"
+            json.dumps({"theme": "dark", "permissions": {"allow": ["Bash"]}}, indent=2) + "\n"
         )
         self.updated = (
             json.dumps(

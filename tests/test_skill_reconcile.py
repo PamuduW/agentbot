@@ -65,7 +65,9 @@ class SkillReconcileTests(unittest.TestCase):
         self.assertEqual(("wild-old",), plan.wildcard_removals)
         self.assertEqual(("gone",), plan.explicit_missing)
         self.assertEqual(("newly-discovered",), plan.explicit_discovered)
-        self.assertEqual(("explicit:gone:remove",), tuple(change.key for change in plan.manifest_changes))
+        self.assertEqual(
+            ("explicit:gone:remove",), tuple(change.key for change in plan.manifest_changes)
+        )
         self.assertNotIn("manual", plan.wildcard_removals)
 
     def test_unchanged_sources_produce_empty_plan(self) -> None:
@@ -113,6 +115,7 @@ class SkillReconcileTests(unittest.TestCase):
         self.assertEqual((), plan.updates)
         self.assertEqual((), plan.wildcard_additions)
         self.assertEqual((), plan.wildcard_removals)
+
 
 if __name__ == "__main__":
     unittest.main()
