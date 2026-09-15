@@ -3,6 +3,12 @@ name: test
 on:
   push:
   workflow_dispatch:
+  # Weekly, for the things that break without anyone touching the repository:
+  # the runner image, apt, tool versions -- and GitHub's own MCP tool
+  # descriptors, which the contract pins by fingerprint and which have already
+  # changed all eighteen at once.
+  schedule:
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -17,8 +23,12 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      # 3.10 on every push: it is the floor this project supports, the version
+      # no developer machine here runs, and the one that caught a timeout bug
+      # that 3.12 could not see. 3.12 is covered locally on every gate run, so
+      # it rides the weekly schedule rather than doubling every push.
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ${{ fromJSON(github.event_name == 'schedule' && '["3.10", "3.12"]' || '["3.10"]') }}
 
     steps:
       # Both products resolve shared code from a dotfiles-shared checkout beside
@@ -45,3 +55,44 @@ jobs:
       - name: Run the full gate
         working-directory: agentbot
         run: bash tests/run.sh
+
+  descriptors:
+    name: GitHub MCP descriptor drift
+    # Weekly only, and only when the token exists. The contract pins eighteen
+    # tool descriptors by fingerprint; GitHub added an `icons` field once and
+    # changed every one of them at the same time. Catching that on a Monday is
+    # the difference between a known upstream change and a mid-task mystery.
+    #
+    # Add GITHUB_MCP_TOKEN as a repository secret to turn this on. Without it
+    # the job is skipped, not failed.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: agentbot
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PamuduW/dotfiles-shared
+          path: dotfiles-shared
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        working-directory: agentbot
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Compare the live descriptors with the frozen contract
+        working-directory: agentbot
+        env:
+          AGENTBOT_TEST_GITHUB_MCP: "1"
+          GITHUB_MCP_TOKEN: ${{ secrets.GITHUB_MCP_TOKEN }}
+        run: |
+          if [ -z "${GITHUB_MCP_TOKEN:-}" ]; then
+            echo "GITHUB_MCP_TOKEN is not set; skipping the live descriptor gate."
+            echo "Add it as a repository secret to turn this job on."
+            exit 0
+          fi
+          python -m unittest tests.integration.test_mcp_github_live -v
