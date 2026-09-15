@@ -1061,18 +1061,6 @@ def print_update_plan(plan, *, command: str = "update") -> None:
     print(f"  {verified} already current; {changes} change(s) on apply.")
 
 
-def print_update_outcome(outcome) -> tuple[int, int, int]:
-    result = "ok" if outcome.status in {"applied", "applied-with-local-changes"} else outcome.status
-    # Labelled, because an unlabelled table under a heading that already has
-    # sections below it reads as output that lost its heading.
-    print_section_block("── Outcome ──")
-    return print_table(
-        [("Update", outcome.message or outcome.status, result)],
-        show_header=False,
-        wrap_details=True,
-    )
-
-
 def print_skill_prune_report(report, *, include_manual: bool = False) -> int:
     """Render the prune plan or result. Returns the command's exit code."""
     print_header("Skills Prune", "Agentbot › Skills Prune")

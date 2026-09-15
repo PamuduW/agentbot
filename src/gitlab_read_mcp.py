@@ -5,7 +5,7 @@ import asyncio
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
@@ -22,10 +22,6 @@ from mcp.types import (
 from mcp import MCPError
 
 from .gitlab_read_client import GitLabReadClient, GitLabReadError
-
-
-class GitLabClient(Protocol):
-    def project(self, **arguments: object) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
