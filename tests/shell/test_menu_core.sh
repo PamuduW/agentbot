@@ -373,10 +373,10 @@ test_gitlab_token_secret_never_reaches_an_argument_vector() (
 ' "$*" >>"$args"
 		cat >>"$input" 2>/dev/null || true
 	}
-	_agentbot_token_menu_secret() { printf -v "$1" '%s' 'glpat-abcdefghijklmnopqrstuvwx'; }
-	_agentbot_token_menu_confirm() { return 0; }
-	_agentbot_token_menu_say() { :; }
-	AGENTBOT_TOKEN_MENU_OUT_FD=1
+	_github_token_menu_secret() { printf -v "$1" '%s' 'glpat-abcdefghijklmnopqrstuvwx'; }
+	_github_token_menu_confirm() { return 0; }
+	_github_token_menu_say() { :; }
+	GITHUB_TOKEN_MENU_OUT_FD=1
 	_agentbot_gitlab_token_save >/dev/null 2>&1
 	[[ "$(<"$args")" == 'set' ]] || return 1
 	grep -q 'glpat-abcdefghijklmnopqrstuvwx' "$input" || return 1
