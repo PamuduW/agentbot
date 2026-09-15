@@ -22,16 +22,21 @@ from ..shared_paths import shared_python_path
 _SHARED_PY = shared_python_path(Path(__file__).resolve().parents[2])
 if str(_SHARED_PY) not in sys.path:
     sys.path.insert(0, str(_SHARED_PY))
+import render_report as _render  # noqa: E402
 import report_table as _shared  # noqa: E402
 
-BOLD = "\033[1m"
-DIM = "\033[2m"
-RESET = "\033[0m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-RED = "\033[31m"
-CYAN = "\033[36m"
-ORANGE = "\033[38;5;208m"
+# One palette. The Bash renderer installs it as C_* in the shared tui/colors.sh
+# and the shared Python renderer mirrors it; this side held a third copy of the
+# same eight escapes. Re-exported here because src/ui/menu.py, install_log.py
+# and the suites all import them from this module.
+BOLD = _render.BOLD
+DIM = _render.DIM
+RESET = _render.RESET
+GREEN = _render.GREEN
+YELLOW = _render.YELLOW
+RED = _render.RED
+CYAN = _render.CYAN
+ORANGE = _render.ORANGE
 
 # Narrower than this and the three columns have nothing left to show; the Bash
 # renderer floors here too.
@@ -227,63 +232,18 @@ def print_section(label: str) -> None:
 # and falls to the counter's catch-all, so it silently becomes an attention
 # item. `ready`, `stale` and `unchanged` were each doing that on a public
 # surface. tests/test_report_contract.sh sweeps for it now.
-RESULT_GREEN = {
-    "ok",
-    "installed",
-    "configured",
-    "linked",
-    "up to date",
-    "current",
-    "unchanged",
-    "ready",
-    "applied",
-    "read-only",
-}
-RESULT_RED = {"missing", "failed", "error", "conflict"}
-RESULT_YELLOW = {
-    "check",
-    "warn",
-    "warning",
-    "partial",
-    "drift",
-    "extra",
-    "stale",
-    "applied-with-local-changes",
-    "mutating",
-}
-# Informational, not actionable. The `Prunable skills` row is written as
-# `"info" if manual_skill_count else "ok"`, which says outright that the two are
-# the same kind of non-problem; the rollup counted the second as fine and the
-# first as needing attention.
-RESULT_CYAN = {"info", "dry-run", "preview"}
-
-
-def result_class(result: str) -> str:
-    """Which of the five classes a result word belongs to.
-
-    `unknown` is its own answer rather than a silent fallback: the sweep in
-    tests/test_report_contract.sh reads it, so a surface inventing a word is
-    caught there instead of on the operator's screen.
-    """
-    key = result.strip().lower()
-    if key in RESULT_GREEN:
-        return "ok"
-    if key in RESULT_RED:
-        return "missing"
-    # Dim, not yellow: a skip is a deliberate non-event -- "nothing declared",
-    # "host unavailable" -- and should recede rather than demand attention the
-    # way a warning does. The Bash renderer has always dimmed it; this side
-    # diverged, and only uncoloured rows were being compared so nothing said so.
-    if key.startswith("skipped"):
-        return "skipped"
-    if key in RESULT_YELLOW:
-        return "check"
-    if key in RESULT_CYAN:
-        return "info"
-    return "unknown"
-
-
+# The result vocabulary lives in the shared renderer, beside the Bash one it
+# must agree with byte for byte. This side kept a third copy of it until the
+# copies were reconciled; `unchanged`, `ready` and `stale` came from here.
 _RESULT_COLORS = {"ok": GREEN, "missing": RED, "skipped": DIM, "check": YELLOW, "info": CYAN}
+
+RESULT_GREEN = _render._GREEN
+RESULT_RED = _render._RED
+RESULT_YELLOW = _render._YELLOW
+RESULT_CYAN = _render._CYAN
+
+#: Re-exported: tests/lib/result_sweep.py and test_ui_reports.py read it here.
+result_class = _render.result_class
 
 
 def color_result(result: str) -> str:
@@ -440,23 +400,20 @@ def print_four_column_table(
 
 
 #: What will happen, as opposed to what something is. `current` is green here
-#: and yellow in the result vocabulary, which is why the two are separate.
-ACTION_GREEN = {"up to date", "skip", "current", "verified current", "none"}
-ACTION_YELLOW = {"refresh", "continue", "check", "unchecked", "reconcile", "configure"}
-ACTION_CYAN = {"verified", "install", "apply", "merge"}
+#: and yellow in the result vocabulary, which is why the two are separate. The
+#: vocabulary itself is shared, for the same reason the result one is.
+ACTION_GREEN = _render._ACTION_GREEN
+ACTION_YELLOW = _render._ACTION_YELLOW
+ACTION_CYAN = _render._ACTION_CYAN
+
+_ACTION_COLORS = {"ok": GREEN, "skipped": DIM, "info": CYAN, "check": YELLOW, "missing": RED}
 
 
 def color_action(action: str) -> str:
-    key = action.strip().lower()
-    if key in ACTION_GREEN:
-        return _c(action, GREEN)
-    if key in ACTION_CYAN:
-        return _c(action, CYAN)
-    if key in ACTION_YELLOW or key.startswith(("upgrade", "replace", "refresh")):
-        return _c(action, YELLOW)
-    if key.startswith("latest "):
-        return _c(action, DIM)
-    return action
+    # Normalised here rather than in the shared classifier, which compares raw
+    # so it stays byte-comparable with the Bash renderer.
+    code = _ACTION_COLORS.get(_render.action_class(action.strip().lower()))
+    return action if code is None else _c(action, code)
 
 
 def _color_action_cell(line: str, action: str, widths) -> str:
