@@ -11,9 +11,25 @@ extend-exclude = ["archive"]
 [tool.ruff.lint]
 # E/F/I were the original set. B catches likely bugs, UP keeps the syntax at the
 # py310 floor the project already declares, C4 and RUF are cheap correctness.
-select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "RUF"]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "RUF", "C901", "PLR0912", "PLR0915"]
 # The breadcrumb separator "›" is deliberate and asserted by the TUI tests.
 ignore = ["RUF001"]
+
+# A ratchet, not a target. The limits are today's worst function in each
+# category, so the gate cannot get worse while nothing existing has to be
+# rewritten: 21 functions are over the conventional complexity of 10, and the
+# ones at the top -- apply_reconcile_plan, _handle_gitlab_token, apply_prune --
+# are the reconciliation, token-validation and removal paths, where a
+# refactor risks behaviour for a number.
+#
+# Lower a limit when a function that set it is split for a reason of its own.
+# Raising one is the thing this exists to stop.
+[tool.ruff.lint.mccabe]
+max-complexity = 24
+
+[tool.ruff.lint.pylint]
+max-branches = 23
+max-statements = 103
 
 [tool.coverage.run]
 branch = true

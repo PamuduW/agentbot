@@ -445,12 +445,16 @@ def _handle_update(context: CommandContext) -> int:
         print("  confirmation_required: rerun with --yes to apply this plan")
         return 0
 
-    # The work phase opens with its own heading and legend, as the sibling
-    # product's `=== Updating ===` does. The [STEP] lines used to start directly
-    # under the plan table, so the table the operator had just approved and the
-    # run that followed it read as one block.
-    title = f"Applying {command}"
-    print_header(title, f"Agentbot › {command.capitalize()} › Applying")
+    # The work phase opens with its own heading and legend, and is named the
+    # same thing the sibling product names it. The [STEP] lines used to start
+    # directly under the plan table, so the table the operator had just
+    # approved and the run that followed it read as one block.
+    #
+    # Not built from `command`: this handler also serves the `upgrade` alias,
+    # which spelled a heading "Applying upgrade" under an "Upgrade" crumb --
+    # the one word the lexicon reserves for apt. A built title is also invisible
+    # to the lexicon check, which can only read literal ones.
+    print_header("Updating", "Agentbot › Update › Updating")
     log_legend()
     print()
     applying = InstallLog(sentinel="Update complete")

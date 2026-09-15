@@ -235,7 +235,7 @@ class HandlerTests(unittest.TestCase):
             cli._handle_update(context)
         rendered = strip_ansi(buffer.getvalue())
 
-        self.assertIn("=== Applying update ===", rendered)
+        self.assertIn("=== Updating ===", rendered)
         self.assertIn("[Legend]", rendered)
         self.assertIn("=== Update result ===", rendered)
         # One heading for the result, not a second one inside it.
