@@ -54,11 +54,20 @@ def shared_root(repo_root: Path) -> Path:
         if not _is_checkout(candidate):
             continue
         found = (candidate / "CONTRACT").read_text(encoding="utf-8").strip()
-        if found != str(CONTRACT_REQUIRED):
+        # At least, not exactly -- the Bash resolver's rule, for the same
+        # reason. A raise means a consumer started needing something the shared
+        # tree gained, so a shared checkout ahead of this one is a superset and
+        # safe. Behind is the unsafe direction.
+        if not found.isdigit():
             raise SharedCheckoutError(
-                f"dotfiles-shared at {candidate} is CONTRACT {found or 'unreadable'}, "
-                f"but this repository requires {CONTRACT_REQUIRED}. "
-                f"Update both checkouts to matching revisions: git -C {candidate} pull"
+                f"dotfiles-shared at {candidate} has an unreadable CONTRACT. "
+                f"Update the shared checkout: git -C {candidate} pull"
+            )
+        if int(found) < CONTRACT_REQUIRED:
+            raise SharedCheckoutError(
+                f"dotfiles-shared at {candidate} is CONTRACT {found}, older than the "
+                f"{CONTRACT_REQUIRED} this repository needs. "
+                f"Update the shared checkout: git -C {candidate} pull"
             )
         return candidate.resolve()
     looked = "\n    ".join(str(path) for path in candidates)

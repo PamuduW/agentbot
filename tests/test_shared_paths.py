@@ -77,14 +77,28 @@ class SharedPathsTests(unittest.TestCase):
             self.assertIn("git clone", message)
             self.assertIn("dotfiles-shared", message)
 
-    def test_a_contract_mismatch_reports_both_revisions(self) -> None:
+    def test_a_shared_checkout_ahead_of_this_one_is_accepted(self) -> None:
+        """Ahead is a superset, and rejecting it deadlocked a self-update.
+
+        A revision is raised when a consumer starts needing something the
+        shared tree gained, so a shared checkout ahead of this repository has
+        everything it loads and more. Refusing that pairing meant a consumer
+        older than the raise could not start, so it could not run the gate that
+        would have pulled the newer consumer.
+        """
         with TemporaryDirectory() as tmp:
             parent = Path(tmp)
-            _checkout(parent, contract=str(CONTRACT_REQUIRED + 1))
+            expected = _checkout(parent, contract=str(CONTRACT_REQUIRED + 1))
+            self.assertEqual(expected.resolve(), shared_root(parent / "agentbot"))
+
+    def test_a_shared_checkout_behind_this_one_is_refused(self) -> None:
+        with TemporaryDirectory() as tmp:
+            parent = Path(tmp)
+            _checkout(parent, contract=str(CONTRACT_REQUIRED - 1))
             with self.assertRaises(SharedCheckoutError) as caught:
                 shared_root(parent / "agentbot")
             message = str(caught.exception)
-            self.assertIn(str(CONTRACT_REQUIRED + 1), message)
+            self.assertIn(str(CONTRACT_REQUIRED - 1), message)
             self.assertIn(str(CONTRACT_REQUIRED), message)
 
     def test_an_unreadable_contract_is_a_mismatch_not_a_crash(self) -> None:
