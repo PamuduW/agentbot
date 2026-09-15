@@ -257,8 +257,8 @@ test_token_confirm_returns_to_the_parent_tty_after_its_descriptors_close() (
 		exec {token_in}<"$3"; exec {token_out}>>"$4"
 		DOTFILES_TTY_IN_FD="$parent_in" DOTFILES_TTY_OUT_FD="$parent_out"
 		source "$5/scripts/menu.sh"
-		AGENTBOT_TOKEN_MENU_IN_FD="$token_in" AGENTBOT_TOKEN_MENU_OUT_FD="$token_out"
-		_agentbot_token_menu_confirm "Confirm token" || exit 1
+		GITHUB_TOKEN_MENU_IN_FD="$token_in" GITHUB_TOKEN_MENU_OUT_FD="$token_out"
+		_github_token_menu_confirm "Confirm token" || exit 1
 		exec {token_in}<&-; exec {token_out}>&-
 		tui_pause
 		printf "parent=%s token=%s\\n" "$(<"$2")" "$(<"$4")"
