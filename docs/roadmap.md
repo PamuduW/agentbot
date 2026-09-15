@@ -1,8 +1,7 @@
 # Agentbot roadmap
 
-**Status:** Phases 0, 1, 2, and 5 are complete. Phase 3 Gates 5.1A and 5.1C now
-provide the default-off MCP control plane and three admitted filtered knowledge
-overlays; GitHub and GitLab admission gates remain. Phase 4 memory remains
+**Status:** Phases 0, 1, 2, 3, and 5 are complete. Phase 3 admitted all five
+MCP candidates on 2026-09-15 and made MCP an install component. Phase 4 memory remains
 deferred. Slice 4M is complete, but Slice 4.0A
 must not start until the planned cross-agent memory comparison is resolved. The
 current core has one Python lifecycle backend, one diagnostics snapshot, one
@@ -32,7 +31,7 @@ must use Agentbot and agentbot.
 | Global machine baseline | global/AGENTS.md and install.sh global | Live |
 | Curated skills | skills.sources.yaml and install.sh skills ... | Live |
 | Dotfiles integration | sibling dotfiles Agentbot bridge | Live |
-| Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Gates 5.1A and 5.1C live; source-control admissions pending |
+| Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Live; all five candidates admitted, MCP is an install component |
 | Durable memory | workspace `docs/designs/memory/` design | Pending cross-agent memory comparison |
 | Graphify CLI and assistant integration | sibling dotfiles component plus Agentbot integration | Live (Phase 5) |
 
@@ -54,7 +53,7 @@ Phase 2: profiles + managed workspace render + local resync ✅
     |\
     | \--> Phase 5: optional Graphify CLI + assistant integration ✅
     |
-    +----> Phase 3: provider-neutral MCP management (Gate 5.1A live)
+    +----> Phase 3: provider-neutral MCP management ✅
     |
     +----> Phase 4: durable memory (pending cross-agent comparison)
 ```
@@ -188,7 +187,7 @@ The implementation is covered by:
 - Agentbot dispatcher, boot, menu, syntax, and temporary-folder acceptance
   tests.
 
-## Phase 3 — provider-neutral MCP management (Gates 5.1A and 5.1C live)
+## Phase 3 — provider-neutral MCP management ✅
 
 **Goal:** Give Claude Code, Codex CLI, and Cursor one Agentbot-owned MCP catalog
 while rendering each client's native schema and preserving configuration that
@@ -209,13 +208,24 @@ Delivered in Gate 5.1A:
 5. offline status and Doctor mapping for ownership, configuration, drift, and
    authentication-reference failures.
 
-The catalog admits Context7, AWS Knowledge, and Microsoft Learn through the
-local fail-closed filter. Their live public descriptors, bounded calls, and
-isolated Claude, Codex, and Cursor configurations passed on 2026-09-14. They
-remain unselected by default. The GitHub read-only contract is frozen as an
-ineligible candidate. The typed, bounded GitLab REST-read facade is implemented
-but remains ineligible until its safe-project and three-client live admission
-gates pass with a `read_api` credential.
+All five candidates are admitted as of 2026-09-15: Context7, AWS Knowledge and
+Microsoft Learn behind the local fail-closed filter, GitHub's remote read-only
+endpoint, and the typed GitLab REST-read facade.
+
+MCP is an install component rather than a separate menu entry. `mcp/catalog.json`
+is its manifest the way `skills.sources.yaml` is for skills: `install` and
+`update` register every eligible entry for Claude, Codex and Cursor, `status`
+reports registered against available pairs, and a deselected component reads
+without writing. The component never overwrites an entry it does not own.
+
+Two findings from admission are worth carrying forward. GitHub changed every
+tool descriptor by adding an `icons` field; the fingerprints were re-frozen
+rather than the check weakened, and `github.descriptors.json` now stores the
+accepted bodies so the next drift can be diffed instead of reasoned about.
+GitLab's `gitlab_project` disclosed a live `runners_token` through an otherwise
+correct read-only surface — read-only authority constrains mutation, not
+disclosure — and the facade now redacts credential-named values at its single
+response chokepoint.
 
 The historical files under `archive/catalog/` and `archive/mcp/` are research
 inputs only. Phase 3 must extend the Phase 2 renderer; it must not restore the
