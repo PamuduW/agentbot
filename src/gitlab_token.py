@@ -77,6 +77,18 @@ class VerifyResult:
         """
         return bool(self.scopes) and all(scope.startswith("read_") for scope in self.scopes)
 
+    @property
+    def write_capable(self) -> bool:
+        """True only when a granted scope is *known* to permit writing.
+
+        Three states, not two. Unknown scopes are not write-capable: a
+        fine-grained token publishes none, answering 403 to its own
+        self-inspection endpoint, and refusing on silence would reject exactly
+        the narrowest credential this facade wants. Absence of evidence stays
+        absence of evidence, here as in `verify`.
+        """
+        return bool(self.scopes) and not self.read_only
+
 
 def token_file(config_home: Path) -> Path:
     return config_home / "gitlab.env"

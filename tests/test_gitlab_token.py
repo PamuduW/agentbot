@@ -348,13 +348,29 @@ class CommandTests(unittest.TestCase):
         self.assertIn("without a check", stdout)
         self.assertEqual(_TOKEN, store.read(self.config_home))
 
-    def test_set_warns_when_the_token_can_write(self) -> None:
+    def test_set_refuses_a_token_that_can_write_and_saves_nothing(self) -> None:
+        # It used to save this and print a warning, so the operator learned
+        # about it after the credential was on disk and exported to every
+        # client. The decision belongs before the write.
         writable = store.VerifyResult(True, "accepted", ("api",))
 
-        rc, stdout, _ = self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n", verify=writable)
+        rc, _, stderr = self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n", verify=writable)
+
+        self.assertEqual(1, rc)
+        self.assertIn("can write", stderr)
+        self.assertIn("api", stderr)
+        self.assertEqual("", store.read(self.config_home))
+
+    def test_set_accepts_a_token_whose_scopes_are_not_published(self) -> None:
+        # A fine-grained token answers 403 to its own self-inspection endpoint,
+        # so no scopes come back. Unknown is not write-capable, and refusing on
+        # silence would reject the narrowest credential the facade wants.
+        unpublished = store.VerifyResult(True, "accepted", ())
+
+        rc, _, _ = self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n", verify=unpublished)
 
         self.assertEqual(0, rc)
-        self.assertIn("write scope", stdout)
+        self.assertEqual(_TOKEN, store.read(self.config_home))
 
     def test_check_separates_rejection_from_being_unable_to_ask(self) -> None:
         self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n")
@@ -364,14 +380,16 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(1, self._run("gitlab-token", "check", verify=rejected)[0])
         self.assertEqual(2, self._run("gitlab-token", "check", verify=unknown)[0])
 
-    def test_check_warns_when_the_token_can_write(self) -> None:
+    def test_check_fails_when_the_saved_token_can_write(self) -> None:
+        # Checking the saved credential is the only place a scope widened after
+        # it was stored can be caught, so it fails rather than warns.
         self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n")
         writable = store.VerifyResult(True, "accepted for someone", ("api",))
 
-        rc, stdout, _ = self._run("gitlab-token", "check", verify=writable)
+        rc, _, stderr = self._run("gitlab-token", "check", verify=writable)
 
-        self.assertEqual(0, rc)
-        self.assertIn("write scope", stdout)
+        self.assertEqual(1, rc)
+        self.assertIn("can write", stderr)
 
     def test_check_reports_read_only_scopes_without_warning(self) -> None:
         self._run("gitlab-token", "set", stdin=f"{_TOKEN}\n")
@@ -381,7 +399,37 @@ class CommandTests(unittest.TestCase):
 
         self.assertEqual(0, rc)
         self.assertIn("read_api", stdout)
-        self.assertNotIn("write scope", stdout)
+        self.assertNotIn("can write", stdout)
+
+    def test_verify_reports_without_saving(self) -> None:
+        good = store.VerifyResult(True, "accepted for someone", ("read_api",))
+
+        rc, stdout, _ = self._run("gitlab-token", "verify", stdin=f"{_TOKEN}\n", verify=good)
+
+        self.assertEqual(0, rc)
+        self.assertIn("read_api", stdout)
+        # The point of the command: the menu can show this before it asks.
+        self.assertEqual("", store.read(self.config_home))
+
+    def test_verify_separates_its_four_answers(self) -> None:
+        cases = (
+            (store.VerifyResult(False, "GitLab rejected the token (HTTP 401)"), 1),
+            (store.VerifyResult(None, "could not reach GitLab: URLError"), 2),
+            (store.VerifyResult(True, "accepted", ("api",)), 3),
+            (store.VerifyResult(True, "accepted", ("read_api",)), 0),
+        )
+        for result, expected in cases:
+            with self.subTest(detail=result.detail, scopes=result.scopes):
+                rc, _, _ = self._run(
+                    "gitlab-token", "verify", stdin=f"{_TOKEN}\n", verify=result
+                )
+                self.assertEqual(expected, rc)
+
+    def test_verify_refuses_a_malformed_token_without_asking_gitlab(self) -> None:
+        rc, _, stderr = self._run("gitlab-token", "verify", stdin="glpat-short\n")
+
+        self.assertEqual(1, rc)
+        self.assertIn("invalid", stderr)
 
     def test_check_and_reveal_need_a_saved_token(self) -> None:
         self.assertEqual(1, self._run("gitlab-token", "check")[0])

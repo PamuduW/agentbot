@@ -59,16 +59,37 @@ _agentbot_gitlab_token_render() {
 	printf '\n' >&"$GITHUB_TOKEN_MENU_OUT_FD"
 }
 
+# Ask GitLab before asking the operator, which is the order the GitHub screen
+# uses. This screen used to confirm first and report the scopes afterwards, so a
+# token that could write was already on disk -- and already exported to every
+# client -- by the time it said so.
 _agentbot_gitlab_token_save() {
 	local token='' output='' rc=0
 	printf '  %sInput is hidden; only its fingerprint will be shown.%s\n' \
 		"${C_DIM:-}" "${C_RESET:-}" >&"$GITHUB_TOKEN_MENU_OUT_FD"
 	_github_token_menu_secret token "  ${C_CYAN:-}GitLab read_api token${C_RESET:-} (q cancels): "
 	[[ "$token" != q && "$token" != Q && -n "$token" ]] || return 0
+	# Through stdin, never an argument.
+	output="$(printf '%s\n' "$token" | _agentbot_gitlab_token_backend verify 2>&1)" || rc=$?
+	output="${output#"${output%%[![:space:]]*}"}"
+	case "$rc" in
+	0)
+		printf '  %s%s%s\n\n' "${C_GREEN:-}" "$output" "${C_RESET:-}" \
+			>&"$GITHUB_TOKEN_MENU_OUT_FD"
+		;;
+	2)
+		printf '  %s%s; saving without a check.%s\n\n' \
+			"${C_YELLOW:-}" "$output" "${C_RESET:-}" >&"$GITHUB_TOKEN_MENU_OUT_FD"
+		;;
+	*)
+		_github_token_menu_say "${C_RED:-}${output:-Token was not saved.} Nothing was saved.${C_RESET:-}"
+		return 0
+		;;
+	esac
 	if ! _github_token_menu_confirm "  Save this token?"; then
 		return 0
 	fi
-	# Through stdin, never an argument.
+	rc=0
 	output="$(printf '%s\n' "$token" | _agentbot_gitlab_token_backend set 2>&1)" || rc=$?
 	output="${output#"${output%%[![:space:]]*}"}"
 	if ((rc == 0)); then

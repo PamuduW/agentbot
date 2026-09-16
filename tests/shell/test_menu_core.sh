@@ -378,14 +378,52 @@ test_gitlab_token_secret_never_reaches_an_argument_vector() (
 	_github_token_menu_say() { :; }
 	GITHUB_TOKEN_MENU_OUT_FD=1
 	_agentbot_gitlab_token_save >/dev/null 2>&1
-	[[ "$(<"$args")" == 'set' ]] || return 1
+	# Checked before it is saved, in that order, the way the GitHub screen has
+	# always worked. The screen used to confirm first and report the scopes
+	# after writing, so a token that could write was already on disk -- and
+	# already exported to every client -- by the time it said so.
+	[[ "$(<"$args")" == 'verify
+set' ]] || return 1
 	grep -q 'glpat-abcdefghijklmnopqrstuvwx' "$input" || return 1
 	! grep -q 'glpat' "$args"
+)
+
+test_gitlab_token_is_not_saved_when_the_check_refuses_it() (
+	# Every refusing exit stops before `set` runs: rejected, wrong shape, or
+	# carrying a scope that can write.
+	local args="$TEST_ROOT/gitlab-refused.args" rc
+	local code
+	for code in 1 3; do
+		: >"$args"
+		eval "_agentbot_gitlab_token_backend() {
+			printf '%s\n' \"\$*\" >>\"$args\"
+			cat >/dev/null 2>&1 || true
+			return $code
+		}"
+		_github_token_menu_secret() { printf -v "$1" '%s' 'glpat-abcdefghijklmnopqrstuvwx'; }
+		_github_token_menu_confirm() { return 0; }
+		_github_token_menu_say() { :; }
+		GITHUB_TOKEN_MENU_OUT_FD=1
+		_agentbot_gitlab_token_save >/dev/null 2>&1
+		[[ "$(<"$args")" == 'verify' ]] || return 1
+	done
+	# Being unable to ask is not a refusal: it still offers to save.
+	: >"$args"
+	_agentbot_gitlab_token_backend() {
+		printf '%s\n' "$*" >>"$args"
+		cat >/dev/null 2>&1 || true
+		[[ "$*" == verify ]] && return 2
+		return 0
+	}
+	_agentbot_gitlab_token_save >/dev/null 2>&1
+	[[ "$(<"$args")" == 'verify
+set' ]]
 )
 
 check 'token menu lists both providers' test_token_menu_lists_both_providers
 check 'token menu dispatch routes each provider' test_token_menu_dispatch_routes_each_provider
 check 'gitlab token never reaches an argument vector' test_gitlab_token_secret_never_reaches_an_argument_vector
+check 'gitlab token is not saved when the check refuses it' test_gitlab_token_is_not_saved_when_the_check_refuses_it
 check 'relay reads the step message from a STEP line' test_relay_extracts_the_step_message
 check 'relay emits backend lines unchanged with no terminal' test_relay_emits_lines_unchanged_without_a_terminal
 check 'relay animation honours the opt-out' test_relay_animation_can_be_switched_off

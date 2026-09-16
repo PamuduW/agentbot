@@ -132,6 +132,15 @@ an argument vector, and is only ever reported by fingerprint. Nothing else is
 stored beside it: every facade tool takes `project_id` as a call argument, so
 what may be read is decided by the token's own access.
 
+**A credential that can write is refused, not warned about.** Both token
+screens check scopes before storing anything, and check them again on demand,
+because a token that was read-only when it was saved is exactly the thing whose
+scopes get widened later. GitLab reads them from its token self-inspection
+endpoint; GitHub reads the `X-OAuth-Scopes` response header and allowlists the
+read-only ones, so a scope invented after this was written fails closed. A
+fine-grained token publishes no scopes at all — that is unknown rather than
+none, and unknown is never treated as a refusal.
+
 `catalog`, `status`, and `plan` are read-only; default status never contacts a
 provider. Mutations require a non-empty server and client selection plus
 `--yes`. Agentbot refuses malformed configuration, symlinks, unmanaged

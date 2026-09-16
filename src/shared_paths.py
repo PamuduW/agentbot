@@ -21,7 +21,7 @@ from pathlib import Path
 #: whenever the pairing changes -- including when this side starts requiring a
 #: module the shared checkout did not used to carry, which is a breaking
 #: combination even though the shared side only gained something.
-CONTRACT_REQUIRED = 2
+CONTRACT_REQUIRED = 3
 
 URL = "https://github.com/PamuduW/dotfiles-shared"
 

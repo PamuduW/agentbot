@@ -268,12 +268,17 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "gitlab-token",
-        "agentbot gitlab-token status|set|check|reveal|remove",
+        "agentbot gitlab-token status|set|verify|check|reveal|remove",
         "mutating",
         "Inspect or manage the saved GitLab read_api token the MCP facade reads with.",
         (
             option("status", "Show whether a token is saved, by fingerprint only.", "read-only"),
             option("set", "Save a token read from standard input.", "stdin only"),
+            option(
+                "verify",
+                "Check a token read from standard input without saving it.",
+                "stdin only, network",
+            ),
             option(
                 "check",
                 "Ask GitLab whether the saved token is accepted, and for what scopes.",
@@ -289,6 +294,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         (
             "gitlab-token status",
             "gitlab-token set",
+            "gitlab-token verify",
             "gitlab-token check",
             "gitlab-token reveal",
             "gitlab-token remove",

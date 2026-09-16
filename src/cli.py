@@ -8,6 +8,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import ModuleType
 
 from .boost import BoostIntegration
 from .commands import CommandSpec, command_by_name
@@ -274,6 +275,46 @@ def _handle_boost(context: CommandContext) -> int:
     return 1 if status.state in {"broken", "forbidden", "unsafe-config"} else 0
 
 
+def _gitlab_token_verify_only(store: ModuleType) -> int:
+    """Check a candidate token without storing it.
+
+    The menu calls this so the verdict is in front of the operator before it
+    asks whether to save, which is the order the GitHub screen has always used.
+    Same stdin discipline and the same shape rule as `set`, so a token this
+    accepts is not one `set` then rejects for a different reason.
+
+        0  accepted, and not proven able to write
+        1  refused, or the wrong shape
+        2  could not ask
+        3  accepted, but carries a scope that can write
+    """
+    token = sys.stdin.readline().strip()
+    if not token:
+        print("  No token was supplied.", file=sys.stderr)
+        return 1
+    if not store.is_valid(token):
+        print(f"  token value is invalid: {store.SHAPE_RULE}", file=sys.stderr)
+        return 1
+    print(f"  Proposed: {store.fingerprint(token)}")
+    result = store.verify(token)
+    if result.accepted is False:
+        print(f"  {result.detail}", file=sys.stderr)
+        return 1
+    if result.accepted is None:
+        print(f"  Could not check it: {result.detail}")
+        return 2
+    if result.write_capable:
+        print(
+            f"  This token can write ({', '.join(result.scopes)}); "
+            "read_api is the contract.",
+            file=sys.stderr,
+        )
+        return 3
+    scopes = ", ".join(result.scopes) if result.scopes else "not published"
+    print(f"  GitLab {result.detail}; scopes: {scopes}")
+    return 0
+
+
 def _handle_gitlab_token(context: CommandContext) -> int:
     from . import gitlab_token as store
 
@@ -291,6 +332,9 @@ def _handle_gitlab_token(context: CommandContext) -> int:
             return 1
         print(f"  {store.fingerprint(saved)}")
         return 0
+
+    if command == "verify":
+        return _gitlab_token_verify_only(store)
 
     if command == "set":
         # One line, from stdin. Whitespace is stripped because a paste through
@@ -312,6 +356,18 @@ def _handle_gitlab_token(context: CommandContext) -> int:
         if result.accepted is False:
             print(f"  {result.detail}; nothing was saved.", file=sys.stderr)
             return 1
+        # Decided before the write, not reported after it. A token that can
+        # write used to be saved with a warning, which meant the operator was
+        # told about it while it was already on disk and already exported to
+        # every client -- the GitHub screen has always checked first, and this
+        # now matches it.
+        if result.write_capable:
+            print(
+                f"  This token can write ({', '.join(result.scopes)}); "
+                "read_api is the contract. Nothing was saved.",
+                file=sys.stderr,
+            )
+            return 1
         try:
             store.write(config_home, token)
         except store.TokenError as error:
@@ -320,8 +376,6 @@ def _handle_gitlab_token(context: CommandContext) -> int:
         print(f"  Saved {store.fingerprint(token)}")
         if result.accepted is None:
             print(f"  Saved without a check: {result.detail}")
-        elif result.scopes and not result.read_only:
-            print("  Warning: this token carries a write scope; read_api is the contract.")
         return 0
 
     if command == "check":
@@ -335,12 +389,16 @@ def _handle_gitlab_token(context: CommandContext) -> int:
         if not result.accepted:
             print(f"  {result.detail}")
             return 1
-        scopes = ", ".join(result.scopes) if result.scopes else "unknown"
-        print(f"  GitLab {result.detail}; scopes: {scopes}")
+        scopes = ", ".join(result.scopes) if result.scopes else "not published"
         # A token that can write is accepted by GitLab and still wrong for a
-        # read-only facade, so it is reported rather than passed silently.
-        if result.scopes and not result.read_only:
-            print("  Warning: this token carries a write scope; read_api is the contract.")
+        # read-only facade. Checking the saved credential is the only place a
+        # scope that was widened after it was stored can be caught, so this
+        # fails rather than warns.
+        if result.write_capable:
+            print(f"  GitLab {result.detail}, but this token can write: {scopes}", file=sys.stderr)
+            print("  read_api is the contract. Replace it with a read-only token.", file=sys.stderr)
+            return 1
+        print(f"  GitLab {result.detail}; scopes: {scopes}")
         return 0
 
     if command == "reveal":
@@ -629,6 +687,26 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
 }
 
 
+def _add_gitlab_token_parser(subparsers: argparse._SubParsersAction) -> None:
+    """The GitLab read credential's subcommands."""
+    gitlab_token = subparsers.add_parser(
+        "gitlab-token", help="Inspect or manage the saved GitLab read token"
+    )
+    gitlab_token_sub = gitlab_token.add_subparsers(dest="gitlab_token_command", required=True)
+    gitlab_token_sub.add_parser("status", help="Show whether a token is saved, by fingerprint")
+    # Read from stdin, never an argument: an argv is world-readable in /proc.
+    gitlab_token_sub.add_parser("set", help="Save a token read from standard input")
+    # Check a candidate without storing it, so the menu can put the verdict in
+    # front of the operator before it asks whether to save -- the order the
+    # GitHub screen has always used.
+    gitlab_token_sub.add_parser(
+        "verify", help="Check a token read from standard input without saving it"
+    )
+    gitlab_token_sub.add_parser("check", help="Ask GitLab whether the saved token is accepted")
+    gitlab_token_sub.add_parser("reveal", help="Print the saved token once")
+    gitlab_token_sub.add_parser("remove", help="Delete the saved token")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentbot")
     parser.add_argument(
@@ -691,16 +769,7 @@ def build_parser() -> argparse.ArgumentParser:
     # The GitLab read credential. GitHub's token stays in the Bash helper both
     # products share; this one is Agentbot's, and the menu drives it through
     # here so the secret never crosses a shell argument vector.
-    gitlab_token = subparsers.add_parser(
-        "gitlab-token", help="Inspect or manage the saved GitLab read token"
-    )
-    gitlab_token_sub = gitlab_token.add_subparsers(dest="gitlab_token_command", required=True)
-    gitlab_token_sub.add_parser("status", help="Show whether a token is saved, by fingerprint")
-    # Read from stdin, never an argument: an argv is world-readable in /proc.
-    gitlab_token_sub.add_parser("set", help="Save a token read from standard input")
-    gitlab_token_sub.add_parser("check", help="Ask GitLab whether the saved token is accepted")
-    gitlab_token_sub.add_parser("reveal", help="Print the saved token once")
-    gitlab_token_sub.add_parser("remove", help="Delete the saved token")
+    _add_gitlab_token_parser(subparsers)
 
     mcp = subparsers.add_parser("mcp", help="Manage explicitly selected MCP servers")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
