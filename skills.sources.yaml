@@ -131,7 +131,35 @@ sources:
     skills:
       - gitlab-ci-skill
 
+  - id: obsidian
+    # Obsidian's own creator. Six skills: obsidian-markdown is the one the
+    # memory vault needs -- wikilinks, properties, callouts, embeds, tags --
+    # and the rest are adopted with it by operator decision on 2026-09-19.
+    # ADR-0003 records that decision, the research it overrides, and the
+    # boundary it depends on: the Memory Core owns schema, path, provenance,
+    # lifecycle and concurrency, and these skills own Obsidian syntax inside an
+    # artifact the Memory Core has already approved. Where they disagree, the
+    # Memory Core wins.
+    #
+    # obsidian-cli is the one to watch. It needs a running Obsidian instance
+    # and can mutate notes directly, so it is a write path that does not pass
+    # through `memory propose` and `memory approve`. Nothing may make it a
+    # prerequisite: the vault stays fully operational with Obsidian closed.
+    repo: kepano/obsidian-skills
+    skills:
+      - obsidian-markdown
+      - obsidian-bases
+      - json-canvas
+      - obsidian-cli
+      - defuddle
+      - knap
+
   - id: obsidian-memory
     repo: AdamTylerLynch/obsidian-agent-memory-skills
     skills: []
-    enabled: false  # not advertised in base templates
+    # Disabled, and the 2026-09-18 research says keep it that way: it is a
+    # second canonical memory writer with its own schema, it updates shared
+    # records (TODOs, overviews, both ends of a relationship) with no locking,
+    # and it reads two unbounded files at every session start. The Memory Core
+    # plus the Obsidian skills above cover what it was wanted for.
+    enabled: false
