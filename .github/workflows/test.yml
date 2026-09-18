@@ -1,14 +1,15 @@
 name: test
 
 on:
-  push:
   workflow_dispatch:
-  # Weekly, for the things that break without anyone touching the repository:
-  # the runner image, apt, tool versions -- and GitHub's own MCP tool
-  # descriptors, which the contract pins by fingerprint and which have already
-  # changed all eighteen at once.
+  # Daily at 10:00 UTC rather than on every push. Two different things break
+  # this suite and neither is a commit: the runner image, apt and tool versions
+  # drift underneath it, and GitHub's own MCP tool descriptors -- which the
+  # contract pins by fingerprint -- have already changed all eighteen at once.
+  # A day's granularity is enough to catch both, and `workflow_dispatch` covers
+  # the case where a change here wants checking now.
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 10 * * *"
 
 permissions:
   contents: read
