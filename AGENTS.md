@@ -24,7 +24,6 @@ Skills CLI through `npx`.
 | `global/` | Authored machine-policy and Claude statusline sources |
 | `agentos.yaml` | Safe-default workspace profile and output allowlist |
 | `docs/` | Current technical documentation and product roadmap |
-| `archive/` | Historical MCP research inputs only; never runtime configuration |
 | `tests/` | Python and shell regression suites |
 
 ## Commands

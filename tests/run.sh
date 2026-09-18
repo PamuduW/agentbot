@@ -47,7 +47,6 @@ run_check() {
 mapfile -t shell_files < <(
 	find "$ROOT" \
 		-path "$ROOT/.git" -prune -o \
-		-path "$ROOT/archive" -prune -o \
 		-type f -name '*.sh' -print | sort
 )
 production_shell_files=()

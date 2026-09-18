@@ -951,8 +951,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _archived_command_error(command: str) -> int:
     print(
-        f"  Error: '{command}' is archived. See archive/docs/README.md for catalog, "
-        "MCP, and interactive control-plane features.",
+        f"  Error: '{command}' is archived. MCP is managed by 'agentbot mcp' now; "
+        "the retired catalog and interactive control-plane code is in Git history.",
         file=sys.stderr,
     )
     return 1

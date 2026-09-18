@@ -35,7 +35,7 @@ def merge_instruction_text(global_agents: Path, repo_agents: Path | None) -> str
 def render_global_outputs(paths: AgentbotPaths) -> None:
     """Render global AGENTS.md outputs and Codex skill symlinks.
 
-    MCP writing from catalog is archived — see archive/mcp/ and archive/catalog/.
+    MCP writing from catalog is retired; `agentbot mcp` owns MCP now.
     """
     merged = merge_instruction_text(paths.global_agents, None)
 
