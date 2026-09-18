@@ -167,9 +167,17 @@ _tui_step_spinner_start() {
 	_TUI_SPINNER_PID=$!
 }
 
-# The step a [STEP] line names, without its marker or indentation.
+# The step a [STEP] line names, without its marker, indentation or colour.
+#
+# The backend paints its own markers now -- install_log.py colours them so they
+# match in a Dotfiles full update, where this relay is not there to do it. That
+# puts an escape sequence in front of the marker, so stripping whitespace alone
+# left the line starting with \033 rather than "[", the marker strip below
+# missed, and the animation drew "[STEP] Installing ..." underneath the very
+# line that already said it.
 _tui_step_message() {
 	local line="$1"
+	line="$(printf '%s' "$line" | sed $'s/\033\[[0-9;]*m//g')"
 	line="${line#"${line%%[![:space:]]*}"}"
 	line="${line#\[STEP\] }"
 	printf '%s' "$line"
