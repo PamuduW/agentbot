@@ -2,14 +2,15 @@ name: test
 
 on:
   workflow_dispatch:
-  # Daily at 10:00 UTC rather than on every push. Two different things break
+  # Daily at 10:00 Asia/Colombo (04:30 UTC, which is what cron takes) rather
+  # than on every push. Two different things break
   # this suite and neither is a commit: the runner image, apt and tool versions
   # drift underneath it, and GitHub's own MCP tool descriptors -- which the
   # contract pins by fingerprint -- have already changed all eighteen at once.
   # A day's granularity is enough to catch both, and `workflow_dispatch` covers
   # the case where a change here wants checking now.
   schedule:
-    - cron: "0 10 * * *"
+    - cron: "30 4 * * *"
 
 permissions:
   contents: read
