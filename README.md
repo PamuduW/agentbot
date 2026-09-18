@@ -306,7 +306,6 @@ See [Workspaces and rendering](docs/workspaces-and-rendering.md).
 - [Agent CLI configuration](docs/cli-config.md)
 - [Validation](docs/validation.md)
 - [Roadmap](docs/roadmap.md)
-- [Archived MCP research inputs](archive/docs/README.md)
 - [Quick start](QUICKSTART.md)
 
 ## Development

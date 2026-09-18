@@ -68,5 +68,4 @@ with `agentbot install --components skills,boost`.
 
 Update skills later: `./install.sh skills update`.
 
-Active and deferred phases: [`docs/roadmap.md`](docs/roadmap.md). Historical
-MCP research inputs: [`archive/docs/README.md`](archive/docs/README.md).
+Active and deferred phases: [`docs/roadmap.md`](docs/roadmap.md).
