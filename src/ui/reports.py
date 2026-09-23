@@ -938,6 +938,21 @@ def print_update_result(outcome) -> tuple[int, int, int]:
         rows.append(_workspace_row("Workspaces", getattr(report, "results", ())))
         rows.append(_global_row(getattr(report, "global_actions", ())))
 
+    cli_config = getattr(outcome, "cli_config", None)
+    if cli_config is not None:
+        cli_changed = sum(
+            bool(plan.additions or plan.changes)
+            for plan in cli_config.plans.values()
+            if not plan.skipped
+        )
+        rows.append(
+            (
+                "CLI config",
+                f"{cli_changed} CLI(s) refreshed" if cli_changed else "declared settings current",
+                "check" if cli_config.failures else ("applied" if cli_changed else "unchanged"),
+            )
+        )
+
     if not rows:
         rows.append(("Update", outcome.message or outcome.status, "ok"))
     return print_table(rows, wrap_details=True)
@@ -1022,6 +1037,16 @@ def print_update_plan(plan, *, command: str = "update") -> None:
     )
     graphify_changes = 1 if plan.graphify_action in {"setup", "refresh"} else 0
     workspace_writes = _planned_workspace_writes(plan.workspace_report)
+    cli_config = getattr(plan, "cli_config", None)
+    cli_changes = (
+        sum(
+            bool(item.additions or item.changes)
+            for item in cli_config.plans.values()
+            if not item.skipped
+        )
+        if cli_config is not None
+        else 0
+    )
     # Four columns, as the sibling product's update report has: what is here,
     # what is available, and what approving this will do to it. Three columns
     # could only say "preview" three times, which told the operator the screen
@@ -1047,14 +1072,27 @@ def print_update_plan(plan, *, command: str = "update") -> None:
             "refresh" if workspace_writes else "up to date",
         ),
     ]
+    if cli_config is not None:
+        rows.append(
+            (
+                "CLI config",
+                f"{sum(not item.skipped for item in cli_config.plans.values())} installed",
+                f"{len(cli_config.failures)} need attention"
+                if cli_config.failures
+                else (f"{cli_changes} to merge" if cli_changes else "none"),
+                "check" if cli_config.failures else ("refresh" if cli_changes else "up to date"),
+            )
+        )
     print_four_column_table(rows)
     # A closing line, not a rollup: the sibling's report closes on "0 verified
     # updates; 5 checks or refreshes remain." for the same reason -- a count of
     # what approving it will do, not a health verdict. "All 3 component(s) look
     # good" would be a verdict on work that has not happened, and this is the
     # last thing read before approving it.
-    changes = skill_changes + graphify_changes + workspace_writes
-    verified = 3 - sum(1 for count in (skill_changes, graphify_changes, workspace_writes) if count)
+    changes = skill_changes + graphify_changes + workspace_writes + cli_changes
+    cli_attention = cli_changes or (len(cli_config.failures) if cli_config is not None else 0)
+    counts = (skill_changes, graphify_changes, workspace_writes, cli_attention)
+    verified = 3 + (cli_config is not None) - sum(1 for count in counts if count)
     print()
     print(f"  {verified} already current; {changes} change(s) on apply.")
 
