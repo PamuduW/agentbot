@@ -12,6 +12,14 @@ records the repository, manifest, global lock, and remote revisions, then
 checks those inputs again before apply. A source failure makes the operation
 fail even if other sources installed successfully.
 
+For a skills-only update, run `./install.sh skills update` to preview source
+revisions and the review ID. Apply that exact preview with
+`./install.sh skills update --yes --plan-sha256 <review-id>`. Apply rechecks the
+manifest, lock, source revisions, and discovered source inventory before it
+installs anything. If any changed, preview again. `skills upgrade` is an
+alias. Preview clones into temporary directories and does not change installed
+skills or the lock.
+
 ## Lock ownership
 
 Global `-g` installations are pinned in `~/.agents/.skill-lock.json`. The
@@ -21,6 +29,24 @@ are different; do not copy the global lock into the project lock.
 The global lock is the authority for curated machine installations. The
 project stub remains empty until this repository intentionally adopts
 project-local skill restoration.
+
+Agentbot records each installed skill's source commit and content hash in the
+global lock. Its `agentbotSources` section records each source's revision,
+resolved installed names, and exclusions. `agentbotPreviousSources` keeps one
+prior reviewed selection per changed source. A legacy lock without source
+commits remains readable, but exact restore is unavailable until a reviewed
+install or update records those commits.
+
+`./install.sh skills restore` previews the pinned revisions. Add `--yes` to
+clone those exact commits and reinstall only the recorded curated selections.
+Use `skills restore --previous` to preview the prior reviewed selection, then
+add `--yes` to apply it. Sources without a previous snapshot keep their current
+pin. Only one prior selection per source is retained.
+It leaves manually installed skills alone and refreshes managed assistant
+links. If a pin is missing, malformed, no longer available upstream, or does
+not match the manifest's source repository, restore fails without substituting
+the latest revision. Neither update nor restore stages, commits, or pushes a
+repository.
 
 ## Reconciliation and removal
 

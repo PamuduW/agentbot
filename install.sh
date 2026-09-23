@@ -118,7 +118,7 @@ run_skills() {
 	shift
 
 	case "$subcmd" in
-	install | update | upgrade) github_token_child run_cli skills "$subcmd" "$@" ;;
+	install | update | upgrade | restore) github_token_child run_cli skills "$subcmd" "$@" ;;
 	*) run_cli skills "$subcmd" "$@" ;;
 	esac
 }
@@ -530,10 +530,10 @@ main() {
 		;;
 	skills)
 		if [[ $# -lt 2 ]]; then
-			die "usage: ./install.sh skills <install|update|upgrade|list|doctor|prune|remove-manual>"
+			die "usage: ./install.sh skills <install|update|upgrade|restore|list|doctor|prune|remove-manual>"
 		fi
 		case "${2}" in
-		install | update | upgrade) check_skills_deps ;;
+		install | update | upgrade | restore) check_skills_deps ;;
 		*) check_python_deps ;;
 		esac
 		run_skills "${2}" "${@:3}"

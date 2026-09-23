@@ -16,7 +16,13 @@ from .diagnostics import Diagnostics
 from .graphify import GraphifyIntegration
 from .lifecycle import Lifecycle
 from .paths import AgentbotPaths, default_paths
-from .skills_installer import SkillsInstallError, parse_update_output
+from .skills_installer import (
+    SkillsInstallError,
+    apply_skill_update,
+    parse_update_output,
+    plan_skill_update,
+    restore_skills,
+)
 from .ui import (
     format_shortcuts,
     print_boost_status,
@@ -647,6 +653,45 @@ def _handle_install(context: CommandContext) -> int:
 
 
 def _handle_skills(context: CommandContext) -> int:
+    if context.args.skills_command in {"update", "upgrade"}:
+        plan = plan_skill_update(context.paths)
+        previous = dict(plan.previous)
+        print_header("Skills update", "Agentbot › Skills update")
+        for catalog in plan.catalogs:
+            old = previous.get(catalog.source_id)
+            old_label = old[:12] if old else "unrecorded"
+            print(
+                f"  {catalog.source_id}: {old_label} -> {catalog.revision[:12]} "
+                f"({len(catalog.skills)} candidate skill(s))"
+            )
+        print(f"  Review ID: {plan.review_id}")
+        if context.args.confirm:
+            if context.args.plan_sha256 != plan.review_id:
+                raise SkillsInstallError(
+                    "skills update requires the exact --plan-sha256 from a reviewed preview"
+                )
+            apply_skill_update(context.paths, plan)
+            context.lifecycle.refresh_outputs()
+            print("  Installed the reviewed source revisions.")
+        else:
+            print("  Preview only; use --yes --plan-sha256 REVIEW_ID to apply.")
+        return 0
+    if context.args.skills_command == "restore":
+        snapshots = restore_skills(
+            context.paths,
+            apply=bool(getattr(context.args, "confirm", False)),
+            previous=bool(getattr(context.args, "previous", False)),
+        )
+        if context.args.confirm:
+            context.lifecycle.refresh_outputs()
+        print_header("Skills restore", "Agentbot › Skills restore")
+        for snapshot in snapshots:
+            print(
+                f"  {snapshot.source_id}: {snapshot.revision[:12]} "
+                f"({len(snapshot.installed)} skill(s))"
+            )
+        print("  Restored reviewed revisions." if context.args.confirm else "  Preview only; use --yes to apply.")
+        return 0
     if context.args.skills_command == "prune":
         return handle_skills_prune(
             context.lifecycle,
@@ -888,13 +933,23 @@ def build_parser() -> argparse.ArgumentParser:
     skills = subparsers.add_parser("skills", help="Install and manage curated skills")
     skills_sub = skills.add_subparsers(dest="skills_command", required=True)
     skills_sub.add_parser("install", help="Install skills from skills.sources.yaml")
-    skills_sub.add_parser(
-        "update",
-        help="Refresh globally installed skills from ~/.agents/.skill-lock.json",
+    for name, help_text in (
+        ("update", "Preview or install current reviewed source revisions"),
+        ("upgrade", "Alias for previewing or applying skill updates"),
+    ):
+        update_parser = skills_sub.add_parser(name, help=help_text)
+        update_parser.add_argument(
+            "--yes", dest="confirm", action="store_true", help="Apply the reviewed update"
+        )
+        update_parser.add_argument(
+            "--plan-sha256", help="Exact review ID printed by a prior preview"
+        )
+    restore = skills_sub.add_parser(
+        "restore", help="Preview or restore exact reviewed source revisions"
     )
-    skills_sub.add_parser(
-        "upgrade",
-        help="Alias for updating globally installed skills",
+    restore.add_argument("--yes", dest="confirm", action="store_true", help="Apply the restore")
+    restore.add_argument(
+        "--previous", action="store_true", help="Select the prior reviewed source snapshot"
     )
     skills_sub.add_parser("list", help="List installed skills under ~/.agents/skills")
     skills_sub.add_parser("doctor", help="Validate skills sources and tooling")

@@ -72,6 +72,25 @@ def _context(**args) -> cli.CommandContext:
 
 
 class CommandTableTests(unittest.TestCase):
+    def test_skills_restore_requires_explicit_apply(self):
+        preview = cli.build_parser().parse_args(["skills", "restore"])
+        apply = cli.build_parser().parse_args(["skills", "restore", "--yes"])
+        previous = cli.build_parser().parse_args(["skills", "restore", "--previous"])
+
+        self.assertFalse(preview.confirm)
+        self.assertTrue(apply.confirm)
+        self.assertTrue(previous.previous)
+
+    def test_skills_update_requires_explicit_apply(self):
+        preview = cli.build_parser().parse_args(["skills", "update"])
+        apply = cli.build_parser().parse_args(
+            ["skills", "update", "--yes", "--plan-sha256", "a" * 64]
+        )
+
+        self.assertFalse(preview.confirm)
+        self.assertTrue(apply.confirm)
+        self.assertEqual("a" * 64, apply.plan_sha256)
+
     def test_every_parser_command_has_a_handler(self):
         parser = cli.build_parser()
         subparsers = [

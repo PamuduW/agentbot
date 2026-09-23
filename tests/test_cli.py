@@ -467,18 +467,19 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(0, rc, stderr)
                 self.assertIn(f"=== {canonical} ===", stdout)
 
+    @patch("src.cli.plan_skill_update")
     @patch("src.cli.handle_skills_prune")
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")
     def test_skills_commands_render_failures_to_stderr_with_one_exit_contract(
-        self, lifecycle_type, _default_paths, prune_handler
+        self, lifecycle_type, _default_paths, prune_handler, plan_update
     ) -> None:
         """Break caught: one skills path formats an exception differently from its siblings."""
         service = MagicMock()
         lifecycle_type.return_value = service
         cases = (
             (["agentbot", "skills", "install"], service.install_skills),
-            (["agentbot", "skills", "update"], service.update_skills),
+            (["agentbot", "skills", "update"], plan_update),
             (["agentbot", "skills", "prune"], prune_handler),
         )
         for argv, failing_boundary in cases:

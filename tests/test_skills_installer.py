@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -209,6 +210,302 @@ sources:
         lock = json.loads(lock_file.read_text(encoding="utf-8"))
         self.assertEqual("obra/superpowers", lock["skills"]["brainstorming"]["source"])
         self.assertEqual("github", lock["skills"]["brainstorming"]["sourceType"])
+
+    def test_lock_records_revision_and_resolved_wildcard_selection(self) -> None:
+        from src.skills_installer import _record_checkout_lock
+        from src.skills_sources import SkillSourceEntry
+
+        source = SkillSourceEntry(
+            id="wildcard", repo="owner/skills", skills=["*"], exclude=["fixture"]
+        )
+        checkout = self.root / "checkout"
+        for name in ("alpha", "fixture"):
+            skill = checkout / "skills" / name / "SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text(f"---\nname: {name}\n---\n", encoding="utf-8")
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        installed = lock_file.parent / "skills" / "alpha"
+        installed.mkdir(parents=True)
+        (installed / "SKILL.md").write_text("# alpha\n", encoding="utf-8")
+
+        _record_checkout_lock(source, checkout, lock_file, source_revision="a" * 40)
+
+        lock = json.loads(lock_file.read_text(encoding="utf-8"))
+        self.assertEqual("a" * 40, lock["skills"]["alpha"]["sourceRevision"])
+        self.assertEqual(
+            {
+                "repo": "owner/skills",
+                "revision": "a" * 40,
+                "installed": ["alpha"],
+                "excluded": ["fixture"],
+            },
+            lock["agentbotSources"]["wildcard"],
+        )
+        _record_checkout_lock(source, checkout, lock_file, source_revision="b" * 40)
+        updated = json.loads(lock_file.read_text(encoding="utf-8"))
+        self.assertEqual(
+            "a" * 40, updated["agentbotPreviousSources"]["wildcard"]["revision"]
+        )
+
+    @patch("src.skills_installer.run_install_command")
+    def test_install_from_git_checkout_pins_its_commit(self, mock_install) -> None:
+        from src.skills_installer import install_source
+        from src.skills_sources import SkillSourceEntry
+
+        source = SkillSourceEntry(id="source", repo="owner/skills", skills=["alpha"])
+        checkout = self.root / "checkout"
+        skill = checkout / "skills" / "alpha" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nname: alpha\n---\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        subprocess.run(["git", "-C", str(checkout), "add", "skills"], check=True)
+        subprocess.run(
+            [
+                "git", "-C", str(checkout), "-c", "user.name=Test",
+                "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture",
+            ],
+            check=True,
+        )
+        revision = subprocess.check_output(
+            ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True
+        ).strip()
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        installed = lock_file.parent / "skills" / "alpha"
+        installed.mkdir(parents=True)
+        (installed / "SKILL.md").write_text(skill.read_text(), encoding="utf-8")
+        mock_install.return_value = self._success_result("source", [])
+
+        install_source(
+            source, agents=["codex"], checkout=checkout, global_lock_file=lock_file
+        )
+
+        lock = json.loads(lock_file.read_text(encoding="utf-8"))
+        self.assertEqual(revision, lock["skills"]["alpha"]["sourceRevision"])
+
+    def test_pinned_clone_restores_the_reviewed_commit(self) -> None:
+        from src.skills_installer import _clone_pinned_source
+
+        remote = self.root / "remote"
+        remote.mkdir()
+        subprocess.run(["git", "init", "-q", str(remote)], check=True)
+        skill = remote / "skills" / "alpha" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("first\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
+        commit = [
+            "git", "-C", str(remote), "-c", "user.name=Test",
+            "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture",
+        ]
+        subprocess.run(commit, check=True)
+        first = subprocess.check_output(
+            ["git", "-C", str(remote), "rev-parse", "HEAD"], text=True
+        ).strip()
+        skill.write_text("second\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
+        subprocess.run(commit, check=True)
+
+        restored = self.root / "restored"
+        with patch("src.skills_installer.source_clone_url", return_value=str(remote)):
+            _clone_pinned_source("owner/skills", first, restored)
+
+        self.assertEqual("first\n", (restored / "skills" / "alpha" / "SKILL.md").read_text())
+        self.assertEqual(first, subprocess.check_output(
+            ["git", "-C", str(restored), "rev-parse", "HEAD"], text=True
+        ).strip())
+
+    @patch("src.skills_installer.run_install_command")
+    def test_restore_uses_lock_revision_and_preserves_manual_skill(self, mock_install) -> None:
+        from src.skills_installer import restore_skills
+
+        remote = self.root / "remote"
+        remote.mkdir()
+        subprocess.run(["git", "init", "-q", str(remote)], check=True)
+        skill = remote / "skills" / "alpha" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("first\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
+        commit = [
+            "git", "-C", str(remote), "-c", "user.name=Test",
+            "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture",
+        ]
+        subprocess.run(commit, check=True)
+        reviewed = subprocess.check_output(
+            ["git", "-C", str(remote), "rev-parse", "HEAD"], text=True
+        ).strip()
+        skill.write_text("second\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
+        subprocess.run(commit, check=True)
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        manual = lock_file.parent / "skills" / "manual" / "SKILL.md"
+        manual.parent.mkdir(parents=True)
+        manual.write_text("manual\n", encoding="utf-8")
+        lock_file.write_text(json.dumps({
+            "version": 3,
+            "skills": {"alpha": {"source": "obra/superpowers", "sourceRevision": reviewed}},
+            "agentbotSources": {"superpowers": {
+                "repo": "obra/superpowers", "revision": reviewed,
+                "installed": ["alpha"], "excluded": [],
+            }},
+        }), encoding="utf-8")
+
+        def install_from_checkout(argv, **_kwargs):
+            checkout = Path(argv[4])
+            installed = lock_file.parent / "skills" / "alpha" / "SKILL.md"
+            installed.parent.mkdir(parents=True, exist_ok=True)
+            installed.write_text((checkout / "skills" / "alpha" / "SKILL.md").read_text())
+            return self._success_result("superpowers", argv)
+
+        mock_install.side_effect = install_from_checkout
+        paths = self._paths()
+        with (
+            patch.object(type(paths), "global_skill_lock", new_callable=lambda: property(lambda _: lock_file)),
+            patch("src.skills_installer.source_clone_url", return_value=str(remote)),
+        ):
+            snapshots = restore_skills(paths, apply=False)
+            self.assertEqual(reviewed, snapshots[0].revision)
+            self.assertFalse((lock_file.parent / "skills" / "alpha").exists())
+            restore_skills(paths, apply=True)
+
+        self.assertEqual("first\n", (lock_file.parent / "skills" / "alpha" / "SKILL.md").read_text())
+        self.assertEqual("manual\n", manual.read_text())
+
+    def test_restore_can_preview_previous_reviewed_selection(self) -> None:
+        from src.skills_installer import restore_skills
+
+        paths = self._paths()
+        (self.root / "skills.sources.yaml").write_text(
+            "version: 1\nagents: [codex]\nscope: global\nsources:\n"
+            "  - id: superpowers\n    repo: obra/superpowers\n    skills: [brainstorming]\n"
+            "  - id: other\n    repo: owner/other\n    skills: [other]\n",
+            encoding="utf-8",
+        )
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        lock_file.parent.mkdir(parents=True)
+        lock_file.write_text(json.dumps({
+            "skills": {"brainstorming": {
+                "source": "obra/superpowers", "sourceRevision": "b" * 40
+            }, "other": {"source": "owner/other", "sourceRevision": "c" * 40}},
+            "agentbotSources": {"superpowers": {
+                "repo": "obra/superpowers", "revision": "b" * 40,
+                "installed": ["brainstorming"], "excluded": [],
+            }, "other": {
+                "repo": "owner/other", "revision": "c" * 40,
+                "installed": ["other"], "excluded": [],
+            }},
+            "agentbotPreviousSources": {"superpowers": {
+                "repo": "obra/superpowers", "revision": "a" * 40,
+                "installed": ["brainstorming"], "excluded": [],
+            }},
+        }), encoding="utf-8")
+
+        with patch.object(
+            type(paths), "global_skill_lock", new_callable=lambda: property(lambda _: lock_file)
+        ):
+            snapshots = restore_skills(paths, previous=True)
+            self.assertEqual(("a" * 40, "c" * 40), tuple(s.revision for s in snapshots))
+
+    def test_skill_update_rechecks_revision_before_install(self) -> None:
+        from src.skill_catalog import StaleSourceCatalogError
+        from src.skills_installer import apply_skill_update, plan_skill_update
+
+        remote = self.root / "remote"
+        remote.mkdir()
+        subprocess.run(["git", "init", "-q", str(remote)], check=True)
+        skill = remote / "skills" / "brainstorming" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("first\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
+        commit = [
+            "git", "-C", str(remote), "-c", "user.name=Test",
+            "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture",
+        ]
+        subprocess.run(commit, check=True)
+        paths = self._paths()
+
+        with patch("src.skill_catalog.source_clone_url", return_value=str(remote)):
+            plan = plan_skill_update(paths)
+            skill.write_text("second\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
+            subprocess.run(commit, check=True)
+            with patch("src.skills_installer.install_skills") as install:
+                with self.assertRaises(StaleSourceCatalogError):
+                    apply_skill_update(paths, plan)
+                install.assert_not_called()
+
+    def test_update_review_id_changes_with_source_revision(self) -> None:
+        from src.skill_catalog import SourceCatalog
+        from src.skills_installer import SkillUpdatePlan
+
+        first = SkillUpdatePlan(
+            (SourceCatalog("source", "owner/skills", "a" * 40, ("alpha",)),),
+            (("source", None),), "m" * 64, None,
+        )
+        second = SkillUpdatePlan(
+            (SourceCatalog("source", "owner/skills", "b" * 40, ("alpha",)),),
+            (("source", None),), "m" * 64, None,
+        )
+
+        self.assertRegex(first.review_id, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(first.review_id, second.review_id)
+
+    def test_update_preview_rejects_invalid_recorded_revision_before_network(self) -> None:
+        from src.skills_installer import SkillsInstallError, plan_skill_update
+
+        paths = self._paths()
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        lock_file.parent.mkdir(parents=True)
+        lock_file.write_text(json.dumps({
+            "skills": {},
+            "agentbotSources": {"superpowers": {
+                "repo": "obra/superpowers", "revision": "invalid-secret-like-value"
+            }},
+        }), encoding="utf-8")
+
+        with (
+            patch.object(type(paths), "global_skill_lock", new_callable=lambda: property(lambda _: lock_file)),
+            patch("src.skills_installer.discover_remote_catalogs") as discover,
+        ):
+            with self.assertRaisesRegex(SkillsInstallError, "invalid recorded revision"):
+                plan_skill_update(paths)
+            discover.assert_not_called()
+
+    def test_revision_operations_reject_symlinked_lock_before_network(self) -> None:
+        from hashlib import sha256
+
+        from src.skills_installer import (
+            SkillsInstallError,
+            SkillUpdatePlan,
+            apply_skill_update,
+            plan_skill_update,
+            restore_skills,
+        )
+
+        paths = self._paths()
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        lock_file.parent.mkdir(parents=True)
+        target = self.root / "outside.json"
+        target.write_text('{"skills": {}}\n', encoding="utf-8")
+        lock_file.symlink_to(target)
+        plan = SkillUpdatePlan(
+            (),
+            (),
+            sha256(paths.skills_sources_file.read_bytes()).hexdigest(),
+            sha256(target.read_bytes()).hexdigest(),
+        )
+
+        with (
+            patch.object(type(paths), "global_skill_lock", new_callable=lambda: property(lambda _: lock_file)),
+            patch("src.skills_installer.discover_remote_catalogs") as discover,
+            patch("src.skills_installer.verified_source_checkouts") as verify,
+        ):
+            with self.assertRaisesRegex(SkillsInstallError, "symlink"):
+                plan_skill_update(paths)
+            with self.assertRaisesRegex(SkillsInstallError, "symlink"):
+                apply_skill_update(paths, plan)
+            with self.assertRaisesRegex(SkillsInstallError, "symlink"):
+                restore_skills(paths, apply=True)
+            discover.assert_not_called()
+            verify.assert_not_called()
 
     @patch("src.skills_installer.run_install_command")
     def test_install_source_wildcard_does_not_lock_checkout_test_fixtures(
