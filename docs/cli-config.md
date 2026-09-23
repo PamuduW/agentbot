@@ -6,9 +6,15 @@ agentbot cli-config apply    # merge the declared keys
 ```
 
 It is also the `cli-config` install component, and one row of `agentbot status`.
+`agentbot update` also merges these declared keys after refreshing managed
+workspaces and before its final diagnostics. Its transaction covers the Claude,
+Codex, and Cursor config files if a later update stage fails.
 
 Agentbot owns only the keys you declare, merged key by key into each CLI's own
 config. Everything you have not declared is left exactly as it was.
+The Claude declaration includes the current model, effort, display, and
+notification preferences. Hooks, permission rules, plugins, and client state
+remain outside this declaration; Codex tables also remain outside it.
 
 ## Verified paths
 
@@ -45,8 +51,8 @@ change shape — the same reason `vscode/` holds JSON rather than YAML.
 
 ```toml
 # cli/codex.config.toml
-model = "gpt-5"
-model_reasoning_effort = "high"
+model = "gpt-6-sol"
+model_reasoning_effort = "medium"
 ```
 
 ## Guarantees

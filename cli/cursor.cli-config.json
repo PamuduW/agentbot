@@ -12,7 +12,8 @@
     "showLineNumbers": false,
     "showThinkingBlocks": false,
     "showStatusIndicators": true,
-    "showStatusLineRunningTime": false
+    "showStatusLineRunningTime": false,
+    "mode": "zen"
   },
   "attribution": {
     "attributeCommitsToAgent": true,

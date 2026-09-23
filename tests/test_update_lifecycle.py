@@ -84,6 +84,7 @@ class UpdateLifecycleTests(unittest.TestCase):
             self.assertEqual("skip", plan.graphify_action)
             self.assertEqual("head123", plan.snapshot.repository_head)
             self.assertEqual("abc123", plan.source_catalogs[0].revision)
+            self.assertIsNotNone(plan.cli_config)
 
     def test_plan_update_does_not_readd_excluded_wildcard_skills(self) -> None:
         """Break caught: update planning resurrects a skill excluded during install."""
@@ -178,6 +179,11 @@ class UpdateLifecycleTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root, home, paths = self._fixture(temporary)
+            (root / "cli").mkdir()
+            (root / "cli" / "codex.config.toml").write_text('model = "new"\n')
+            paths.codex_home.mkdir()
+            codex_config = paths.codex_home / "config.toml"
+            codex_config.write_text('model = "old"\n[tui]\ntheme = "dark"\n')
             skill_path = home / ".agents/skills/graphify/SKILL.md"
             skill_path.parent.mkdir(parents=True)
             skill_path.write_text("# graphify\n", encoding="utf-8")
@@ -208,6 +214,7 @@ class UpdateLifecycleTests(unittest.TestCase):
 
             def reconcile(*_args, **kwargs):
                 events.append("reconcile")
+                self.assertIn(codex_config, kwargs["extra_affected"])
                 kwargs["validate"]()
                 return ReconcileResult("applied", (), (), ())
 
@@ -235,10 +242,14 @@ class UpdateLifecycleTests(unittest.TestCase):
 
             with mock.patch.dict(os.environ, {"HOME": str(home)}, clear=False):
                 plan = lifecycle.plan_update()
+                self.assertIn("model", plan.cli_config.plans["codex"].changes)
                 outcome = lifecycle.apply_update(plan)
 
             self.assertEqual("applied", outcome.status)
             self.assertEqual(["checkout", "reconcile", "install", "surfaces"], events)
+            self.assertIn('model = "new"', codex_config.read_text())
+            self.assertIn('[tui]\ntheme = "dark"', codex_config.read_text())
+            self.assertIsNotNone(outcome.cli_config)
             graphify.setup.assert_called_once_with()
             diagnostics.collect.assert_called_once_with()
 

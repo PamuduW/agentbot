@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable
 from hashlib import sha256
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from .boost import BoostIntegration, BoostStatus
 from .claude_bridge import BridgeResult, bridge_claude_skills
@@ -37,6 +37,9 @@ from .skills_installer import update_skills as update_skills_default
 from .skills_sources import SkillsSourcesConfig, load_skills_sources
 from .workspace_service import WorkspaceReport, WorkspaceService
 from .workspace_state import WorkspaceRecord
+
+if TYPE_CHECKING:
+    from .cli_config import CliConfigReport
 
 
 class Lifecycle:
@@ -306,6 +309,10 @@ class Lifecycle:
         # anything the operator has not confirmed yet.
         stage_begins("Previewing MCP servers")
         mcp = self._mcp_install(apply=False)
+        stage_begins("Previewing CLI configuration")
+        from .cli_config import preview as preview_cli_config
+
+        cli_config = preview_cli_config(self.paths)
         stage_begins("Plan complete")
         return UpdatePlan(
             snapshot=self._update_snapshot(),
@@ -314,6 +321,7 @@ class Lifecycle:
             workspace_report=workspace_report,
             source_catalogs=catalogs,
             mcp=mcp,
+            cli_config=cli_config,
         )
 
     def apply_update(
@@ -390,6 +398,15 @@ class Lifecycle:
                     ):
                         raise RuntimeError("managed workspace or global output refresh failed")
                     stage["workspace_report"] = workspace_report
+                    stage_begins("Refreshing CLI configuration")
+                    from .cli_config import apply as apply_cli_config
+
+                    cli_config = apply_cli_config(self.paths)
+                    stage["cli_config"] = cli_config
+                    if cli_config.failures:
+                        raise RuntimeError(
+                            "CLI configuration refresh failed: " + "; ".join(cli_config.failures)
+                        )
                     stage_begins("Running diagnostics")
                     diagnostics = self.diagnostics.collect()
                     errors = [
@@ -433,6 +450,7 @@ class Lifecycle:
                     workspace_report=cast("WorkspaceReport | None", stage.get("workspace_report")),
                     diagnostics=cast("DiagnosticsSnapshot | None", stage.get("diagnostics")),
                     mcp=cast("McpInstallOutcome | None", stage.get("mcp")),
+                    cli_config=cast("CliConfigReport | None", stage.get("cli_config")),
                 )
         except StaleSourceCatalogError as error:
             return UpdateOutcome("stale-plan", str(error))
@@ -449,6 +467,8 @@ class Lifecycle:
             self.paths.claude_home / "CLAUDE.md",
             self.paths.claude_home / "statusline-command.sh",
             self.paths.claude_home / "settings.json",
+            self.paths.codex_home / "config.toml",
+            self.paths.cursor_home / "cli-config.json",
         ]
         for result in plan.workspace_report.results:
             affected.extend(result.path / action.relative_path for action in result.actions)

@@ -7,6 +7,7 @@ from .mcp_models import McpInstallOutcome
 
 if TYPE_CHECKING:
     from .boost import BoostStatus
+    from .cli_config import CliConfigReport
     from .graphify import GraphifyStatus
     from .skill_catalog import SourceCatalog
     from .skill_reconcile import ReconcileResult, SkillReconcilePlan
@@ -107,6 +108,7 @@ class UpdatePlan:
     #: component the apply will touch -- and once a newly reviewed server
     #: reaches the catalog, this is the row that says so before the run.
     mcp: McpInstallOutcome = field(default_factory=McpInstallOutcome)
+    cli_config: CliConfigReport | None = None
 
 
 @dataclass(frozen=True)
@@ -121,3 +123,4 @@ class UpdateOutcome:
     #: What the update's MCP phase registered. None when the applier that ran
     #: does not report one, which the summary reads as "nothing to say".
     mcp: McpInstallOutcome | None = None
+    cli_config: CliConfigReport | None = None
