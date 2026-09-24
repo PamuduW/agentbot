@@ -90,10 +90,7 @@ sources:
 
   - id: watermarks-remover
     repo: guillaumemeyer/watermarks-remover
-    # Was `skills: all`. remove-ai-marks is a thin client for a local HTTP
-    # service (127.0.0.1:8765) that is not deployed here, so it is inert.
-    skills:
-      - clean-user-facing-text
+    skills: all
 
   - id: akindu-agent-skills
     repo: Akindu23/my-agent-skills
