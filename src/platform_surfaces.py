@@ -51,10 +51,18 @@ def _cursor(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> tupl
 
 def _cli_config(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> tuple[str, str]:
     from . import cli_config as cli_config_module
+    from . import codex_remote_control
 
     report = cli_config_module.apply(paths) if apply else cli_config_module.preview(paths)
+    remote_detail, remote_result = (
+        codex_remote_control.ensure(paths, runner)
+        if apply
+        else codex_remote_control.inspect(paths, runner)
+    )
     if report.failures:
         return f"{len(report.failures)} CLI(s) need attention", "check"
+    if remote_result == "check":
+        return f"codex {remote_detail}", "check"
     pending = [name for name, plan in report.plans.items() if not plan.is_noop and not plan.skipped]
     if pending:
         return f"{len(pending)} to merge; run `agentbot cli-config apply`", "check"

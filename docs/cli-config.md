@@ -55,6 +55,29 @@ model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 ```
 
+## Remote Control
+
+Both agents are kept reachable from the Claude and ChatGPT mobile apps.
+
+- **Claude Code:** `cli/claude.settings.json` declares
+  `remoteControlAtStartup: true`, so every interactive session connects to
+  Remote Control on start.
+- **Codex:** Codex has no config key for Remote Control. Its app-server daemon
+  saves the setting in `~/.codex/app-server-daemon/settings.json`, and Codex
+  owns that file. So `apply` and the install component run
+  `codex remote-control start` instead. That command saves the setting and
+  starts the daemon, and it does nothing when both are already done. `status`
+  only reads that file and asks whether the daemon is running. The daemon does
+  not start again after a reboot on its own. The next `codex` session starts it,
+  with Remote Control on.
+
+`agentbot update` merges only the declared keys. It does not run the Codex
+step. `agentbot full` gets it from its install phase.
+
+Pairing a phone to Codex is a one-time step you do yourself:
+`codex remote-control pair`. The pairing code is a secret. Do not log it,
+paste it anywhere or commit it.
+
 ## Guarantees
 
 - **Unowned keys survive.** Merging is per key; nothing else in the file is

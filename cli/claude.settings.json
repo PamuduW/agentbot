@@ -8,5 +8,6 @@
   "enableWorkflows": true,
   "switchModelsOnFlag": false,
   "agentPushNotifEnabled": true,
-  "inputNeededNotifEnabled": true
+  "inputNeededNotifEnabled": true,
+  "remoteControlAtStartup": true
 }
