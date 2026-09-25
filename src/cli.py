@@ -193,6 +193,8 @@ def _handle_graphify(context: CommandContext) -> int:
 
 def _handle_cli_config(context: CommandContext) -> int:
     from . import cli_config as cli_config_module
+    from . import codex_remote_control
+    from .command_runner import CommandRunner
 
     command = getattr(context.args, "cli_config_command", None) or "status"
     report = (
@@ -212,6 +214,13 @@ def _handle_cli_config(context: CommandContext) -> int:
         else:
             summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
             rows.append((name, f"{summary} in {plan.path}", "check"))
+    runner = CommandRunner()
+    remote_detail, remote_result = (
+        codex_remote_control.ensure(context.paths, runner)
+        if command == "apply"
+        else codex_remote_control.inspect(context.paths, runner)
+    )
+    rows.append(("codex remote control", remote_detail, remote_result))
     ok, check, miss = print_table(rows)
     print_rollup(ok=ok, check=check, miss=miss)
     if report.rolled_back:
