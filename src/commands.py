@@ -302,7 +302,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory status|validate|propose|review|approve|due|hook [--json]",
+        "agentbot memory status|validate|search|show|brief|propose|review|approve|due|hook",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
@@ -313,6 +313,28 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "validate",
                 "Check every vault file; findings name paths and rules only.",
                 "read-only",
+            ),
+            option(
+                "search QUERY",
+                "Accepted records within scope, quota-balanced, with provenance and excerpts; "
+                "--type, --tag, --limit N (8, max 100), --history.",
+                "read-only",
+            ),
+            option("show PATH", "One accepted record's provenance and bounded body.", "read-only"),
+            option(
+                "brief [--tokens N]",
+                "A disposable session brief within a hard token ceiling.",
+                "800, max 1200",
+            ),
+            option(
+                "--project SLUG",
+                "Add this project's records. Without it, only global and shared records.",
+                "none",
+            ),
+            option(
+                "--cross-project",
+                "Add every project's records, one per project before any repeats.",
+                "off",
             ),
             option(
                 "propose",
@@ -357,6 +379,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         (
             "memory status",
             "memory validate",
+            "memory search",
+            "memory show",
+            "memory brief",
             "memory propose",
             "memory review",
             "memory approve",

@@ -833,6 +833,56 @@ def print_memory_due(items, *, total: int, schema: int, today) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def _pointer(hit) -> str:
+    record = hit.record
+    where = record.scope or "v1"
+    projects = f" {','.join(record.projects)}" if record.projects else ""
+    labels = f" [{', '.join(hit.labels)}]" if hit.labels else ""
+    return f"{record.path} · {record.status} · {record.date} · {where}{projects}{labels}"
+
+
+def print_memory_search(result) -> None:
+    """Results with provenance first and a bounded excerpt."""
+    print_header("Memory search", "Agentbot › Memory › Search")
+    if not result.hits:
+        print_table([("Results", "no accepted record matched within scope", "info")])
+        print_rollup(ok=1, check=0, miss=0)
+        return
+    rows = []
+    for hit in result.hits:
+        excerpt = f" — line {hit.line}: {hit.excerpt}" if hit.excerpt else ""
+        rows.append(
+            (
+                hit.record.id or hit.record.type,
+                f"{hit.record.title} · {_pointer(hit)}{excerpt}",
+                "info",
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    if result.excluded:
+        print()
+        print_note(
+            "Not offered: "
+            + ", ".join(f"{count} {reason}" for reason, count in sorted(result.excluded.items()))
+            + ". Scope is never guessed; --history reaches lifecycle-excluded records."
+        )
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_record(hit, body: str) -> None:
+    """One record's provenance, then its body as written."""
+    print_header(hit.record.title, "Agentbot › Memory › Show")
+    print_table(
+        [
+            ("ID", hit.record.id or "— (schema 1)", "info"),
+            ("Source", _pointer(hit), "info"),
+        ],
+        wrap_details=True,
+    )
+    print()
+    print(body.rstrip("\n"))
+
+
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:
     """Render the owned vault hooks, and what an install or remove did or would do."""
     from ..memory_hook import SCANNER_GAP

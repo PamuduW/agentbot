@@ -109,6 +109,7 @@ class Record:
     title: str = ""
     date: str = ""
     projects: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
     scope: str | None = None
     review_after: str | None = None
     valid_until: str | None = None
@@ -476,6 +477,7 @@ class _RecordCheck:
             title=fields["title"],
             date=fields["date"],
             projects=tuple(fields["projects"]),
+            tags=tuple(fields["tags"]),
             scope=fields.get("scope"),
             review_after=fields.get("review_after"),
             valid_until=fields.get("valid_until"),

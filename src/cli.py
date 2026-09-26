@@ -44,6 +44,8 @@ from .ui import (
     print_memory_due,
     print_memory_hooks,
     print_memory_proposal,
+    print_memory_record,
+    print_memory_search,
     print_memory_status,
     print_memory_validation,
     print_output_refresh_report,
@@ -428,6 +430,63 @@ def _handle_memory_due(context: CommandContext) -> int:
     return 0
 
 
+def _handle_memory_retrieve(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_retrieve as retrieve
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    request = retrieve.Request(
+        project=args.project,
+        cross_project=args.cross_project,
+        history=bool(getattr(args, "history", False)),
+        kind=getattr(args, "memory_type", None),
+        tag=getattr(args, "tag", None),
+    )
+    try:
+        if args.memory_command == "search":
+            result = retrieve.search(root, args.query, request, limit=args.limit)
+            if as_json:
+                print(json.dumps(retrieve.search_json(result), indent=2))
+            else:
+                print_memory_search(result)
+        elif args.memory_command == "show":
+            hit, body = retrieve.show(root, args.record_path, request, max_bytes=args.max_bytes)
+            if as_json:
+                print(json.dumps(retrieve.show_json(hit, body), indent=2))
+            else:
+                print_memory_record(hit, body)
+        else:
+            summary = retrieve.brief(root, request, tokens=args.tokens)
+            if as_json:
+                print(json.dumps(retrieve.brief_json(summary), indent=2))
+            else:
+                print(summary.text, end="")
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+    return 0
+
+
+def _add_retrieval_scope(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--project", metavar="SLUG", help="Include this project's records")
+    group.add_argument(
+        "--cross-project",
+        action="store_true",
+        dest="cross_project",
+        help="Include every project's records, one per project first",
+    )
+    parser.add_argument("--json", action="store_true", dest="memory_json")
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
@@ -437,6 +496,8 @@ def _handle_memory(context: CommandContext) -> int:
         return _handle_memory_changes(context)
     if context.args.memory_command == "due":
         return _handle_memory_due(context)
+    if context.args.memory_command in {"search", "show", "brief"}:
+        return _handle_memory_retrieve(context)
     as_json = bool(getattr(context.args, "memory_json", False))
     if context.args.memory_command == "status":
         status = memory.status(context.paths.root)
@@ -988,6 +1049,28 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="RULE_ID",
     )
     approve.add_argument("--json", action="store_true", dest="memory_json")
+    search = memory_sub.add_parser("search", help="Search accepted records within scope")
+    search.add_argument("query")
+    search.add_argument(
+        "--type",
+        choices=("context", "preference", "decision", "lesson", "project"),
+        dest="memory_type",
+    )
+    search.add_argument("--tag", metavar="TAG")
+    search.add_argument("--limit", type=int, default=8, metavar="N")
+    search.add_argument(
+        "--history",
+        action="store_true",
+        help="Include superseded, retired, expired, and cold records, labelled",
+    )
+    _add_retrieval_scope(search)
+    show = memory_sub.add_parser("show", help="Show one accepted record within scope")
+    show.add_argument("record_path", metavar="PATH")
+    show.add_argument("--max-bytes", type=int, default=65536, dest="max_bytes", metavar="N")
+    _add_retrieval_scope(show)
+    brief = memory_sub.add_parser("brief", help="Print a bounded, disposable session brief")
+    brief.add_argument("--tokens", type=int, default=800, metavar="N")
+    _add_retrieval_scope(brief)
     due = memory_sub.add_parser("due", help="List accepted records due for review or expired")
     due.add_argument("--limit", type=int, default=20, metavar="N")
     due.add_argument("--json", action="store_true", dest="memory_json")

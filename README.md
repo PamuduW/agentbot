@@ -158,6 +158,23 @@ record's status or file, and superseded or retired records never appear.
 `memory status` shows the due and expired counts. Schema 1 records carry no
 dates, so the queue is empty there.
 
+`agentbot memory search QUERY`, `memory show PATH`, and `memory brief` read
+validated records straight from the files; there is no index to go stale.
+Only records with no validation or scanner finding are eligible, and drafts
+never are. Superseded, retired, and expired records, and records past each
+pool's hot limit (64 per project, 32 global, 48 shared, newest first), are
+left out unless `--history` asks for them, labelled. Scope is never guessed:
+without `--project SLUG` only global and shared records are offered, and other
+projects need `--cross-project`. Search reserves slots before merging (the
+best global, shared, and target-project result, then one per other project),
+caps the target project at 4 and each other project at 1, skips near-duplicate
+titles, and returns 8 results by default with provenance and a bounded
+excerpt. `brief` prints a disposable Markdown brief of 800 tokens by default
+and at most 1,200 (four characters per token), with the project slice capped
+at 65%. Schema 1 records have no scope field: preferences are global, project
+records and single-project records are project-scoped, and the rest are
+shared.
+
 Remote and backup state, and migration, are not implemented yet.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
