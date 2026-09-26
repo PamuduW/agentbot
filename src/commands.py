@@ -302,7 +302,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory status|validate|search|show|brief|propose|review|approve|due|hook",
+        "agentbot memory status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
@@ -325,6 +325,17 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "brief [--tokens N]",
                 "A disposable session brief within a hard token ceiling.",
                 "800, max 1200",
+            ),
+            option(
+                "backup --destination",
+                "Preview, then with --yes build a verified local mirror and manifest at PATH. "
+                "Committed history only.",
+                "preview",
+            ),
+            option(
+                "restore --source",
+                "Preview, then with --yes clone BACKUP into a new --destination with no remote.",
+                "preview",
             ),
             option(
                 "--project SLUG",
@@ -372,7 +383,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
         "propose writes a new ignored draft; approve --yes installs one record and removes "
         "its draft; hook --yes writes only Agentbot-marked hooks. Nothing is staged, "
-        "committed, or pushed. Exit 2 means no vault is configured.",
+        "committed, or pushed. backup and restore --yes write only their destination. "
+        "Exit 2 means no vault is configured.",
         ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
         ("status", "doctor"),
         "public",
@@ -387,6 +399,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory approve",
             "memory due",
             "memory hook",
+            "memory backup",
+            "memory restore",
         ),
     ),
     CommandSpec(

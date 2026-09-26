@@ -883,6 +883,61 @@ def print_memory_record(hit, body: str) -> None:
     print(body.rstrip("\n"))
 
 
+def print_memory_backup(result) -> None:
+    """What a backup captured, or would capture, and what Git never carries."""
+    print_header("Memory backup", "Agentbot › Memory › Backup")
+    word = {"preview": "preview", "completed": "ok"}.get(result.state, "warn")
+    rows = [
+        ("Destination", str(result.destination), word),
+        ("HEAD", result.head or "—", "info"),
+        ("Refs", f"{len(result.refs)} branch(es) and tag(s)", "info"),
+        (
+            "Working tree",
+            "clean" if not result.changed_paths else f"{result.changed_paths} uncommitted path(s)",
+            "ok" if not result.changed_paths else "check",
+        ),
+    ]
+    if result.state != "preview":
+        rows.append(
+            (
+                "Trial restore",
+                "validates clean" if not result.findings else f"{result.findings} finding(s)",
+                "ok" if not result.findings else "check",
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    for note in result.notes:
+        print_note(note)
+    if result.state == "preview":
+        print_note("Preview only. Rerun with --yes to write the mirror and manifest.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_restore(result) -> None:
+    """The restore target and its validation, or the preview of both."""
+    print_header("Memory restore", "Agentbot › Memory › Restore")
+    rows = [
+        ("Destination", str(result.destination), "preview" if result.state == "preview" else "ok"),
+        ("HEAD", f"{result.branch or 'detached'} @ {result.head or '—'}", "info"),
+    ]
+    if result.state != "preview":
+        rows.append(
+            (
+                "Validation",
+                "valid" if not result.findings else f"{result.findings} finding(s)",
+                "ok" if not result.findings else "error",
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    for note in result.notes:
+        print_note(note)
+    if result.state == "preview":
+        print_note("Preview only. Rerun with --yes to clone into the destination.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:
     """Render the owned vault hooks, and what an install or remove did or would do."""
     from ..memory_hook import SCANNER_GAP

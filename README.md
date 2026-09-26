@@ -175,7 +175,20 @@ at 65%. Schema 1 records have no scope field: preferences are global, project
 records and single-project records are project-scoped, and the rest are
 shared.
 
-Remote and backup state, and migration, are not implemented yet.
+`agentbot memory backup --destination PATH` previews, and with `--yes` writes,
+a private (`0700`) backup: a bare mirror of the vault's committed refs plus a
+manifest. Each run builds a new mirror, verifies it with `git fsck`, compares
+refs with the source, and trial-restores it through the validator before it
+replaces the previous snapshot; a failed backup leaves the old one intact. A
+destination inside the vault, containing it, symlinked, or holding another
+vault's backup is refused. A dirty tree is reported, not blocking.
+`agentbot memory restore --source BACKUP --destination PATH` clones into a new
+or empty directory, removes the backup `origin`, validates the result, and
+never touches the active checkout, Agentbot's configuration, or a remote.
+Git snapshots hold committed history only: uncommitted edits, ignored drafts,
+and exports are never included. Remote snapshots are not implemented.
+
+Migration is not implemented yet.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
 are also directly addressable:

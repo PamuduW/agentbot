@@ -41,10 +41,12 @@ from .ui import (
     print_mcp_plan,
     print_mcp_status,
     print_memory_approval,
+    print_memory_backup,
     print_memory_due,
     print_memory_hooks,
     print_memory_proposal,
     print_memory_record,
+    print_memory_restore,
     print_memory_search,
     print_memory_status,
     print_memory_validation,
@@ -475,6 +477,48 @@ def _handle_memory_retrieve(context: CommandContext) -> int:
     return 0
 
 
+def _handle_memory_backup(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_backup as backups
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    try:
+        if args.memory_command == "backup":
+            if root is None:
+                return _print_memory_state(
+                    memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+                )
+            result = backups.backup(
+                root,
+                caller_path(args.destination),
+                apply=args.confirm,
+                assurance=args.assurance,
+            )
+            if as_json:
+                print(json.dumps(backups.backup_json(result), indent=2))
+            else:
+                print_memory_backup(result)
+            return 0
+        restored = backups.restore(
+            caller_path(args.source),
+            caller_path(args.destination),
+            active=root,
+            apply=args.confirm,
+        )
+        if as_json:
+            print(json.dumps(backups.restore_json(restored), indent=2))
+        else:
+            print_memory_restore(restored)
+        return 1 if restored.state == "restored-with-findings" else 0
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+
+
 def _add_retrieval_scope(parser: argparse.ArgumentParser) -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--project", metavar="SLUG", help="Include this project's records")
@@ -498,6 +542,8 @@ def _handle_memory(context: CommandContext) -> int:
         return _handle_memory_due(context)
     if context.args.memory_command in {"search", "show", "brief"}:
         return _handle_memory_retrieve(context)
+    if context.args.memory_command in {"backup", "restore"}:
+        return _handle_memory_backup(context)
     as_json = bool(getattr(context.args, "memory_json", False))
     if context.args.memory_command == "status":
         status = memory.status(context.paths.root)
@@ -1071,6 +1117,21 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     brief = memory_sub.add_parser("brief", help="Print a bounded, disposable session brief")
     brief.add_argument("--tokens", type=int, default=800, metavar="N")
     _add_retrieval_scope(brief)
+    backup = memory_sub.add_parser("backup", help="Preview or refresh a verified local mirror")
+    backup.add_argument("--destination", required=True, metavar="PATH")
+    backup.add_argument(
+        "--encryption-assurance",
+        choices=("unknown", "user-attested"),
+        default="unknown",
+        dest="assurance",
+    )
+    backup.add_argument("--yes", action="store_true", dest="confirm")
+    backup.add_argument("--json", action="store_true", dest="memory_json")
+    restore = memory_sub.add_parser("restore", help="Preview or restore into a new directory")
+    restore.add_argument("--source", required=True, metavar="BACKUP")
+    restore.add_argument("--destination", required=True, metavar="PATH")
+    restore.add_argument("--yes", action="store_true", dest="confirm")
+    restore.add_argument("--json", action="store_true", dest="memory_json")
     due = memory_sub.add_parser("due", help="List accepted records due for review or expired")
     due.add_argument("--limit", type=int, default=20, metavar="N")
     due.add_argument("--json", action="store_true", dest="memory_json")
