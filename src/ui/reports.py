@@ -960,6 +960,10 @@ def print_memory_migration_plan(summary, *, written) -> None:
         )
         for item in summary["to_choose"]
     ]
+    rows += [
+        (f"projects/{folder}", "set its origin: a Git URL, or local", "check")
+        for folder in summary.get("projects_needing_origin", [])
+    ]
     ok, check, miss = print_table(rows, wrap_details=True)
     print()
     print_note(

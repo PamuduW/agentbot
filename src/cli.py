@@ -526,6 +526,7 @@ def _handle_memory_backup(context: CommandContext) -> int:
 def _handle_memory_migrate(context: CommandContext) -> int:
     from . import memory
     from . import memory_migrate as migrate
+    from . import memory_migrate3 as migrate3
 
     args = context.args
     as_json = bool(getattr(args, "memory_json", False))
@@ -537,28 +538,33 @@ def _handle_memory_migrate(context: CommandContext) -> int:
     action = args.migrate_action
     try:
         if action == "plan":
-            mapping = migrate.plan(root)
+            # The marker decides the step: v1 to v2, or v2 to v3.
+            planner = migrate3 if memory.read_marker(root) == 2 else migrate
+            mapping = planner.plan(root)
             if args.write:
                 migrate.write_mapping(mapping, caller_path(args.write))
-            summary = migrate.plan_summary(mapping)
+            summary = planner.plan_summary(mapping)
             if as_json:
                 print(json.dumps(summary, indent=2))
             else:
                 print_memory_migration_plan(summary, written=args.write)
             return 0
         if action == "rollback":
-            report = migrate.rollback(
+            snapshot = caller_path(args.snapshot)
+            recorded = migrate.read_snapshot(snapshot).get("target")
+            report = (migrate3 if recorded == 3 else migrate).rollback(
                 root,
-                caller_path(args.snapshot),
+                snapshot,
                 config_home=context.paths.config_home,
                 confirm=args.confirm,
             )
         else:
             mapping = migrate.read_mapping(caller_path(args.mapping))
+            step = migrate3 if mapping.get("target") == 3 else migrate
             if action == "check":
-                report, _ = migrate.check(root, mapping)
+                report, _ = step.check(root, mapping)
             else:
-                report = migrate.apply(
+                report = step.apply(
                     root,
                     mapping,
                     snapshot=caller_path(args.snapshot),

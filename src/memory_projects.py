@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from . import memory_setup
-from .memory import MemoryVaultError
+from .memory import MemoryVaultError, registry_problems
 from .memory_sync import _registry, normalize_origin, register_origin
 
 LOCAL_PREFIX = "local/"
@@ -70,29 +70,6 @@ def repo_identity(cwd: Path) -> RepoIdentity | None:
     remote = _git(toplevel, "config", "--get", "remote.origin.url")
     url = remote.stdout.strip() if remote.returncode == 0 and remote.stdout.strip() else None
     return RepoIdentity(toplevel, url, normalize_origin(url) if url else None)
-
-
-def registry_problems(registry: dict[str, Any]) -> dict[str, list[str]]:
-    """Problems keyed by project ID: shared origins, aliases, folders, or IDs."""
-    problems: dict[str, list[str]] = {}
-    claims: dict[str, str] = {}
-    folders: dict[str, str] = {}
-    seen: set[str] = set()
-    for entry in registry["projects"]:
-        pid = entry["id"]
-        if pid in seen:
-            problems.setdefault(pid, []).append("the project ID appears twice")
-        seen.add(pid)
-        for name in (entry["origin"], *entry.get("aliases", [])):
-            owner = claims.setdefault(name, pid)
-            if owner != pid:
-                for affected in (owner, pid):
-                    problems.setdefault(affected, []).append(f"{name} is claimed by two projects")
-        owner = folders.setdefault(entry["folder"], pid)
-        if owner != pid:
-            for affected in (owner, pid):
-                problems.setdefault(affected, []).append(f"folder {entry['folder']} is used twice")
-    return problems
 
 
 def resolve(vault: Path, cwd: Path, config_home: Path) -> Resolution:

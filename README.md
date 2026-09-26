@@ -125,6 +125,21 @@ private `memory-bindings.json`. Two projects claiming one origin, alias, or
 folder is a collision, and project writes stop until it is fixed. Registering
 and linking arrive in the CLI with schema 3.
 
+Schema 3 (ADR-0009) splits the vault into trust tiers by path: `core/`
+(`user/profile.md`, `user/preferences.md`, `decisions/`, `lessons/`; global or
+shared scope, changed only with approval), `projects/<folder>/` (`project.md`,
+`active-context.md`, `preferences.md`, `decisions/`, `lessons/`, `notes/`;
+scope `project` for exactly that folder), and tracked `proposals/core/`
+(drafts, never retrieved). Its marker carries a `vault_id`, and
+`.meta/projects.json` is the project registry, cross-checked against the
+project folders and each `project.md`. Supersession stays within one tier
+and one project. `agentbot memory migrate` routes by the marker: on a schema
+2 vault, `plan` proposes a v3 destination for every record, leaving the old
+global `active-context.md` (move it into a project or `retire` it; retired
+records stay in Git history) and each project's origin (a Git URL or
+`local`) for you to choose. `check`, `apply`, and `rollback` follow the same
+snapshot, guard, lock, and marker-last pattern as the v1 migration.
+
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown
 only, no symlinks or special files, UTF-8 without NUL, size and front-matter

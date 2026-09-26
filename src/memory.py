@@ -38,7 +38,7 @@ import yaml
 MARKER = ".meta/vault.json"
 MIGRATION_IN_PROGRESS = ".meta/migration-in-progress"
 MARKER_KEY = "agentbot_memory_schema"
-SUPPORTED_SCHEMAS = (1, 2)
+SUPPORTED_SCHEMAS = (1, 2, 3)
 
 MAX_FILE_BYTES = 262_144
 MAX_FRONT_MATTER_BYTES = 16_384
@@ -74,6 +74,29 @@ NON_MARKDOWN_ALLOWED = frozenset({".gitignore", ".gitattributes", MARKER})
 SINGLETON_TYPES = {"active-context.md": "context", "preferences.md": "preference"}
 DIRECTORY_TYPES = {"decisions": "decision", "lessons": "lesson", "projects": "project"}
 DRAFT_TYPES = frozenset({"decision", "lesson", "project"})
+
+# Schema 3 (ADR-0009): the trust tier comes from the path.
+REGISTRY = ".meta/projects.json"
+V3_README_EXEMPT = frozenset(
+    {
+        ".meta/README.md",
+        "core/README.md",
+        "projects/README.md",
+        "proposals/README.md",
+        "templates/README.md",
+        "exports/README.md",
+    }
+)
+V3_NON_MARKDOWN = frozenset({".gitignore", ".gitattributes", MARKER, REGISTRY})
+V3_CORE_FILES = {"core/user/profile.md": "profile", "core/user/preferences.md": "preference"}
+V3_CORE_DIRS = {"decisions": "decision", "lessons": "lesson"}
+V3_PROJECT_FILES = {
+    "project.md": "project",
+    "active-context.md": "context",
+    "preferences.md": "preference",
+}
+V3_PROJECT_DIRS = {"decisions": "decision", "lessons": "lesson", "notes": "project"}
+PROPOSAL_TYPES = frozenset({"decision", "lesson", "preference", "profile"})
 CANONICAL_STATUSES = frozenset({"accepted", "superseded", "retired"})
 SCOPES = frozenset({"global", "shared", "project"})
 
@@ -297,11 +320,20 @@ def read_marker(root: Path) -> int:
         payload = json.loads(text, object_pairs_hook=unique)
     except json.JSONDecodeError as error:
         raise MemoryVaultError(f"{MARKER}: not valid JSON") from error
-    if not isinstance(payload, dict) or set(payload) != {MARKER_KEY}:
-        raise MemoryVaultError(f'{MARKER}: must hold exactly {{"{MARKER_KEY}": N}}')
+    if not isinstance(payload, dict) or MARKER_KEY not in payload:
+        raise MemoryVaultError(f'{MARKER}: must hold {{"{MARKER_KEY}": N}}')
     version = payload[MARKER_KEY]
     if isinstance(version, bool) or version not in SUPPORTED_SCHEMAS:
         raise MemoryVaultError(f"{MARKER}: unsupported schema version")
+    expected = {MARKER_KEY, "vault_id"} if version == 3 else {MARKER_KEY}
+    if set(payload) != expected:
+        raise MemoryVaultError(
+            f"{MARKER}: schema {version} needs exactly the keys {sorted(expected)}"
+        )
+    if version == 3 and not (
+        isinstance(payload["vault_id"], str) and UUID4.match(payload["vault_id"])
+    ):
+        raise MemoryVaultError(f"{MARKER}: vault_id must be a lowercase UUID version 4")
     return int(version)
 
 
@@ -421,6 +453,7 @@ class _Destination:
     type: str | None  # None for a draft, whose type is the proposal's own
     draft: bool
     project: str | None = None
+    tier: str | None = None  # schema 3: core, project, or proposal
 
 
 def _destination(relative: str) -> _Destination | None:
@@ -437,6 +470,58 @@ def _destination(relative: str) -> _Destination | None:
     if kind == "project":
         return _Destination(kind, draft=False, project=parts[1]) if len(parts) >= 3 else None
     return _Destination(kind, draft=False)
+
+
+def _destination_v3(relative: str) -> _Destination | None:
+    if relative in V3_CORE_FILES:
+        return _Destination(V3_CORE_FILES[relative], draft=False, tier="core")
+    parts = relative.split("/")
+    if len(parts) >= 3 and parts[0] == "core" and parts[1] in V3_CORE_DIRS:
+        return _Destination(V3_CORE_DIRS[parts[1]], draft=False, tier="core")
+    if len(parts) >= 3 and parts[:2] == ["proposals", "core"]:
+        return _Destination(None, draft=True, tier="proposal")
+    if len(parts) >= 3 and parts[0] == "projects" and SLUG.match(parts[1]):
+        folder = parts[1]
+        if len(parts) == 3 and parts[2] in V3_PROJECT_FILES:
+            return _Destination(
+                V3_PROJECT_FILES[parts[2]], draft=False, project=folder, tier="project"
+            )
+        if len(parts) >= 4 and parts[2] in V3_PROJECT_DIRS:
+            return _Destination(
+                V3_PROJECT_DIRS[parts[2]], draft=False, project=folder, tier="project"
+            )
+    return None
+
+
+def _tier_of(relative: str) -> tuple[str, str | None]:
+    """(tier, project folder) for a schema 3 path; proposals count as core."""
+    parts = relative.split("/")
+    if parts[0] == "projects" and len(parts) > 1:
+        return "project", parts[1]
+    return "core", None
+
+
+def registry_problems(registry: dict[str, Any]) -> dict[str, list[str]]:
+    """Problems keyed by project ID: shared origins, aliases, folders, or IDs."""
+    problems: dict[str, list[str]] = {}
+    claims: dict[str, str] = {}
+    folders: dict[str, str] = {}
+    seen: set[str] = set()
+    for entry in registry["projects"]:
+        pid = entry["id"]
+        if pid in seen:
+            problems.setdefault(pid, []).append("the project ID appears twice")
+        seen.add(pid)
+        for name in (entry["origin"], *entry.get("aliases", [])):
+            owner = claims.setdefault(name, pid)
+            if owner != pid:
+                for affected in (owner, pid):
+                    problems.setdefault(affected, []).append(f"{name} is claimed by two projects")
+        owner = folders.setdefault(entry["folder"], pid)
+        if owner != pid:
+            for affected in (owner, pid):
+                problems.setdefault(affected, []).append(f"folder {entry['folder']} is used twice")
+    return problems
 
 
 def _as_date(value: Any) -> date | None:
@@ -475,7 +560,7 @@ class _RecordCheck:
 
     def run(self, fields: dict[str, Any]) -> Record | None:
         required = V1_FIELDS if self.schema == 1 else V2_REQUIRED
-        allowed = required | (V2_OPTIONAL if self.schema == 2 else frozenset())
+        allowed = required | (V2_OPTIONAL if self.schema >= 2 else frozenset())
         for key in sorted(set(fields) - allowed):
             self.fail("MEMORY_FIELD", f"unknown key: {key}")
         for key in sorted(required - set(fields)):
@@ -483,7 +568,7 @@ class _RecordCheck:
         if self.findings:
             return None
         kind = self._common(fields)
-        if self.schema == 2 and kind is not None:
+        if self.schema >= 2 and kind is not None:
             self._v2(fields, kind)
         if self.findings or kind is None:
             return None
@@ -509,8 +594,11 @@ class _RecordCheck:
             self.fail("MEMORY_SCHEMA", f"schema must be {self.schema}, as the vault marker says")
         kind = fields["type"]
         if self.destination.draft:
-            if kind not in DRAFT_TYPES:
-                self.fail("MEMORY_TYPE", "a draft must be a decision, lesson, or project")
+            allowed_drafts = PROPOSAL_TYPES if self.schema == 3 else DRAFT_TYPES
+            if kind not in allowed_drafts:
+                self.fail(
+                    "MEMORY_TYPE", f"a draft must be one of {', '.join(sorted(allowed_drafts))}"
+                )
                 kind = None
         elif kind != self.destination.type:
             self.fail("MEMORY_TYPE", f"type must be {self.destination.type} at this path")
@@ -558,6 +646,9 @@ class _RecordCheck:
         if scope not in SCOPES:
             self.fail("MEMORY_SCOPE", "scope must be global, shared, or project")
             return
+        if self.schema == 3:
+            self._scope_v3(fields, kind, scope)
+            return
         allowed = {
             "preference": {"global"},
             "context": {"global", "shared"},
@@ -573,6 +664,23 @@ class _RecordCheck:
             self.fail("MEMORY_SCOPE", "a global record lists no projects")
         elif scope == "project" and len(projects) != 1:
             self.fail("MEMORY_SCOPE", "a project-scoped record lists exactly one project")
+
+    def _scope_v3(self, fields: dict[str, Any], kind: str, scope: str) -> None:
+        """The tier, from the path, decides which scopes a record may have."""
+        projects = fields["projects"]
+        if self.destination.tier == "project":
+            if scope != "project":
+                self.fail("MEMORY_SCOPE", "project memory has scope project")
+            elif projects != [self.destination.project]:
+                self.fail("MEMORY_SCOPE", "projects must be exactly the project folder")
+            return
+        allowed = {"global"} if kind in {"profile", "preference"} else {"global", "shared"}
+        if scope not in allowed:
+            self.fail(
+                "MEMORY_SCOPE", f"core {kind} records have scope {' or '.join(sorted(allowed))}"
+            )
+        elif scope == "global" and projects:
+            self.fail("MEMORY_SCOPE", "a global record lists no projects")
 
     def _supersedes(self, fields: dict[str, Any], kind: str) -> None:
         targets = fields["supersedes"]
@@ -606,8 +714,8 @@ class _RecordCheck:
             self.fail("MEMORY_DATE", "review_after is later than valid_until")
 
 
-def _cross_record(records: list[Record]) -> list[Finding]:
-    """Schema 2 rules that span records: ID uniqueness and supersession edges."""
+def _cross_record(records: list[Record], schema: int = 2) -> list[Finding]:
+    """Rules that span records: ID uniqueness and supersession edges."""
     findings: list[Finding] = []
     by_id: dict[str, Record] = {}
     for record in records:
@@ -634,6 +742,15 @@ def _cross_record(records: list[Record]) -> list[Finding]:
                         "MEMORY_SUPERSEDES_TARGET",
                         record.path,
                         "supersedes an ID with no canonical record",
+                    )
+                )
+            elif schema == 3 and _tier_of(record.path) != _tier_of(target.path):
+                findings.append(
+                    Finding(
+                        "error",
+                        "MEMORY_SUPERSEDES_TIER",
+                        record.path,
+                        f"supersedes {target.path}, which is in another tier or project",
                     )
                 )
             elif not record.draft and target.status != "superseded":
@@ -777,13 +894,91 @@ def validate(root: Path, *, acknowledge: Iterable[str] = ()) -> ValidationReport
     report = ValidationReport(
         root=root, schema=schema, acknowledged=frozenset(acknowledge) & WARNING_RULES
     )
-    for relative in _listed_paths(root):
+    listed = _listed_paths(root)
+    for relative in listed:
         if relative.startswith(IGNORED_PREFIXES):
             continue
         report.findings.extend(_check_file(root, relative, schema, report.records))
-    if schema == 2:
-        report.findings.extend(_cross_record(report.records))
+    if schema >= 2:
+        report.findings.extend(_cross_record(report.records, schema))
+    if schema == 3:
+        report.findings.extend(_check_projects(root, listed, report.records))
     return report
+
+
+def _read_registry(root: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(_decode(read_bounded(root, REGISTRY, MAX_FILE_BYTES)))
+    except FileNotFoundError:
+        return None
+    except (_Unsafe, ValueError) as error:
+        raise MemoryVaultError(f"{REGISTRY} is unreadable") from error
+    return data
+
+
+def _registry_shape(data: Any) -> str | None:
+    if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
+        return "must hold a projects list"
+    for entry in data["projects"]:
+        if not isinstance(entry, dict) or not {"id", "origin", "folder"} <= set(entry):
+            return "every project needs id, origin, and folder"
+        if not (isinstance(entry["id"], str) and UUID4.match(entry["id"])):
+            return "project ids must be lowercase UUID version 4"
+        if not (isinstance(entry["folder"], str) and SLUG.match(entry["folder"])):
+            return "project folders must be slugs"
+        aliases = entry.get("aliases", [])
+        if not isinstance(entry["origin"], str) or not isinstance(aliases, list):
+            return "origin must be a string and aliases a list"
+    return None
+
+
+def _check_projects(root: Path, listed: list[str], records: list[Record]) -> list[Finding]:
+    """Schema 3: the registry, the project folders, and each project.md agree."""
+
+    def fail(path: str, rule: str, message: str) -> Finding:
+        return Finding("error", rule, path, message)
+
+    folders = sorted(
+        {p.split("/")[1] for p in listed if p.startswith("projects/") and p.count("/") >= 2}
+    )
+    data = _read_registry(root)
+    if data is None:
+        return [
+            fail(f"projects/{f}", "MEMORY_PROJECT_UNREGISTERED", "no registry entry")
+            for f in folders
+        ]
+    shape = _registry_shape(data)
+    if shape:
+        return [fail(REGISTRY, "MEMORY_REGISTRY", shape)]
+    findings = [
+        fail(REGISTRY, "MEMORY_REGISTRY", f"{pid}: {'; '.join(items)}")
+        for pid, items in sorted(registry_problems(data).items())
+    ]
+    by_folder = {entry["folder"]: entry for entry in data["projects"]}
+    identities = {
+        r.path: r
+        for r in records
+        if r.path.endswith("/project.md") and r.path.startswith("projects/")
+    }
+    for folder in folders:
+        entry = by_folder.get(folder)
+        if entry is None:
+            findings.append(
+                fail(f"projects/{folder}", "MEMORY_PROJECT_UNREGISTERED", "no registry entry")
+            )
+            continue
+        identity = identities.get(f"projects/{folder}/project.md")
+        if identity is None:
+            findings.append(
+                fail(f"projects/{folder}", "MEMORY_PROJECT_IDENTITY", "project.md is missing")
+            )
+        elif identity.id != entry["id"]:
+            findings.append(
+                fail(
+                    identity.path, "MEMORY_PROJECT_IDENTITY", "id does not match the registry entry"
+                )
+            )
+    return findings
 
 
 def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -> list[Finding]:
@@ -798,10 +993,11 @@ def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -
         return fail("MEMORY_SYMLINK", "symlinks are not allowed in the vault")
     if not stat.S_ISREG(mode):
         return fail("MEMORY_SPECIAL_FILE", "not a regular file")
+    allowed_other = V3_NON_MARKDOWN if schema == 3 else NON_MARKDOWN_ALLOWED
     if not relative.endswith(".md"):
         return (
             []
-            if relative in NON_MARKDOWN_ALLOWED
+            if relative in allowed_other
             else fail("MEMORY_FILE_TYPE", "only Markdown is allowed")
         )
     try:
@@ -811,9 +1007,10 @@ def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -
     except FileNotFoundError:
         return []
     findings = [] if relative.startswith("exports/") else scan_secrets(relative, text)
-    if relative in README_EXEMPT or relative.startswith(UNVALIDATED_PREFIXES):
+    exempt = V3_README_EXEMPT if schema == 3 else README_EXEMPT
+    if relative in exempt or relative.startswith(UNVALIDATED_PREFIXES):
         return findings
-    destination = _destination(relative)
+    destination = _destination_v3(relative) if schema == 3 else _destination(relative)
     if destination is None:
         return [*findings, *fail("MEMORY_LOCATION", "not a location a record may live in")]
     try:
