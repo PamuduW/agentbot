@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from .boost import BoostIntegration
 from .commands import CommandSpec, command_by_name
@@ -54,6 +55,7 @@ from .ui import (
     print_memory_search,
     print_memory_setup,
     print_memory_status,
+    print_memory_sync,
     print_memory_validation,
     print_output_refresh_report,
     print_rollup,
@@ -711,11 +713,76 @@ def _handle_memory_project(context: CommandContext) -> int:
             result = {"state": "preview", "origin": args.origin, "project": args.project}
         else:
             result = {"state": "linked", **projects.link(root, args.origin, args.project)}
+    if result.get("state") not in {"preview", "attached"}:
+        from . import memory_autosync
+
+        result["sync"] = memory_autosync.after_write(root, config_home)
     if as_json:
         print(json.dumps(result, indent=2))
     else:
         print_memory_project_write(result, action=action)
     return 0
+
+
+READ_COMMANDS = frozenset({"status", "validate", "search", "show", "brief", "due", "project"})
+
+
+def _refresh_before_read(context: CommandContext) -> None:
+    """Fetch the shared vault first, at most once per interval; never block the read."""
+    from . import memory, memory_autosync
+
+    if context.args.memory_command == "project" and getattr(context.args, "project_action", None):
+        return
+    try:
+        root, _ = memory.find_vault(context.paths.root)
+        if root is not None:
+            memory_autosync.before_read(root, context.paths.config_home)
+    except memory.MemoryVaultError:
+        return
+
+
+def _handle_memory_sync(context: CommandContext) -> int:
+    from . import memory, memory_autosync
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    config_home = context.paths.config_home
+    payload: Any
+    if args.memory_command == "sync":
+        if args.mode or args.interval is not None:
+            memory_autosync.set_settings(config_home, mode=args.mode, fetch_interval=args.interval)
+            payload = memory_autosync.status(root, config_home)
+            title = "settings"
+        elif args.status_only:
+            payload = memory_autosync.status(root, config_home)
+            title = "status"
+        else:
+            payload = {
+                **memory_autosync.run(root),
+                "settings": memory_autosync.status(root, config_home),
+            }
+            title = "run"
+        code = 0 if payload.get("state", "synced") in {"synced", "offline"} or title != "run" else 1
+    else:
+        action = args.conflict_action or "list"
+        if action == "list":
+            payload = {"conflicts": memory_autosync.open_conflicts(root)}
+        elif action == "show":
+            payload = memory_autosync.show(root, args.op)
+        else:
+            payload = memory_autosync.resolve(root, config_home, args.op, args.keep)
+        title = f"conflict {action}"
+        code = 0
+    if as_json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print_memory_sync(payload, title=title)
+    return code
 
 
 def _handle_memory(context: CommandContext) -> int:
@@ -737,6 +804,10 @@ def _dispatch_memory(context: CommandContext) -> int:
 
     if context.args.memory_command == "setup":
         return _handle_memory_setup(context)
+    if context.args.memory_command in {"sync", "conflict"}:
+        return _handle_memory_sync(context)
+    if context.args.memory_command in READ_COMMANDS:
+        _refresh_before_read(context)
     if context.args.memory_command == "project":
         return _handle_memory_project(context)
     if context.args.memory_command in {"propose", "review"}:
@@ -1312,6 +1383,24 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     _add_memory_setup_parser(memory_sub)
     _add_memory_project_parser(memory_sub)
+    sync = memory_sub.add_parser("sync", help="Sync the vault now, or show or set sync settings")
+    sync.add_argument("--mode", choices=("auto", "manual"))
+    sync.add_argument(
+        "--interval", type=int, metavar="SECONDS", help="Minimum time between fetches"
+    )
+    sync.add_argument("--status", action="store_true", dest="status_only")
+    sync.add_argument("--json", action="store_true", dest="memory_json")
+    conflict = memory_sub.add_parser("conflict", help="List, show, or resolve sync conflicts")
+    conflict.add_argument("--json", action="store_true", dest="memory_json")
+    conflict_actions = conflict.add_subparsers(dest="conflict_action")
+    conflict_list = conflict_actions.add_parser("list", help="List open conflicts")
+    conflict_show = conflict_actions.add_parser("show", help="Show both versions of one conflict")
+    conflict_show.add_argument("op", metavar="OP")
+    conflict_resolve = conflict_actions.add_parser("resolve", help="Keep mine or theirs")
+    conflict_resolve.add_argument("op", metavar="OP")
+    conflict_resolve.add_argument("--keep", required=True, choices=("mine", "theirs"))
+    for parser in (conflict_list, conflict_show, conflict_resolve):
+        parser.add_argument("--json", action="store_true", dest="memory_json")
     memory_status = memory_sub.add_parser("status", help="Show vault location, schema, and state")
     memory_status.add_argument("--json", action="store_true", dest="memory_json")
     memory_validate = memory_sub.add_parser(

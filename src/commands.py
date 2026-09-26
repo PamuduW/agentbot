@@ -302,10 +302,22 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory setup|project|status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore|migrate",
+        "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore|migrate",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
+            option(
+                "sync",
+                "Sync now; --status shows mode, pending, and conflicts; --mode auto|manual and "
+                "--interval SECONDS set how writes push and how often reads fetch.",
+                "auto, 300s",
+            ),
+            option(
+                "conflict [ACTION]",
+                "list open conflicts; show OP (both versions); resolve OP --keep mine|theirs. "
+                "Core conflicts are for the human.",
+                "list",
+            ),
             option(
                 "project [ACTION]",
                 "status (default) shows how this repo resolves; add --kind K --title T, "
@@ -412,6 +424,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "public",
         (
             "memory setup",
+            "memory sync",
+            "memory conflict list",
+            "memory conflict show",
+            "memory conflict resolve",
             "memory project status",
             "memory project add",
             "memory project edit",

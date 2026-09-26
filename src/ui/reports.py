@@ -1070,6 +1070,64 @@ def print_memory_project_write(result, *, action: str) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def print_memory_sync(payload, *, title: str) -> None:
+    """Sync outcome, settings, or conflicts, as label/value rows."""
+    print_header("Memory sync", f"Agentbot › Memory › {title.capitalize()}")
+    rows = []
+    state = payload.get("state")
+    if state:
+        word = {"synced": "ok", "offline": "warn", "paused": "warn", "manual": "info"}.get(
+            state, "error"
+        )
+        rows.append(("State", state, word))
+    for key, value in payload.items():
+        if key in {"state", "settings", "conflicts", "files"}:
+            continue
+        rows.append(
+            (
+                key.replace("_", " ").capitalize(),
+                json.dumps(value) if isinstance(value, dict) else str(value),
+                "info",
+            )
+        )
+    for key, value in (payload.get("settings") or {}).items():
+        rows.append(
+            (
+                key.replace("_", " ").capitalize(),
+                json.dumps(value) if isinstance(value, dict) else str(value),
+                "info",
+            )
+        )
+    for conflict in (
+        payload.get("conflicts", []) if isinstance(payload.get("conflicts"), list) else []
+    ):
+        rows.append(
+            (
+                conflict["op"][:8],
+                f"{conflict['tier']} {conflict['kind']} {conflict['path']}: {conflict['reason']}",
+                "conflict",
+            )
+        )
+    for item in payload.get("files", []):
+        rows.append(
+            (
+                item["path"],
+                "current and mine differ" if item["current"] != item["mine"] else "same",
+                "check",
+            )
+        )
+    ok, check, miss = print_table(
+        rows or [("Sync", "nothing to report", "info")], wrap_details=True
+    )
+    if state == "offline":
+        print()
+        print_note("Offline: writes stay committed locally and are pushed on the next sync.")
+    elif state == "paused":
+        print()
+        print_note("Paused: commit or revert the vault's manual edits, then sync again.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:
     """Render the owned vault hooks, and what an install or remove did or would do."""
     from ..memory_hook import SCANNER_GAP

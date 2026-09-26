@@ -158,6 +158,23 @@ the replaced record in the same operation, all or nothing, and only within
 the project. `AGENTBOT_MEMORY_PROJECT_WRITES=off` turns project writes off;
 reads keep working.
 
+Syncing is automatic on a schema 3 vault. After every Agentbot-owned write
+the vault is synced: fetched, pending operations replayed on the remote tip,
+and pushed, never forced. Reads (`status`, `validate`, `search`, `show`,
+`brief`, `due`, `project`) fetch first, at most once per interval (300 seconds
+by default). Offline, writes stay committed locally and pending until the next
+sync; uncommitted manual edits pause automation until they are committed or
+reverted; neither ever fails the command. `agentbot memory sync` syncs now;
+`--status` shows the mode, pending operations, open conflicts, and last sync;
+`--mode manual` stops automatic pushing and fetching (writes are still
+committed locally), and `--interval SECONDS` sets the fetch interval. When two
+machines changed the same record, the losing operation is preserved:
+`agentbot memory conflict` lists open conflicts, `conflict show OP` shows the
+current version beside yours, and `conflict resolve OP --keep theirs|mine`
+accepts the current state or re-applies yours as a new operation (a lost
+supersession or move is re-applied whole). Core conflicts are for the human
+to resolve. Schema 1 and 2 vaults keep their manual Git workflow.
+
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown
 only, no symlinks or special files, UTF-8 without NUL, size and front-matter

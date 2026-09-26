@@ -552,6 +552,8 @@ def _preserve(root: Path, op: Op, reason: str, result: SyncResult) -> None:
         "reason": reason,
         "recovery_ref": ref,
         "resolver": "human" if op.tier == "core" else "agent",
+        # The whole operation, so "keep mine" can re-apply it later.
+        "op_data": asdict(op),
     }
     conflicts = _load(root, "conflicts.json")
     conflicts.append(conflict)
@@ -564,6 +566,16 @@ def _preserve(root: Path, op: Op, reason: str, result: SyncResult) -> None:
 
 def conflicts(root: Path) -> list[dict[str, Any]]:
     return _load(root, "conflicts.json")
+
+
+def mark_resolved(root: Path, op_id: str, keep: str, resolution_op: str | None) -> None:
+    """Record how a conflict was settled; the recovery ref stays for audit."""
+    items = _load(root, "conflicts.json")
+    for item in items:
+        if item["op"] == op_id:
+            item["resolved"] = keep
+            item["resolution_op"] = resolution_op
+    _save(root, "conflicts.json", items)
 
 
 def outcomes(root: Path) -> dict[str, str]:
