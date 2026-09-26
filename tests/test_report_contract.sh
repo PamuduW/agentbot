@@ -59,6 +59,7 @@ SURFACES=(
 	'boost status'
 	'memory status'
 	'memory review'
+	'memory hook'
 	'graphify'
 	'workspaces'
 	'resync --all'

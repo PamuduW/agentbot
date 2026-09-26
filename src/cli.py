@@ -40,6 +40,8 @@ from .ui import (
     print_mcp_catalog,
     print_mcp_plan,
     print_mcp_status,
+    print_memory_approval,
+    print_memory_hooks,
     print_memory_proposal,
     print_memory_status,
     print_memory_validation,
@@ -357,11 +359,56 @@ def _handle_memory_drafts(context: CommandContext) -> int:
         )
 
 
+def _handle_memory_changes(context: CommandContext) -> int:
+    from . import memory, memory_approve, memory_hook
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    try:
+        if args.memory_command == "approve":
+            result = memory_approve.approve(
+                root,
+                args.draft_path,
+                config_home=context.paths.config_home,
+                apply=args.confirm,
+                acknowledge=args.acknowledge_warning or (),
+            )
+            if as_json:
+                print(json.dumps(memory_approve.approval_json(result), indent=2))
+            else:
+                print_memory_approval(result)
+            return 0 if result.state in {"preview", "applied"} else 1
+        action = args.hook_action
+        if action == "status" or not args.confirm:
+            state = memory_hook.inspect(root, context.paths.root)
+        elif action == "install":
+            state = memory_hook.install(root, context.paths.root)
+        else:
+            state = memory_hook.remove(root, context.paths.root)
+        if as_json:
+            print(json.dumps(memory_hook.hook_json(state), indent=2))
+        else:
+            print_memory_hooks(state, action=action, applied=args.confirm)
+        return 1 if state.problem or "unowned" in state.states.values() else 0
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
     if context.args.memory_command in {"propose", "review"}:
         return _handle_memory_drafts(context)
+    if context.args.memory_command in {"approve", "hook"}:
+        return _handle_memory_changes(context)
     as_json = bool(getattr(context.args, "memory_json", False))
     if context.args.memory_command == "status":
         status = memory.status(context.paths.root)
@@ -896,6 +943,23 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     review = memory_sub.add_parser("review", help="List pending drafts, or review one")
     review.add_argument("draft_path", nargs="?", metavar="drafts/FILE.md")
     review.add_argument("--json", action="store_true", dest="memory_json")
+    approve = memory_sub.add_parser("approve", help="Preview or promote one reviewed draft")
+    approve.add_argument("draft_path", metavar="drafts/FILE.md")
+    approve.add_argument("--yes", action="store_true", dest="confirm")
+    approve.add_argument(
+        "--acknowledge-warning",
+        action="append",
+        choices=sorted(WARNING_RULES),
+        dest="acknowledge_warning",
+        metavar="RULE_ID",
+    )
+    approve.add_argument("--json", action="store_true", dest="memory_json")
+    hook = memory_sub.add_parser("hook", help="Inspect or manage the vault's owned Git hooks")
+    hook.add_argument(
+        "hook_action", nargs="?", default="status", choices=("status", "install", "remove")
+    )
+    hook.add_argument("--yes", action="store_true", dest="confirm")
+    hook.add_argument("--json", action="store_true", dest="memory_json")
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -210,12 +210,16 @@ def read_bounded(root: Path, relative: str, limit: int) -> bytes:
         for part in parts[:-1]:
             try:
                 child = os.open(part, flags | os.O_DIRECTORY, dir_fd=directory)
+            except FileNotFoundError:
+                raise
             except OSError as error:
                 raise _Unsafe("MEMORY_SYMLINK", "a parent directory is a symlink") from error
             os.close(directory)
             directory = child
         try:
             handle = os.open(parts[-1], flags | os.O_NONBLOCK, dir_fd=directory)
+        except FileNotFoundError:
+            raise
         except OSError as error:
             raise _Unsafe("MEMORY_SYMLINK", "file is a symlink or unreadable") from error
     finally:
@@ -244,6 +248,8 @@ def read_marker(root: Path) -> int:
         text = _decode(read_bounded(root, MARKER, MAX_MARKER_BYTES))
     except _Unsafe as error:
         raise MemoryVaultError(f"{MARKER}: {error.message}") from error
+    except FileNotFoundError as error:
+        raise MemoryVaultError(f"{MARKER}: missing") from error
 
     def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         keys = [key for key, _ in pairs]
@@ -755,6 +761,8 @@ def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -
         text = _decode(read_bounded(root, relative, MAX_FILE_BYTES))
     except _Unsafe as error:
         return fail(error.rule, error.message)
+    except FileNotFoundError:
+        return []
     findings = [] if relative.startswith("exports/") else scan_secrets(relative, text)
     if relative in README_EXEMPT or relative.startswith(UNVALIDATED_PREFIXES):
         return findings

@@ -302,7 +302,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory status|validate|propose|review [--json]",
+        "agentbot memory status|validate|propose|review|approve|hook [--json]",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
@@ -323,6 +323,17 @@ COMMANDS: tuple[CommandSpec, ...] = (
             option(
                 "review [PATH]", "List pending drafts, or review one without its body.", "read-only"
             ),
+            option(
+                "approve PATH [--yes]",
+                "Preview, then with --yes install one draft as an accepted record without "
+                "replacing any file, under a bounded lock.",
+                "preview",
+            ),
+            option(
+                "hook [ACTION] [--yes]",
+                "Show, install, or remove the owned pre-commit and pre-push vault scan.",
+                "status; preview",
+            ),
             option("--json", "Emit machine-readable output.", "off"),
             option(
                 "--acknowledge-warning",
@@ -330,12 +341,20 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "none",
             ),
         ),
-        "Only propose writes, and only a new file under the vault's ignored drafts/. "
-        "Nothing is staged, committed, or approved. Exit 2 means no vault is configured.",
+        "propose writes a new ignored draft; approve --yes installs one record and removes "
+        "its draft; hook --yes writes only Agentbot-marked hooks. Nothing is staged, "
+        "committed, or pushed. Exit 2 means no vault is configured.",
         ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
         ("status", "doctor"),
         "public",
-        ("memory status", "memory validate", "memory propose", "memory review"),
+        (
+            "memory status",
+            "memory validate",
+            "memory propose",
+            "memory review",
+            "memory approve",
+            "memory hook",
+        ),
     ),
     CommandSpec(
         "cli-config",

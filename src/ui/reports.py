@@ -773,6 +773,61 @@ def print_draft_review(review) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def print_memory_approval(result) -> None:
+    """Render an approval preview, its outcome, or why it stopped."""
+    print_header("Memory approval", "Agentbot › Memory › Approve")
+    word = {"preview": "preview", "applied": "applied", "conflict": "conflict"}.get(
+        result.state, "error"
+    )
+    rows = [
+        ("Draft", result.draft, "info"),
+        ("Destination", result.destination or "—", word),
+    ]
+    if result.id:
+        rows.append(("ID", result.id, "info"))
+    rows += [("Note", note, "check") for note in result.notes]
+    rows += _finding_rows(result.findings)
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    print_note(
+        {
+            "preview": "Nothing was written. Rerun with --yes to install the record.",
+            "applied": "Installed. Nothing was staged, committed, or pushed.",
+        }.get(result.state, "Nothing was installed; the draft is intact.")
+    )
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_hooks(state, *, action: str, applied: bool) -> None:
+    """Render the owned vault hooks, and what an install or remove did or would do."""
+    from ..memory_hook import SCANNER_GAP
+
+    print_header("Memory hooks", "Agentbot › Memory › Hooks")
+    if state.problem:
+        print_table([("Hooks", state.problem, "error")], wrap_details=True)
+        print_rollup(ok=0, check=0, miss=1)
+        return
+    words = {"owned": "ok", "absent": "missing", "stale": "stale", "unowned": "conflict"}
+    rows = [("Directory", str(state.hooks_dir), "info")]
+    for name, current in state.states.items():
+        changed = name in state.applied
+        rows.append(
+            (
+                name,
+                current + (" (changed)" if changed else ""),
+                "applied" if changed else words[current],
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    if action != "status" and not applied:
+        print_note(f"Preview only. Rerun with --yes to {action} the Agentbot-owned hooks.")
+    if "unowned" in state.states.values():
+        print_note("A hook without the Agentbot marker is never replaced or removed.")
+    print_note(SCANNER_GAP)
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_skills_report(
     results: list, *, title: str, include_header: bool = True, include_rollup: bool = True
 ) -> tuple[int, tuple[int, int, int]]:

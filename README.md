@@ -124,8 +124,25 @@ draft's metadata, body size, findings, same-title records, and the exact path
 approval would install it at. Neither prints a note body, and both redact
 metadata when the scanner fires on that draft.
 
-Approval, hook, remote, and backup state, and migration are not implemented
-yet.
+`agentbot memory approve drafts/FILE.md` previews the exact destination;
+`--yes` promotes the draft. Apply takes a bounded per-vault lock in Agentbot's
+private state (a lock held by a live process makes the approval exit as a
+conflict after a few seconds; a dead holder's lock is broken and reported).
+Inside the lock it re-reads the draft and the destination, writes the accepted
+record beside the destination, and installs it with `link()`, which cannot
+replace a file. The draft is removed only afterwards, and only if unchanged.
+Any conflict or failure leaves the draft intact and no partial record. A draft
+that supersedes other records is refused until the supersession transaction
+exists. Approval stages, commits, and pushes nothing.
+
+`agentbot memory hook [status|install|remove] [--yes]` manages the vault's
+pre-commit and pre-push hooks, which run `memory validate` before Git proceeds.
+Only hooks carrying the `agentbot-memory-hook` marker are written or removed;
+a `core.hooksPath` outside the vault's Git directory is refused. The hooks are
+an accident guard (`--no-verify` bypasses them), and they do not scan
+`.obsidian/`, where plugin settings are committed unscanned.
+
+Remote and backup state, and migration, are not implemented yet.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
 are also directly addressable:
