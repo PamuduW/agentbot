@@ -188,7 +188,31 @@ never touches the active checkout, Agentbot's configuration, or a remote.
 Git snapshots hold committed history only: uncommitted edits, ignored drafts,
 and exports are never included. Remote snapshots are not implemented.
 
-Migration is not implemented yet.
+`agentbot memory migrate` moves a schema 1 vault to schema 2 through a
+reviewed mapping, in four steps:
+
+```bash
+agentbot memory migrate plan --write PATH          # IDs; scopes to choose
+agentbot memory migrate check --mapping PATH       # isolated candidate, v2-validated
+agentbot memory migrate apply --mapping PATH --snapshot DIR [--yes]
+agentbot memory migrate rollback --snapshot DIR [--yes]
+```
+
+`plan` needs a v1 tree with no findings. It proposes one UUID per record and
+draft; `preferences.md` is global and `projects/**` project-scoped by rule, and
+every other scope is left `null` for a person to choose (a suggestion sits
+beside it; an empty project list is never read as global). The mapping file is
+written `0600` and holds paths, hashes, IDs, and scopes, never note bodies.
+`check` converts an isolated copy and runs complete-tree v2 validation.
+`apply` needs a clean checkout on a branch, takes a verified `0700` byte
+snapshot outside the vault, marks `.meta/migration-in-progress` so every
+read fails closed, rewrites each file under the promotion lock only while its
+bytes match the mapping, and changes the marker last. Only front matter
+changes: `schema`, a new `id`, and a `scope` line; templates get blank `id`
+and `scope` lines. Any failure restores original bytes wherever they are
+still what the migration wrote. `rollback` does the same from the snapshot
+later and never overwrites a later edit. Nothing is staged, committed, or
+pushed.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
 are also directly addressable:

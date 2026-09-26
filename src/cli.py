@@ -44,6 +44,8 @@ from .ui import (
     print_memory_backup,
     print_memory_due,
     print_memory_hooks,
+    print_memory_migration,
+    print_memory_migration_plan,
     print_memory_proposal,
     print_memory_record,
     print_memory_restore,
@@ -519,6 +521,81 @@ def _handle_memory_backup(context: CommandContext) -> int:
         )
 
 
+def _handle_memory_migrate(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_migrate as migrate
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    action = args.migrate_action
+    try:
+        if action == "plan":
+            mapping = migrate.plan(root)
+            if args.write:
+                migrate.write_mapping(mapping, caller_path(args.write))
+            summary = migrate.plan_summary(mapping)
+            if as_json:
+                print(json.dumps(summary, indent=2))
+            else:
+                print_memory_migration_plan(summary, written=args.write)
+            return 0
+        if action == "rollback":
+            report = migrate.rollback(
+                root,
+                caller_path(args.snapshot),
+                config_home=context.paths.config_home,
+                confirm=args.confirm,
+            )
+        else:
+            mapping = migrate.read_mapping(caller_path(args.mapping))
+            if action == "check":
+                report, _ = migrate.check(root, mapping)
+            else:
+                report = migrate.apply(
+                    root,
+                    mapping,
+                    snapshot=caller_path(args.snapshot),
+                    config_home=context.paths.config_home,
+                    confirm=args.confirm,
+                )
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+    if as_json:
+        print(json.dumps(migrate.report_json(report), indent=2))
+    else:
+        print_memory_migration(report, action=action, applied=bool(getattr(args, "confirm", False)))
+    ok = {"ready", "applied"} | ({"rolled-back"} if action == "rollback" else set())
+    return 0 if report.state in ok and not (action == "rollback" and report.problems) else 1
+
+
+def _add_migrate_parser(memory_sub: argparse._SubParsersAction) -> None:
+    migrate = memory_sub.add_parser("migrate", help="Migrate a schema 1 vault to schema 2")
+    actions = migrate.add_subparsers(dest="migrate_action", required=True)
+    plan = actions.add_parser("plan", help="Propose IDs and list the scopes to choose")
+    plan.add_argument("--write", metavar="PATH", help="Write the private mapping file")
+    plan.add_argument("--json", action="store_true", dest="memory_json")
+    check = actions.add_parser("check", help="Convert an isolated copy and validate it")
+    check.add_argument("--mapping", required=True, metavar="PATH")
+    check.add_argument("--json", action="store_true", dest="memory_json")
+    apply = actions.add_parser("apply", help="Preview, or with --yes migrate the live vault")
+    apply.add_argument("--mapping", required=True, metavar="PATH")
+    apply.add_argument("--snapshot", required=True, metavar="PATH")
+    apply.add_argument("--yes", action="store_true", dest="confirm")
+    apply.add_argument("--json", action="store_true", dest="memory_json")
+    rollback = actions.add_parser("rollback", help="Restore v1 bytes from a migration snapshot")
+    rollback.add_argument("--snapshot", required=True, metavar="PATH")
+    rollback.add_argument("--yes", action="store_true", dest="confirm")
+    rollback.add_argument("--json", action="store_true", dest="memory_json")
+
+
 def _add_retrieval_scope(parser: argparse.ArgumentParser) -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--project", metavar="SLUG", help="Include this project's records")
@@ -544,6 +621,8 @@ def _handle_memory(context: CommandContext) -> int:
         return _handle_memory_retrieve(context)
     if context.args.memory_command in {"backup", "restore"}:
         return _handle_memory_backup(context)
+    if context.args.memory_command == "migrate":
+        return _handle_memory_migrate(context)
     as_json = bool(getattr(context.args, "memory_json", False))
     if context.args.memory_command == "status":
         status = memory.status(context.paths.root)
@@ -1132,6 +1211,7 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     restore.add_argument("--destination", required=True, metavar="PATH")
     restore.add_argument("--yes", action="store_true", dest="confirm")
     restore.add_argument("--json", action="store_true", dest="memory_json")
+    _add_migrate_parser(memory_sub)
     due = memory_sub.add_parser("due", help="List accepted records due for review or expired")
     due.add_argument("--limit", type=int, default=20, metavar="N")
     due.add_argument("--json", action="store_true", dest="memory_json")

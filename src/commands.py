@@ -302,7 +302,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore",
+        "agentbot memory status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore|migrate",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
@@ -335,6 +335,13 @@ COMMANDS: tuple[CommandSpec, ...] = (
             option(
                 "restore --source",
                 "Preview, then with --yes clone BACKUP into a new --destination with no remote.",
+                "preview",
+            ),
+            option(
+                "migrate ACTION",
+                "plan [--write PATH], check --mapping PATH, apply --mapping PATH --snapshot "
+                "PATH [--yes], rollback --snapshot PATH [--yes]: v1 to v2 through a reviewed "
+                "mapping.",
                 "preview",
             ),
             option(
@@ -401,6 +408,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory hook",
             "memory backup",
             "memory restore",
+            "memory migrate plan",
+            "memory migrate check",
+            "memory migrate apply",
+            "memory migrate rollback",
         ),
     ),
     CommandSpec(

@@ -938,6 +938,62 @@ def print_memory_restore(result) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def print_memory_migration_plan(summary, *, written) -> None:
+    """The scopes a human must choose, and the ones fixed by rule."""
+    print_header("Memory migration plan", "Agentbot › Memory › Migrate")
+    rows = [
+        (
+            "Mapping",
+            f"{summary['records']} record(s), {summary['drafts']} draft(s), "
+            f"{summary['templates']} template(s)",
+            "info",
+        )
+    ]
+    rows += [(item["path"], f"scope {item['scope']} (by rule)", "ok") for item in summary["fixed"]]
+    rows += [
+        (
+            item["path"],
+            f"choose a scope: {item['type']}"
+            + (f", projects {', '.join(item['projects'])}" if item["projects"] else ", no projects")
+            + f"; suggested {item['suggested']}",
+            "check",
+        )
+        for item in summary["to_choose"]
+    ]
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    print_note(
+        f"Mapping written to {written}. Set each null scope there, then run migrate check."
+        if written
+        else "Nothing was written. Rerun with --write PATH to save the private mapping file."
+    )
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_migration(report, *, action: str, applied: bool) -> None:
+    """A check, apply, or rollback outcome: paths and problems, never bodies."""
+    print_header("Memory migration", f"Agentbot › Memory › Migrate › {action}")
+    word = {"ready": "ok", "applied": "applied", "rolled-back": "applied"}.get(
+        report.state, "error"
+    )
+    rows = [("State", report.state, word)]
+    if report.snapshot:
+        rows.append(("Snapshot", str(report.snapshot), "info"))
+    rows += [(path, "scope not chosen", "check") for path in report.unresolved]
+    rows += [("Problem", problem, "error") for problem in report.problems]
+    rows += [
+        (path, "converted" if action != "rollback" else "restores v1 bytes", "info")
+        for path in report.changed
+    ]
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    if action in {"apply", "rollback"} and not applied and report.state == "ready":
+        print_note("Preview only. Rerun with --yes to change the live vault.")
+    if report.state == "applied":
+        print_note("Nothing was staged, committed, or pushed. Review with git diff in the vault.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:
     """Render the owned vault hooks, and what an install or remove did or would do."""
     from ..memory_hook import SCANNER_GAP

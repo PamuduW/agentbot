@@ -36,6 +36,7 @@ from typing import Any, Literal
 import yaml
 
 MARKER = ".meta/vault.json"
+MIGRATION_IN_PROGRESS = ".meta/migration-in-progress"
 MARKER_KEY = "agentbot_memory_schema"
 SUPPORTED_SCHEMAS = (1, 2)
 
@@ -746,6 +747,13 @@ def scan_secrets(relative: str, text: str) -> list[Finding]:
 
 def validate(root: Path, *, acknowledge: Iterable[str] = ()) -> ValidationReport:
     """Validate the complete vault tree against the schema its marker names."""
+    if os.path.lexists(root / MIGRATION_IN_PROGRESS):
+        # Files may be half converted; no read may trust the tree until the
+        # migration finishes or is rolled back.
+        raise MemoryVaultError(
+            "a schema migration is in progress or was interrupted; "
+            "finish it, or run agentbot memory migrate rollback"
+        )
     schema = read_marker(root)
     report = ValidationReport(
         root=root, schema=schema, acknowledged=frozenset(acknowledge) & WARNING_RULES
