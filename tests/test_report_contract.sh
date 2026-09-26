@@ -58,6 +58,7 @@ SURFACES=(
 	'vscode status'
 	'boost status'
 	'memory status'
+	'memory review'
 	'graphify'
 	'workspaces'
 	'resync --all'

@@ -108,7 +108,23 @@ rule for a single run; blocking rules cannot be acknowledged. `validate` exits
 `0` when valid and `1` otherwise; `status` exits `0` whenever it can report,
 including a dirty or invalid vault.
 
-Hook, remote, and backup state, proposals, and migration are not implemented
+`agentbot memory propose --type decision|lesson|project --title TITLE --scope
+global|shared|project [--project SLUG] [--tag TAG] --from-file PATH|--stdin`
+writes one draft under the vault's Git-ignored `drafts/`, with a fresh UUID and
+`status: draft`. The body comes only from the named file or standard input; no
+conversation is captured. It needs a schema 2 vault, and it writes nothing when
+the draft would fail validation, trips a blocking secret rule or an
+unacknowledged warning, or when `drafts/` is not ignored. Creation is
+exclusive, so an existing file is never replaced. A draft is never accepted
+memory or a retrieval result.
+
+`agentbot memory review` lists at most 100 pending drafts, newest first, with
+metadata and finding counts. `agentbot memory review drafts/FILE.md` shows one
+draft's metadata, body size, findings, same-title records, and the exact path
+approval would install it at. Neither prints a note body, and both redact
+metadata when the scanner fires on that draft.
+
+Approval, hook, remote, and backup state, and migration are not implemented
 yet.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They

@@ -29,6 +29,8 @@ from .ui import (
     print_boost_status,
     print_command_help,
     print_doctor_summary,
+    print_draft_list,
+    print_draft_review,
     print_four_column_table,
     print_graphify_status,
     print_header,
@@ -38,6 +40,7 @@ from .ui import (
     print_mcp_catalog,
     print_mcp_plan,
     print_mcp_status,
+    print_memory_proposal,
     print_memory_status,
     print_memory_validation,
     print_output_refresh_report,
@@ -293,9 +296,72 @@ def _handle_boost(context: CommandContext) -> int:
     return 1 if status.state in {"broken", "forbidden", "unsafe-config"} else 0
 
 
+def _print_memory_state(status, *, as_json: bool) -> int:
+    from . import memory
+
+    if as_json:
+        print(json.dumps(memory.status_json(status), indent=2))
+    else:
+        print_memory_status(status)
+    # Dirty or invalid are reported states, not a failure to report them.
+    return {"unconfigured": 2, "broken": 1}.get(status.state, 0)
+
+
+def _handle_memory_drafts(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_drafts as drafts
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    try:
+        if args.memory_command == "propose":
+            source = caller_path(args.from_file) if args.from_file else None
+            body = drafts.read_body(source, sys.stdin.buffer)
+            proposal = drafts.Proposal(
+                kind=args.memory_type,
+                title=args.title,
+                scope=args.scope,
+                projects=tuple(args.project or ()),
+                tags=tuple(args.tag or ()),
+            )
+            result = drafts.propose(
+                root, proposal, body, acknowledge=args.acknowledge_warning or ()
+            )
+            if as_json:
+                print(json.dumps(drafts.proposal_json(result), indent=2))
+            else:
+                print_memory_proposal(result)
+            return 0 if result.created else 1
+        if args.draft_path:
+            review = drafts.review_draft(root, args.draft_path)
+            if as_json:
+                print(json.dumps(drafts.draft_review_json(review), indent=2))
+            else:
+                print_draft_review(review)
+            return 1 if any(item.severity == "error" for item in review.findings) else 0
+        summaries, total = drafts.list_drafts(root)
+        if as_json:
+            print(json.dumps(drafts.draft_list_json(summaries, total), indent=2))
+        else:
+            print_draft_list(summaries, total)
+        return 0
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
+    if context.args.memory_command in {"propose", "review"}:
+        return _handle_memory_drafts(context)
     as_json = bool(getattr(context.args, "memory_json", False))
     if context.args.memory_command == "status":
         status = memory.status(context.paths.root)
@@ -316,12 +382,7 @@ def _handle_memory(context: CommandContext) -> int:
                 else:
                     print_memory_validation(report)
                 return 0 if report.valid else 1
-    if as_json:
-        print(json.dumps(memory.status_json(status), indent=2))
-    else:
-        print_memory_status(status)
-    # Dirty or invalid are reported states, not a failure to report them.
-    return {"unconfigured": 2, "broken": 1}.get(status.state, 0)
+    return _print_memory_state(status, as_json=as_json)
 
 
 def _gitlab_token_verify_only(store: ModuleType) -> int:
@@ -813,6 +874,28 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="RULE_ID",
         help="Accept one warning rule for this run only; blocking rules cannot be acknowledged",
     )
+    propose = memory_sub.add_parser("propose", help="Write one local draft for later review")
+    propose.add_argument(
+        "--type", required=True, choices=("decision", "lesson", "project"), dest="memory_type"
+    )
+    propose.add_argument("--title", required=True)
+    propose.add_argument("--scope", required=True, choices=("global", "shared", "project"))
+    propose.add_argument("--project", action="append", metavar="SLUG")
+    propose.add_argument("--tag", action="append", metavar="TAG")
+    source = propose.add_mutually_exclusive_group(required=True)
+    source.add_argument("--from-file", dest="from_file", metavar="PATH")
+    source.add_argument("--stdin", action="store_true", help="Read the body from standard input")
+    propose.add_argument(
+        "--acknowledge-warning",
+        action="append",
+        choices=sorted(WARNING_RULES),
+        dest="acknowledge_warning",
+        metavar="RULE_ID",
+    )
+    propose.add_argument("--json", action="store_true", dest="memory_json")
+    review = memory_sub.add_parser("review", help="List pending drafts, or review one")
+    review.add_argument("draft_path", nargs="?", metavar="drafts/FILE.md")
+    review.add_argument("--json", action="store_true", dest="memory_json")
 
 
 def build_parser() -> argparse.ArgumentParser:

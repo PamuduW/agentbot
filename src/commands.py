@@ -302,9 +302,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory status|validate [--json]",
-        "read-only",
-        "Locate the private memory vault and validate it against its schema version.",
+        "agentbot memory status|validate|propose|review [--json]",
+        "mutating",
+        "Locate, validate, and review the private memory vault; propose one local draft.",
         (
             option(
                 "status", "Show vault path, schema, Git state, and validation totals.", "read-only"
@@ -314,6 +314,15 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "Check every vault file; findings name paths and rules only.",
                 "read-only",
             ),
+            option(
+                "propose",
+                "Write one Git-ignored v2 draft from --from-file PATH or --stdin; needs "
+                "--type, --title, --scope, and optional --project/--tag.",
+                "schema 2 vault",
+            ),
+            option(
+                "review [PATH]", "List pending drafts, or review one without its body.", "read-only"
+            ),
             option("--json", "Emit machine-readable output.", "off"),
             option(
                 "--acknowledge-warning",
@@ -321,11 +330,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "none",
             ),
         ),
-        "Reads the vault checkout and its Git state; writes nothing. Exit 2 means no vault is configured.",
-        ("agentbot memory status", "agentbot memory validate"),
+        "Only propose writes, and only a new file under the vault's ignored drafts/. "
+        "Nothing is staged, committed, or approved. Exit 2 means no vault is configured.",
+        ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
         ("status", "doctor"),
         "public",
-        ("memory status", "memory validate"),
+        ("memory status", "memory validate", "memory propose", "memory review"),
     ),
     CommandSpec(
         "cli-config",

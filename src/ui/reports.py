@@ -687,6 +687,92 @@ def print_memory_validation(report) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def _finding_rows(findings) -> list[tuple[str, str, str]]:
+    return [
+        (
+            item.path if item.line is None else f"{item.path}:{item.line}",
+            f"{item.rule}: {item.message}",
+            item.severity,
+        )
+        for item in findings
+    ]
+
+
+def print_memory_proposal(result) -> None:
+    """Render a created draft, or why nothing was written."""
+    print_header("Memory proposal", "Agentbot › Memory › Propose")
+    if result.created:
+        rows = [
+            ("Draft", result.path, "ok"),
+            ("ID", result.id, "info"),
+            ("Destination", result.destination or "—", "info"),
+        ]
+    else:
+        rows = [("Draft", "not written", "skipped"), *_finding_rows(result.findings)]
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    print_note(
+        "Review it with agentbot memory review. A draft is never accepted memory until approved."
+        if result.created
+        else "Nothing was written. Fix the findings above and propose again."
+    )
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_draft_list(summaries, total: int) -> None:
+    """Pending drafts, newest first: metadata and finding counts, never bodies."""
+    print_header("Memory drafts", "Agentbot › Memory › Review")
+    if not summaries:
+        print_table([("Drafts", "none pending", "ok")])
+        print_rollup(ok=1, check=0, miss=0)
+        return
+    rows = []
+    for item in summaries:
+        detail = " · ".join(
+            part
+            for part in (
+                item.path,
+                item.type or "no type",
+                item.title or "no title",
+                ", ".join(item.projects),
+            )
+            if part
+        )
+        counts = (
+            f" ({item.blocking} blocking, {item.warnings} warning)"
+            if item.blocking or item.warnings
+            else ""
+        )
+        result = "error" if item.blocking else "warn" if item.warnings else "ok"
+        rows.append((item.date or "no date", detail + counts, result))
+    ok, check, miss = print_table(rows, wrap_details=True)
+    if total > len(summaries):
+        print()
+        print_note(f"Showing {len(summaries)} of {total} drafts.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_draft_review(review) -> None:
+    """One draft's metadata, destination, and findings, without its body."""
+    print_header("Memory draft review", "Agentbot › Memory › Review")
+    rows = [(key, str(value), "info") for key, value in review.fields.items()]
+    rows.append(("Body", f"{review.body_bytes} bytes, {review.body_lines} lines", "info"))
+    if review.destination is None:
+        rows.append(("Destination", "cannot be derived", "error"))
+    else:
+        rows.append(
+            (
+                "Destination",
+                review.destination + (" (already exists)" if review.destination_exists else ""),
+                "conflict" if review.destination_exists else "ok",
+            )
+        )
+    rows += [("Same title", path, "warn") for path in review.duplicate_titles]
+    rows += _finding_rows(review.findings) or [("Findings", "none", "ok")]
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_skills_report(
     results: list, *, title: str, include_header: bool = True, include_rollup: bool = True
 ) -> tuple[int, tuple[int, int, int]]:

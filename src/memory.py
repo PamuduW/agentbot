@@ -104,6 +104,9 @@ class Record:
     draft: bool
     id: str | None = None
     supersedes: tuple[str, ...] = ()
+    title: str = ""
+    date: str = ""
+    projects: tuple[str, ...] = ()
 
 
 @dataclass
@@ -297,7 +300,8 @@ def _listed_paths(root: Path) -> list[str]:
 
 def _walk_drafts(root: Path) -> Iterable[str]:
     """Drafts are Git-ignored, so Git does not list them. Walk without following."""
-    pending = ["drafts"]
+    # A symlinked drafts/ is itself listed by Git and rejected; never walk it.
+    pending = [] if os.path.islink(root / "drafts") else ["drafts"]
     while pending:
         current = pending.pop()
         try:
@@ -448,6 +452,9 @@ class _RecordCheck:
             draft=self.destination.draft,
             id=fields.get("id"),
             supersedes=tuple(fields.get("supersedes") or ()),
+            title=fields["title"],
+            date=fields["date"],
+            projects=tuple(fields["projects"]),
         )
 
     def _common(self, fields: dict[str, Any]) -> str | None:
