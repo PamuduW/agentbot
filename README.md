@@ -85,6 +85,32 @@ agentbot mcp catalog              # list validated MCP candidates
 agentbot mcp status               # inspect MCP ownership without network access
 ```
 
+## Memory vault
+
+`agentbot memory status` and `agentbot memory validate` inspect the private
+Markdown memory vault without writing to it. The vault is found the way
+`dotfiles-shared` is: `AGENTBOT_MEMORY_ROOT`, then `AGENTBOT_MEMORY_DIR`, then
+`agent-memory` beside this checkout, then `~/agent-memory`. A candidate counts
+only when it is a Git checkout carrying `.meta/vault.json`. No vault is a clean
+unconfigured state: both commands say so and exit `2`, and nothing else in
+Agentbot depends on memory.
+
+The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
+Validation covers every tracked or unignored file plus local drafts: Markdown
+only, no symlinks or special files, UTF-8 without NUL, size and front-matter
+limits, strict YAML (no duplicate keys, anchors, aliases or tags), type, path,
+status, slug and project rules, and the built-in secret scanner
+(`agentbot-memory-secrets/v1`). Schema 2 adds UUID uniqueness across records
+and drafts, scope/path consistency, date order, and supersession edges.
+Findings name a relative path, a rule ID and a line; never a note body, a field
+value, or a matched secret. `--acknowledge-warning RULE_ID` accepts one warning
+rule for a single run; blocking rules cannot be acknowledged. `validate` exits
+`0` when valid and `1` otherwise; `status` exits `0` whenever it can report,
+including a dirty or invalid vault.
+
+Hook, remote, and backup state, proposals, and migration are not implemented
+yet.
+
 The editor and CLI surfaces are part of an install and appear in `status`. They
 are also directly addressable:
 

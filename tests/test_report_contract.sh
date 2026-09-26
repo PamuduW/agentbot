@@ -57,6 +57,7 @@ SURFACES=(
 	'cursor status'
 	'vscode status'
 	'boost status'
+	'memory status'
 	'graphify'
 	'workspaces'
 	'resync --all'

@@ -427,6 +427,7 @@ class CliTests(unittest.TestCase):
                 # Token Config's GitLab screen drives this; the GitHub half
                 # stays in the Bash helper both products share.
                 "gitlab-token",
+                "memory",
                 "cli-config",
                 "cursor",
                 "vscode",

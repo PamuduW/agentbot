@@ -15,6 +15,7 @@ from .commands import CommandSpec, command_by_name
 from .diagnostics import Diagnostics
 from .graphify import GraphifyIntegration
 from .lifecycle import Lifecycle
+from .memory import WARNING_RULES
 from .paths import AgentbotPaths, default_paths
 from .skills_installer import (
     SkillsInstallError,
@@ -37,6 +38,8 @@ from .ui import (
     print_mcp_catalog,
     print_mcp_plan,
     print_mcp_status,
+    print_memory_status,
+    print_memory_validation,
     print_output_refresh_report,
     print_rollup,
     print_skill_prune_report,
@@ -288,6 +291,37 @@ def _handle_boost(context: CommandContext) -> int:
         status = context.lifecycle.boost_status()
     print_boost_status(status)
     return 1 if status.state in {"broken", "forbidden", "unsafe-config"} else 0
+
+
+def _handle_memory(context: CommandContext) -> int:
+    from . import memory
+
+    as_json = bool(getattr(context.args, "memory_json", False))
+    if context.args.memory_command == "status":
+        status = memory.status(context.paths.root)
+    else:
+        root, looked = memory.find_vault(context.paths.root)
+        if root is None:
+            status = memory.VaultStatus(state="unconfigured", looked_in=looked)
+        else:
+            try:
+                report = memory.validate(root, acknowledge=context.args.acknowledge_warning or ())
+            except memory.MemoryVaultError as error:
+                status = memory.VaultStatus(
+                    state="broken", looked_in=looked, root=root, problem=str(error)
+                )
+            else:
+                if as_json:
+                    print(json.dumps(memory.report_json(report), indent=2))
+                else:
+                    print_memory_validation(report)
+                return 0 if report.valid else 1
+    if as_json:
+        print(json.dumps(memory.status_json(status), indent=2))
+    else:
+        print_memory_status(status)
+    # Dirty or invalid are reported states, not a failure to report them.
+    return {"unconfigured": 2, "broken": 1}.get(status.state, 0)
 
 
 def _gitlab_token_verify_only(store: ModuleType) -> int:
@@ -727,6 +761,7 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "boost": _handle_boost,
     "mcp": _handle_mcp,
     "gitlab-token": _handle_gitlab_token,
+    "memory": _handle_memory,
     "cli-config": _handle_cli_config,
     "cursor": _handle_cursor,
     "vscode": _handle_vscode,
@@ -759,6 +794,25 @@ def _add_gitlab_token_parser(subparsers: argparse._SubParsersAction) -> None:
     gitlab_token_sub.add_parser("check", help="Ask GitLab whether the saved token is accepted")
     gitlab_token_sub.add_parser("reveal", help="Print the saved token once")
     gitlab_token_sub.add_parser("remove", help="Delete the saved token")
+
+
+def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
+    memory = subparsers.add_parser("memory", help="Inspect and validate the private memory vault")
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    memory_status = memory_sub.add_parser("status", help="Show vault location, schema, and state")
+    memory_status.add_argument("--json", action="store_true", dest="memory_json")
+    memory_validate = memory_sub.add_parser(
+        "validate", help="Validate every vault file against its schema version"
+    )
+    memory_validate.add_argument("--json", action="store_true", dest="memory_json")
+    memory_validate.add_argument(
+        "--acknowledge-warning",
+        action="append",
+        choices=sorted(WARNING_RULES),
+        dest="acknowledge_warning",
+        metavar="RULE_ID",
+        help="Accept one warning rule for this run only; blocking rules cannot be acknowledged",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -824,6 +878,8 @@ def build_parser() -> argparse.ArgumentParser:
     # products share; this one is Agentbot's, and the menu drives it through
     # here so the secret never crosses a shell argument vector.
     _add_gitlab_token_parser(subparsers)
+
+    _add_memory_parser(subparsers)
 
     mcp = subparsers.add_parser("mcp", help="Manage explicitly selected MCP servers")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)

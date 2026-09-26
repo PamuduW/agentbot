@@ -616,6 +616,77 @@ def print_boost_status(status) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def _memory_upstream(status) -> tuple[str, str, str]:
+    if status.ahead is None or status.behind is None:
+        return ("Upstream", "no upstream", "info")
+    if status.ahead == status.behind == 0:
+        return ("Upstream", "up to date", "ok")
+    return ("Upstream", f"{status.ahead} ahead, {status.behind} behind", "check")
+
+
+def print_memory_status(status) -> None:
+    """Render where the vault is, its schema, Git state, and validation totals."""
+    print_header("Memory", "Agentbot › Memory › Status")
+    if status.state == "unconfigured":
+        print_table([("Vault", "not configured", "skipped")])
+        print()
+        print_note(
+            "No memory vault found. Memory is optional; nothing else depends on it. Looked in: "
+            + ", ".join(str(path) for path in status.looked_in)
+        )
+        print_rollup(ok=0, check=0, miss=0)
+        return
+    rows = [("Vault", str(status.root), "ok")]
+    if status.state == "broken":
+        rows.append(("State", status.problem or "unreadable", "error"))
+    else:
+        changed = status.changed_paths
+        records = ", ".join(f"{count} {name}" for name, count in status.statuses.items())
+        rows += [
+            ("Schema", f"v{status.schema}", "ok"),
+            ("Branch", f"{status.branch or 'detached'} @ {status.commit or 'no commits'}", "info"),
+            (
+                "Working tree",
+                "clean" if changed == 0 else f"{changed} changed path(s)",
+                "ok" if changed == 0 else "check",
+            ),
+            _memory_upstream(status),
+            ("Records", records, "info"),
+            ("Drafts", f"{status.drafts} pending", "info"),
+            (
+                "Validation",
+                "valid"
+                if status.state == "ready"
+                else f"{status.errors} error(s), "
+                f"{status.warnings} warning(s); run agentbot memory validate",
+                "ok" if status.state == "ready" else "error" if status.errors else "warn",
+            ),
+        ]
+    ok, check, miss = print_table(rows)
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_validation(report) -> None:
+    """Render findings by relative path and rule. Never a value or a note body."""
+    print_header("Memory validation", "Agentbot › Memory › Validate")
+    records = sum(1 for record in report.records if not record.draft)
+    drafts = len(report.records) - records
+    rows = [
+        ("Vault", str(report.root), "ok"),
+        ("Schema", f"v{report.schema}", "ok"),
+        ("Records", f"{records} record(s), {drafts} draft(s)", "info"),
+    ]
+    for item in report.findings:
+        location = item.path if item.line is None else f"{item.path}:{item.line}"
+        acknowledged = item.severity == "warning" and item.rule in report.acknowledged
+        result = "skipped (acknowledged)" if acknowledged else item.severity
+        rows.append((location, f"{item.rule}: {item.message}", result))
+    if not report.findings:
+        rows.append(("Findings", "none", "ok"))
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_skills_report(
     results: list, *, title: str, include_header: bool = True, include_rollup: bool = True
 ) -> tuple[int, tuple[int, int, int]]:

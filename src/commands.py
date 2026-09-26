@@ -301,6 +301,33 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
+        "memory",
+        "agentbot memory status|validate [--json]",
+        "read-only",
+        "Locate the private memory vault and validate it against its schema version.",
+        (
+            option(
+                "status", "Show vault path, schema, Git state, and validation totals.", "read-only"
+            ),
+            option(
+                "validate",
+                "Check every vault file; findings name paths and rules only.",
+                "read-only",
+            ),
+            option("--json", "Emit machine-readable output.", "off"),
+            option(
+                "--acknowledge-warning",
+                "Accept one warning rule ID for this run; blocking rules cannot be acknowledged.",
+                "none",
+            ),
+        ),
+        "Reads the vault checkout and its Git state; writes nothing. Exit 2 means no vault is configured.",
+        ("agentbot memory status", "agentbot memory validate"),
+        ("status", "doctor"),
+        "public",
+        ("memory status", "memory validate"),
+    ),
+    CommandSpec(
         "cli-config",
         "agentbot cli-config status|apply",
         "mutating",

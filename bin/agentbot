@@ -111,7 +111,7 @@ agentbot_main() {
 	status | full | doctor) agentbot_run_backend "$command" "$@" ;;
 	boot) agentbot_run_backend "$command" "$@" ;;
 	workspace | workspaces | resync) agentbot_run_backend "$command" "$@" ;;
-	graphify | boost | mcp | gitlab-token) agentbot_run_backend "$command" "$@" ;;
+	graphify | boost | mcp | gitlab-token | memory) agentbot_run_backend "$command" "$@" ;;
 	cli-config | cursor | vscode) agentbot_run_backend "$command" "$@" ;;
 	token) agentbot_run_token "$@" ;;
 	update | upgrade) agentbot_run_backend "$command" "$@" ;;

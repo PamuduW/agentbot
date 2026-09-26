@@ -484,6 +484,7 @@ Usage: ./install.sh <command> [args]
   workspace|workspaces|resync Manage registered workspace outputs
   graphify status|setup      Inspect or repair generic Graphify Agent Skills
   boost status|setup|off     Inspect or manage Boost Claude/Codex/Cursor integration
+  memory status|validate     Inspect or validate the private memory vault (read-only)
   cli-config status|apply    Merge the declared agent CLI configuration keys
   cursor status|statusline   Inspect or install the managed Cursor statusline
   vscode status|seed|apply   Reconcile VS Code extensions and owned settings
@@ -554,7 +555,7 @@ main() {
 		check_python_deps
 		run_cli boot "${@:2}"
 		;;
-	graphify | boost | gitlab-token)
+	graphify | boost | gitlab-token | memory)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;
