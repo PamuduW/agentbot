@@ -326,7 +326,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
             option(
                 "approve PATH [--yes]",
                 "Preview, then with --yes install one draft as an accepted record without "
-                "replacing any file, under a bounded lock.",
+                "replacing any file, under a bounded lock. A superseding draft also marks its "
+                "targets superseded in the same transition; --allow-cross-scope permits a "
+                "reviewed cross-type or cross-scope replacement.",
                 "preview",
             ),
             option(

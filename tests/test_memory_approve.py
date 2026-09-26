@@ -236,7 +236,7 @@ class ApproveTests(ApproveTestCase):
             ("drafts/bad.md", "MEMORY_STATUS"),
             ("drafts/leak.md", "SECRET_GITHUB_CLASSIC_TOKEN"),
             ("drafts/warn.md", "WARN_PASSWORD_ASSIGNMENT"),
-            ("drafts/supersede.md", "MEMORY_SUPERSEDES"),
+            ("drafts/supersede.md", "MEMORY_SUPERSEDES_SCOPE"),
         ):
             with self.subTest(relative):
                 result = self.approve(relative, apply=True)

@@ -378,6 +378,7 @@ def _handle_memory_changes(context: CommandContext) -> int:
                 config_home=context.paths.config_home,
                 apply=args.confirm,
                 acknowledge=args.acknowledge_warning or (),
+                allow_cross_scope=args.allow_cross_scope,
             )
             if as_json:
                 print(json.dumps(memory_approve.approval_json(result), indent=2))
@@ -973,6 +974,12 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     approve = memory_sub.add_parser("approve", help="Preview or promote one reviewed draft")
     approve.add_argument("draft_path", metavar="drafts/FILE.md")
     approve.add_argument("--yes", action="store_true", dest="confirm")
+    approve.add_argument(
+        "--allow-cross-scope",
+        action="store_true",
+        dest="allow_cross_scope",
+        help="Allow superseding a record of another type or scope, after human review",
+    )
     approve.add_argument(
         "--acknowledge-warning",
         action="append",

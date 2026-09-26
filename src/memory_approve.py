@@ -28,6 +28,7 @@ from .memory import (
     WARNING_RULES,
     Finding,
     MemoryVaultError,
+    Record,
     _decode,
     _destination,
     _front_matter,
@@ -60,12 +61,21 @@ class ApprovalResult:
 
 
 @dataclass(frozen=True)
+class _Target:
+    path: str
+    digest: str
+    original: bytes
+    content: bytes | None  # None: already superseded, so nothing to rewrite
+
+
+@dataclass(frozen=True)
 class _Plan:
     draft: str
     destination: str
     record_id: str
     draft_digest: str
     content: bytes
+    targets: tuple[_Target, ...] = ()
 
 
 def lock_path(config_home: Path, root: Path) -> Path:
@@ -80,14 +90,25 @@ def approve(
     config_home: Path,
     apply: bool = False,
     acknowledge: Iterable[str] = (),
+    allow_cross_scope: bool = False,
     lock_wait: float = LOCK_WAIT_SECONDS,
     before_install: Callable[[], None] | None = None,
 ) -> ApprovalResult:
-    """Preview, or with apply=True install, one draft as an accepted record."""
+    """Preview, or with apply=True install, one draft as an accepted record.
+
+    A draft that supersedes records is one transition: the new record is
+    installed and every accepted target is marked superseded, or nothing is.
+    """
     result = ApprovalResult(state="refused", draft=relative)
-    plan = _plan(root, relative, set(acknowledge) & WARNING_RULES, result)
+    plan = _plan(root, relative, set(acknowledge) & WARNING_RULES, result, allow_cross_scope)
     if plan is None:
         return result
+    for target in plan.targets:
+        result.notes.append(
+            f"marks {target.path} superseded"
+            if target.content is not None
+            else f"{target.path} is already superseded; left as is"
+        )
     if os.path.lexists(root / plan.destination):
         result.state = "conflict"
         result.notes.append(f"{plan.destination} already exists")
@@ -100,7 +121,7 @@ def approve(
             _recheck(root, plan)
             if before_install is not None:
                 before_install()
-            _install(root, plan.destination, plan.content)
+            _commit(root, plan, result.notes)
             result.state = "applied"
             _remove_draft(root, plan, result.notes)
     except ApprovalConflict as error:
@@ -110,7 +131,11 @@ def approve(
 
 
 def _plan(
-    root: Path, relative: str, acknowledged: set[str], result: ApprovalResult
+    root: Path,
+    relative: str,
+    acknowledged: set[str],
+    result: ApprovalResult,
+    allow_cross_scope: bool = False,
 ) -> _Plan | None:
     def refuse(rule: str, message: str) -> None:
         result.findings.append(Finding("error", rule, relative, message))
@@ -141,11 +166,9 @@ def _plan(
     # check the draft's own ID against every other record explicitly.
     if any(record.id == fields.get("id") and record.path != relative for record in report.records):
         refuse("MEMORY_DUPLICATE_ID", "another record already uses this draft's id")
-    if "supersedes" in fields:
-        refuse(
-            "MEMORY_SUPERSEDES",
-            "approving a superseding draft needs the supersession transaction, not built yet",
-        )
+    if result.findings:
+        return None
+    targets = _plan_targets(root, fields, report.records, allow_cross_scope, refuse)
     if result.findings:
         return None
     destination = destination_for(
@@ -169,20 +192,76 @@ def _plan(
         record_id=fields["id"],
         draft_digest=hashlib.sha256(raw).hexdigest(),
         content=accepted.encode("utf-8"),
+        targets=tuple(targets),
     )
+
+
+def _plan_targets(
+    root: Path,
+    fields: dict[str, Any],
+    records: list[Record],
+    allow_cross_scope: bool,
+    refuse: Callable[[str, str], None],
+) -> list[_Target]:
+    canonical = {record.id: record for record in records if record.id and not record.draft}
+    targets: list[_Target] = []
+    for target_id in fields.get("supersedes") or ():
+        record = canonical.get(target_id)
+        if record is None:
+            refuse("MEMORY_SUPERSEDES_TARGET", "supersedes an ID with no canonical record")
+            continue
+        if record.status == "retired":
+            refuse(
+                "MEMORY_SUPERSEDES_STATUS",
+                f"{record.path} is retired; supersede it by hand if that is intended",
+            )
+            continue
+        if not allow_cross_scope and (record.type, record.scope) != (
+            fields["type"],
+            fields["scope"],
+        ):
+            refuse(
+                "MEMORY_SUPERSEDES_SCOPE",
+                f"{record.path} is a {record.scope} {record.type}; replacing it across type or "
+                "scope needs --allow-cross-scope after human review",
+            )
+            continue
+        raw = read_bounded(root, record.path, MAX_FILE_BYTES)
+        content = None
+        if record.status == "accepted":
+            changed = _set_status(_decode(raw), "accepted", "superseded")
+            where = _destination(record.path)
+            if changed is None or where is None:
+                refuse("MEMORY_STATUS", f"{record.path} needs exactly one 'status: accepted' line")
+                continue
+            # The target's state after the transition must itself be valid.
+            check = _RecordCheck(2, record.path, where)
+            check.run(_front_matter(changed))
+            for item in check.findings:
+                refuse(item.rule, f"{record.path} cannot become superseded: {item.message}")
+            if check.findings:
+                continue
+            content = changed.encode("utf-8")
+        targets.append(_Target(record.path, hashlib.sha256(raw).hexdigest(), raw, content))
+    return targets
 
 
 def _accept(text: str) -> str | None:
     """The draft with its one status line changed to accepted; the body untouched."""
+    return _set_status(text, "draft", "accepted")
+
+
+def _set_status(text: str, old: str, new: str) -> str | None:
+    """Change the one front-matter status line; everything else stays byte-for-byte."""
     lines = text.split("\n")
     end = next((i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r") == "---"), None)
     if end is None:
         return None
-    hits = [i for i in range(1, end) if lines[i].rstrip("\r").rstrip() == "status: draft"]
+    hits = [i for i in range(1, end) if lines[i].rstrip("\r").rstrip() == f"status: {old}"]
     if len(hits) != 1:
         return None
     ending = "\r" if lines[hits[0]].endswith("\r") else ""
-    lines[hits[0]] = "status: accepted" + ending
+    lines[hits[0]] = f"status: {new}" + ending
     return "\n".join(lines)
 
 
@@ -283,6 +362,78 @@ def _recheck(root: Path, plan: _Plan) -> None:
         raise ApprovalConflict(f"{plan.draft} changed during approval")
     if os.path.lexists(root / plan.destination):
         raise ApprovalConflict(f"{plan.destination} appeared during approval")
+    for target in plan.targets:
+        _check_unchanged(root, target.path, target.digest)
+
+
+def _check_unchanged(root: Path, relative: str, digest: str) -> None:
+    try:
+        current = read_bounded(root, relative, MAX_FILE_BYTES)
+    except (_Unsafe, OSError) as error:
+        raise ApprovalConflict(f"{relative} changed or disappeared during approval") from error
+    if hashlib.sha256(current).hexdigest() != digest:
+        raise ApprovalConflict(f"{relative} changed during approval")
+
+
+def _commit(root: Path, plan: _Plan, notes: list[str]) -> None:
+    """Install the record, then mark each target; undo our own writes on failure."""
+    _install(root, plan.destination, plan.content)
+    done: list[_Target] = []
+    try:
+        for target in plan.targets:
+            if target.content is None:
+                _check_unchanged(root, target.path, target.digest)
+                continue
+            _rewrite(root, target.path, target.digest, target.content)
+            done.append(target)
+    except BaseException:
+        _rollback(root, plan, done, notes)
+        raise
+
+
+def _rewrite(root: Path, relative: str, digest: str, content: bytes) -> None:
+    """Replace one record's bytes, only while they are still the ones reviewed."""
+    directory = _open_parent(root, relative)
+    name = relative.rsplit("/", 1)[-1]
+    temporary = f".agentbot-approve-{os.getpid()}-{time.monotonic_ns()}.tmp"
+    try:
+        handle = os.open(
+            temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=directory
+        )
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Last look before replacing: a person's edit wins over this transition.
+        _check_unchanged(root, relative, digest)
+        os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
+        os.fsync(directory)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary, dir_fd=directory)
+        os.close(directory)
+
+
+def _rollback(root: Path, plan: _Plan, done: list[_Target], notes: list[str]) -> None:
+    """Undo only what this approval wrote, and only where it is still ours."""
+    for target in reversed(done):
+        if target.content is None:
+            continue
+        try:
+            _rewrite(root, target.path, hashlib.sha256(target.content).hexdigest(), target.original)
+        except (ApprovalConflict, OSError):
+            notes.append(f"{target.path} changed after this approval marked it; restore it by hand")
+    try:
+        _check_unchanged(root, plan.destination, hashlib.sha256(plan.content).hexdigest())
+    except ApprovalConflict:
+        notes.append(f"{plan.destination} changed after installation; it was kept")
+        return
+    directory = _open_parent(root, plan.destination)
+    try:
+        os.unlink(plan.destination.rsplit("/", 1)[-1], dir_fd=directory)
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def _open_parent(root: Path, relative: str) -> int:

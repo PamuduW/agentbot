@@ -131,9 +131,17 @@ conflict after a few seconds; a dead holder's lock is broken and reported).
 Inside the lock it re-reads the draft and the destination, writes the accepted
 record beside the destination, and installs it with `link()`, which cannot
 replace a file. The draft is removed only afterwards, and only if unchanged.
-Any conflict or failure leaves the draft intact and no partial record. A draft
-that supersedes other records is refused until the supersession transaction
-exists. Approval stages, commits, and pushes nothing.
+Any conflict or failure leaves the draft intact and no partial record.
+Approval stages, commits, and pushes nothing.
+
+A draft with `supersedes` is approved as one transition: under the same lock,
+the new record is installed and each accepted target's `status` line becomes
+`superseded`, with every target rechecked against the bytes that were
+reviewed. A person's edit to a target during approval wins: the approval
+rolls back its own writes and reports a conflict. Retired targets, and
+replacements across type or scope, are refused; `--allow-cross-scope` accepts
+the latter after human review, and the new record never inherits the old
+scope. No record is deleted.
 
 `agentbot memory hook [status|install|remove] [--yes]` manages the vault's
 pre-commit and pre-push hooks, which run `memory validate` before Git proceeds.
