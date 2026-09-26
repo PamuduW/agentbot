@@ -47,6 +47,12 @@ KIND_DIRS = {"decision": "decisions", "lesson": "lessons", "note": "notes"}
 KIND_TYPES = {"decision": "decision", "lesson": "lesson", "note": "project"}
 FLAG = "AGENTBOT_MEMORY_PROJECT_WRITES"
 
+# Maintenance pressure (ADR-0009 / R7 section 5.7.4): warn, then require tidying.
+CONTEXT_SOFT_TOKENS = 800
+CONTEXT_HARD_TOKENS = 1_200
+POOL_SOFT = 48
+POOL_HARD = 64
+
 
 def _enabled() -> bool:
     return os.environ.get(FLAG, "on").strip().lower() not in {"off", "0", "false", "no"}
@@ -129,6 +135,58 @@ def _result(op: memory_sync.Op, **extra: Any) -> dict[str, Any]:
     return {"op": op.id, "commit": op.commit, "state": "committed-locally", **extra}
 
 
+def _body_of(data: bytes) -> str:
+    return _split(data.decode("utf-8"))[1].strip()
+
+
+def _live(vault: Path, folder: str) -> list[Any]:
+    """The project's records still in the hot pool: accepted, not drafts."""
+    return [
+        r
+        for r in validate(vault).records
+        if r.path.startswith(f"projects/{folder}/") and not r.draft and r.status == "accepted"
+    ]
+
+
+def _pressure(vault: Path, folder: str, relative: str, data: bytes, *, adding: bool) -> list[str]:
+    """Deterministic maintenance checks. Raises for a hard limit; returns warnings."""
+    from .memory_retrieve import _similar, estimate_tokens
+
+    warnings: list[str] = []
+    live = _live(vault, folder)
+    body = _body_of(data)
+    title = _front_matter(data.decode("utf-8"))["title"]
+    for record in live:
+        if record.path == relative:
+            continue
+        other = read_bounded(vault, record.path, MAX_FILE_BYTES)
+        if body and _body_of(other) == body:
+            raise MemoryVaultError(f"the same text is already recorded in {record.path}")
+        probe = type(record)(
+            path=relative, type=record.type, status="accepted", draft=False, title=title
+        )
+        if _similar(probe, record):
+            warnings.append(f"a similar title exists: {record.path}")
+    if relative.endswith("/active-context.md"):
+        size = estimate_tokens(body)
+        if size > CONTEXT_HARD_TOKENS:
+            raise MemoryVaultError(
+                f"the active context is about {size} tokens; keep it under {CONTEXT_HARD_TOKENS} "
+                "by moving history into lessons or decisions"
+            )
+        if size > CONTEXT_SOFT_TOKENS:
+            warnings.append(f"the active context is about {size} tokens; compact it soon")
+    if adding:
+        if len(live) >= POOL_HARD:
+            raise MemoryVaultError(
+                f"project {folder} has {len(live)} live records (limit {POOL_HARD}); "
+                "run agentbot memory project maintain, then retire, supersede, or delete some"
+            )
+        if len(live) >= POOL_SOFT:
+            warnings.append(f"project {folder} has {len(live)} live records; maintenance is due")
+    return warnings
+
+
 def add(
     vault: Path,
     cwd: Path,
@@ -159,11 +217,12 @@ def add(
         supersedes=[supersedes] if supersedes else None,
     )
     _require_valid(relative, data)
+    warnings = _pressure(vault, folder, relative, data, adding=not supersedes)
     changes: list[tuple[str, bytes | None]] = [(relative, data)]
     if supersedes:
         changes.append(_supersede_target(vault, folder, supersedes))
     op = memory_sync.change_project(vault, folder, changes, client=client)
-    return _result(op, path=relative, id=record_id)
+    return _result(op, path=relative, id=record_id, warnings=warnings)
 
 
 def _supersede_target(vault: Path, folder: str, target_id: str) -> tuple[str, bytes]:
@@ -230,8 +289,9 @@ def edit(
     new_body = old_body if body is None else "\n" + (body if body.endswith("\n") else body + "\n")
     data = (head + "\n" + new_body).encode("utf-8")
     _require_valid(relative, data)
+    warnings = _pressure(vault, folder, relative, data, adding=False)
     op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
-    return _result(op, path=relative)
+    return _result(op, path=relative, warnings=warnings)
 
 
 def set_context(
@@ -251,8 +311,9 @@ def set_context(
         created=existing.date if existing else None,
     )
     _require_valid(relative, data)
+    warnings = _pressure(vault, folder, relative, data, adding=False)
     op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
-    return _result(op, path=relative)
+    return _result(op, path=relative, warnings=warnings)
 
 
 def move(
@@ -290,3 +351,108 @@ def forget(vault: Path, cwd: Path, config_home: Path, *, client: str = "agent") 
     folder = _project(vault, cwd, config_home)
     op = memory_sync.forget_project(vault, folder, client=client)
     return _result(op, path=f"projects/{folder}", recover=f"git revert {op.commit}")
+
+
+def retire(
+    vault: Path, cwd: Path, config_home: Path, path: str, *, client: str = "agent"
+) -> dict[str, Any]:
+    """Take a record out of retrieval without deleting it; it stays readable in the vault."""
+    folder = _project(vault, cwd, config_home)
+    relative = _inside(folder, path)
+    if relative.endswith("/project.md"):
+        raise MemoryVaultError("project.md is the project's identity and cannot be retired")
+    try:
+        text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
+    except FileNotFoundError as error:
+        raise MemoryVaultError(f"{relative} does not exist") from error
+    data = _set_status(text, "retired")
+    _require_valid(relative, data)
+    op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
+    return _result(op, path=relative)
+
+
+def promote(
+    vault: Path,
+    cwd: Path,
+    config_home: Path,
+    path: str,
+    *,
+    scope: str = "shared",
+    client: str = "agent",
+) -> dict[str, Any]:
+    """Propose a project lesson or decision for core memory. The source stays in the project."""
+    from . import memory_proposals
+
+    folder = _project(vault, cwd, config_home)
+    relative = _inside(folder, path)
+    try:
+        text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
+    except FileNotFoundError as error:
+        raise MemoryVaultError(f"{relative} does not exist") from error
+    fields = _front_matter(text)
+    if fields["type"] not in {"lesson", "decision"}:
+        raise MemoryVaultError("only lessons and decisions are promoted to core")
+    body = _split(text)[1].strip() + f"\n\nPromoted from {relative}.\n"
+    return memory_proposals.propose(
+        vault,
+        kind=fields["type"],
+        title=fields["title"],
+        body=body,
+        scope=scope,
+        projects=[folder] if scope == "shared" else [],
+        tags=list(fields["tags"]),
+        client=client,
+    )
+
+
+def maintain(vault: Path, cwd: Path, config_home: Path) -> dict[str, Any]:
+    """A read-only maintenance report for the current project."""
+    from .memory import utc_today
+    from .memory_retrieve import _similar, estimate_tokens
+
+    folder = _project(vault, cwd, config_home)
+    today = utc_today()
+    records = [
+        r
+        for r in validate(vault).records
+        if r.path.startswith(f"projects/{folder}/") and not r.draft
+    ]
+    live = [r for r in records if r.status == "accepted"]
+    clusters = []
+    for index, record in enumerate(live):
+        for other in live[index + 1 :]:
+            if _similar(record, other):
+                clusters.append([record.path, other.path])
+    context = next((r for r in live if r.path.endswith("/active-context.md")), None)
+    context_tokens = (
+        estimate_tokens(_body_of(read_bounded(vault, context.path, MAX_FILE_BYTES)))
+        if context
+        else 0
+    )
+    return {
+        "state": "report",
+        "project": folder,
+        "live": len(live),
+        "limits": {"warn": POOL_SOFT, "stop": POOL_HARD},
+        "superseded": sum(1 for r in records if r.status == "superseded"),
+        "retired": sum(1 for r in records if r.status == "retired"),
+        "expired": [r.path for r in live if r.expired(today)],
+        "due_for_review": [r.path for r in live if r.due(today)],
+        "similar_titles": clusters,
+        "context_tokens": context_tokens,
+        "suggestions": _suggest(len(live), clusters, context_tokens),
+    }
+
+
+def _suggest(live: int, clusters: list[list[str]], context_tokens: int) -> list[str]:
+    tips = []
+    if live >= POOL_SOFT:
+        tips.append("retire or supersede old records; delete clear duplicates")
+    if clusters:
+        tips.append("merge similar records with add --supersedes, or delete the weaker one")
+    if context_tokens > CONTEXT_SOFT_TOKENS:
+        tips.append("shorten the active context; move history into lessons or decisions")
+    tips.append(
+        "promote lessons that hold across projects with: agentbot memory project promote PATH"
+    )
+    return tips

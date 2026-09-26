@@ -720,6 +720,12 @@ def _handle_memory_project(context: CommandContext) -> int:
         result = writes.move(root, cwd, config_home, args.path, args.new_path)
     elif action == "delete":
         result = writes.delete(root, cwd, config_home, args.path)
+    elif action == "retire":
+        result = writes.retire(root, cwd, config_home, args.path)
+    elif action == "promote":
+        result = writes.promote(root, cwd, config_home, args.path, scope=args.scope)
+    elif action == "maintain":
+        result = writes.maintain(root, cwd, config_home)
     elif action == "forget":
         if not args.confirm:
             folder = projects.require_project(root, cwd, config_home)["folder"]
@@ -735,7 +741,7 @@ def _handle_memory_project(context: CommandContext) -> int:
             result = {"state": "preview", "origin": args.origin, "project": args.project}
         else:
             result = {"state": "linked", **projects.link(root, args.origin, args.project)}
-    if result.get("state") not in {"preview", "attached"}:
+    if result.get("state") not in {"preview", "attached", "report"}:
         from . import memory_autosync
 
         result["sync"] = memory_autosync.after_write(root, config_home)
@@ -1455,6 +1461,12 @@ def _add_memory_project_parser(memory_sub: argparse._SubParsersAction) -> None:
     move.add_argument("new_path", metavar="NEW_PATH")
     delete = actions.add_parser("delete", help="Delete a record from this project")
     delete.add_argument("path", metavar="PATH")
+    retire = actions.add_parser("retire", help="Take a record out of retrieval without deleting it")
+    retire.add_argument("path", metavar="PATH")
+    promote = actions.add_parser("promote", help="Propose a project lesson or decision for core")
+    promote.add_argument("path", metavar="PATH")
+    promote.add_argument("--scope", choices=("global", "shared"), default="shared")
+    maintain = actions.add_parser("maintain", help="Report what this project's memory needs")
     forget = actions.add_parser("forget", help="Remove this project's memory folder")
     forget.add_argument("--yes", action="store_true", dest="confirm")
     actions.add_parser("register", help="Give this repository project memory")
@@ -1464,7 +1476,9 @@ def _add_memory_project_parser(memory_sub: argparse._SubParsersAction) -> None:
     link.add_argument("origin", metavar="ORIGIN_URL")
     link.add_argument("project", metavar="PROJECT")
     link.add_argument("--yes", action="store_true", dest="confirm")
-    for parser in (status, add, edit, context, move, delete, forget, attach, link):
+    for parser in (
+        status, add, edit, context, move, delete, retire, promote, maintain, forget, attach, link
+    ):
         parser.add_argument("--json", action="store_true", dest="memory_json")
 
 

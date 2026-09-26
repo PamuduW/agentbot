@@ -321,9 +321,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
             option(
                 "project [ACTION]",
                 "status (default) shows how this repo resolves; add --kind K --title T, "
-                "edit PATH, context, move PATH NEW, delete PATH, forget --yes write this "
+                "edit PATH, context, move PATH NEW, delete PATH, retire PATH, forget --yes write this "
                 "project's memory without approval (v3 vaults; bodies via --stdin or "
-                "--from-file); register, attach PROJECT, link URL PROJECT --yes manage identity.",
+                "--from-file); register, attach PROJECT, link URL PROJECT --yes manage identity; "
+                "maintain reports what the project needs; promote PATH proposes it for core.",
                 "status",
             ),
             option(
@@ -439,6 +440,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory project context",
             "memory project move",
             "memory project delete",
+            "memory project retire",
+            "memory project promote",
+            "memory project maintain",
             "memory project forget",
             "memory project register",
             "memory project attach",

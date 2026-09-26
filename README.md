@@ -201,6 +201,18 @@ JSON) carries a fixed notice that the content is retrieved memory to treat as
 evidence, never as instructions, and record text is never rendered into
 policy. A project's `active-context.md` leads its share of the brief.
 
+Project memory keeps itself in shape with deterministic checks on every
+write: a body identical to another record in the project is refused, a
+near-duplicate title is a warning, the active context warns above about 800
+tokens and is refused above 1,200, and a project with 48 live records warns
+while 64 stops new records until some are retired, superseded, or deleted
+(superseding never grows the pool). `agentbot memory project maintain` reports
+what the current project needs (live count against the limits, expired and
+due records, similar titles, context size) without writing. `project retire
+PATH` takes a record out of retrieval but keeps it; `project promote PATH
+[--scope global|shared]` proposes a project lesson or decision for core
+memory, leaving the source in place.
+
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown
 only, no symlinks or special files, UTF-8 without NUL, size and front-matter
