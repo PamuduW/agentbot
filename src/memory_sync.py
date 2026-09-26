@@ -60,7 +60,7 @@ class SyncConflict(MemoryVaultError):
 class Op:
     id: str
     kind: Kind
-    tier: Literal["project", "core", "meta"]
+    tier: Literal["project", "core", "meta", "proposal"]
     path: str
     project: str | None = None
     content: str | None = None  # base64 for put/approve; JSON entry for register
@@ -368,7 +368,7 @@ def _apply_multi(root: Path, op: Op) -> str:
     items = json.loads(op.content or "[]")
     plan: list[tuple[str, bytes | None]] = []
     for item in items:
-        if not item["path"].startswith(op.path + "/"):
+        if not _within(item["path"], op):
             raise MemoryVaultError(f"{item['path']} is outside {op.path}")
         current = _current(root, item["path"])
         current_hash = None if current is None else _sha(current)
@@ -392,6 +392,50 @@ def _apply_multi(root: Path, op: Op) -> str:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(target)
     return "applied"
+
+
+CORE_PREFIXES = ("core/", "proposals/core/")
+
+
+def _within(path: str, op: Op) -> bool:
+    """A multi operation's files stay in its scope: one project, or core and proposals."""
+    if op.path == ".":
+        return op.tier in {"core", "proposal"} and path.startswith(CORE_PREFIXES)
+    return path.startswith(op.path + "/")
+
+
+def change_core(
+    root: Path,
+    changes: list[tuple[str, bytes | None]],
+    *,
+    tier: Literal["core", "proposal"],
+    client: str = "unknown",
+) -> Op:
+    """Put or delete core records and proposals as one operation.
+
+    ``proposal`` operations may touch only ``proposals/core/``; ``core``
+    operations (the user's approvals) may touch both.
+    """
+    allowed = ("proposals/core/",) if tier == "proposal" else CORE_PREFIXES
+    items = []
+    for relative, data in changes:
+        if not relative.startswith(allowed):
+            raise MemoryVaultError(f"{relative} is outside {' and '.join(allowed)}")
+        _safe_rel(relative)
+        if data is not None:
+            _scan(relative, data)
+        prior = _current(root, relative)
+        if data is None and prior is None:
+            raise MemoryVaultError(f"{relative} does not exist")
+        items.append(
+            {
+                "path": relative,
+                "content": None if data is None else base64.b64encode(data).decode(),
+                "expected": None if prior is None else _sha(prior),
+            }
+        )
+    op = Op(str(uuid.uuid4()), "multi", tier, ".", None, json.dumps(items), None, client=client)
+    return _record(root, op)
 
 
 def change_project(
@@ -454,7 +498,11 @@ def _apply_register(root: Path, op: Op) -> str:
 
 
 def _commit(root: Path, op: Op) -> None:
-    if op.kind != "forget":  # git rm already staged a forget
+    if op.kind == "multi":
+        # Stage exactly the operation's own files, added or removed.
+        paths = [item["path"] for item in json.loads(op.content or "[]")]
+        _git(root, "add", "-A", "--", *paths)
+    elif op.kind != "forget":  # git rm already staged a forget
         _git(root, "add", "-A", "--", op.path)
     message = (
         f"memory({op.tier}): {op.kind} {op.path}\n\n"

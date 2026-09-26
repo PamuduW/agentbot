@@ -175,6 +175,21 @@ accepts the current state or re-applies yours as a new operation (a lost
 supersession or move is re-applied whole). Core conflicts are for the human
 to resolve. Schema 1 and 2 vaults keep their manual Git workflow.
 
+On a schema 3 vault, core memory changes only through tracked proposals.
+`agentbot memory propose --type decision|lesson|preference|profile --title T
+--scope global|shared [--supersedes ID] --stdin` writes one validated,
+secret-scanned record under `proposals/core/`, commits it, and syncs it, so it
+can be reviewed from any machine; proposals are never returned by search,
+show, or brief. The queue warns at 10 open proposals and refuses new ones at
+25, and a title that duplicates an open proposal is refused. `memory review`
+lists the queue. `memory approve PATH` previews and `--yes` (the user's action)
+installs the record in `core/` in one operation with the proposal's removal
+and any superseded core records marked; preference and profile proposals
+replace `core/user/preferences.md` or `profile.md` and keep its ID. `memory
+reject PATH --yes` removes a proposal. Identical approvals from two machines
+converge; two different approvals of one core file become a conflict for the
+human.
+
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown
 only, no symlinks or special files, UTF-8 without NUL, size and front-matter

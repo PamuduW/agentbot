@@ -52,6 +52,7 @@ from .ui import (
     print_memory_proposal,
     print_memory_record,
     print_memory_restore,
+    print_memory_result,
     print_memory_search,
     print_memory_setup,
     print_memory_status,
@@ -724,6 +725,68 @@ def _handle_memory_project(context: CommandContext) -> int:
     return 0
 
 
+def _schema3_vault(context: CommandContext) -> Path | None:
+    from . import memory
+
+    root, _ = memory.find_vault(context.paths.root)
+    if root is None or memory.read_marker(root) != 3:
+        return None
+    return root
+
+
+def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
+    """Schema 3: tracked core proposals. Approve and reject are the user's."""
+    from . import memory_autosync
+    from . import memory_drafts as drafts
+    from . import memory_proposals as proposals
+
+    args = context.args
+    command = args.memory_command
+    result: dict[str, Any]
+    if command == "propose":
+        source = caller_path(args.from_file) if args.from_file else None
+        result = proposals.propose(
+            root,
+            kind=args.memory_type,
+            title=args.title,
+            body=drafts.read_body(source, sys.stdin.buffer),
+            scope=args.scope,
+            projects=list(args.project or []),
+            tags=list(args.tag or []),
+            supersedes=list(args.supersedes or []) or None,
+        )
+    elif command == "review":
+        items = proposals.queue(root)
+        if args.draft_path:
+            match = [item for item in items if item["path"] == args.draft_path]
+            if not match:
+                raise ValueError(f"no open proposal at {args.draft_path}")
+            result = {"state": "open", **match[0]}
+        else:
+            result = {"state": "queue", "open": len(items), "proposals": items}
+    elif command == "approve":
+        if not args.confirm:
+            waiting = {item["path"]: item for item in proposals.queue(root)}
+            if args.draft_path not in waiting:
+                raise ValueError(f"no open proposal at {args.draft_path}")
+            result = {"state": "preview", **waiting[args.draft_path]}
+        else:
+            result = proposals.approve(root, args.draft_path)
+    else:
+        result = (
+            proposals.reject(root, args.draft_path)
+            if args.confirm
+            else {"state": "preview", "path": args.draft_path}
+        )
+    if result["state"] in {"proposed", "approved", "rejected"}:
+        result["sync"] = memory_autosync.after_write(root, context.paths.config_home)
+    if getattr(args, "memory_json", False):
+        print(json.dumps(result, indent=2))
+    else:
+        print_memory_result(result, title=command)
+    return 0
+
+
 READ_COMMANDS = frozenset({"status", "validate", "search", "show", "brief", "due", "project"})
 
 
@@ -806,6 +869,12 @@ def _dispatch_memory(context: CommandContext) -> int:
         return _handle_memory_setup(context)
     if context.args.memory_command in {"sync", "conflict"}:
         return _handle_memory_sync(context)
+    if context.args.memory_command in {"propose", "review", "approve", "reject"}:
+        root = _schema3_vault(context)
+        if root is not None:
+            return _handle_memory_proposals(context, root)
+        if context.args.memory_command == "reject":
+            raise memory.MemoryVaultError("reject is for tracked proposals on a schema 3 vault")
     if context.args.memory_command in READ_COMMANDS:
         _refresh_before_read(context)
     if context.args.memory_command == "project":
@@ -1417,7 +1486,13 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     propose = memory_sub.add_parser("propose", help="Write one local draft for later review")
     propose.add_argument(
-        "--type", required=True, choices=("decision", "lesson", "project"), dest="memory_type"
+        "--type",
+        required=True,
+        choices=("decision", "lesson", "project", "preference", "profile"),
+        dest="memory_type",
+    )
+    propose.add_argument(
+        "--supersedes", action="append", metavar="ID", help="Schema 3: core records it replaces"
     )
     propose.add_argument("--title", required=True)
     propose.add_argument("--scope", required=True, choices=("global", "shared", "project"))
@@ -1454,6 +1529,10 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="RULE_ID",
     )
     approve.add_argument("--json", action="store_true", dest="memory_json")
+    reject = memory_sub.add_parser("reject", help="Schema 3, human-only: remove a proposal")
+    reject.add_argument("draft_path", metavar="proposals/core/FILE.md")
+    reject.add_argument("--yes", action="store_true", dest="confirm")
+    reject.add_argument("--json", action="store_true", dest="memory_json")
     search = memory_sub.add_parser("search", help="Search accepted records within scope")
     search.add_argument("query")
     search.add_argument(

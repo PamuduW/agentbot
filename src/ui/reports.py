@@ -1128,6 +1128,31 @@ def print_memory_sync(payload, *, title: str) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def print_memory_result(result, *, title: str) -> None:
+    """A generic memory action result, as label/value rows."""
+    print_header("Memory", f"Agentbot › Memory › {title.capitalize()}")
+    state = result.get("state", "")
+    rows = [("Result", state, "preview" if state == "preview" else "info")]
+    for key, value in result.items():
+        if key == "state":
+            continue
+        if key == "proposals":
+            rows += [
+                (item["path"], f"{item['type']} · {item['title']} · {item['date']}", "check")
+                for item in value
+            ]
+            continue
+        text = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+        rows.append(
+            (key.replace("_", " ").capitalize(), text, "warn" if key == "warning" else "info")
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    if state == "preview":
+        print()
+        print_note("Preview only. Rerun with --yes to apply.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:
     """Render the owned vault hooks, and what an install or remove did or would do."""
     from ..memory_hook import SCANNER_GAP

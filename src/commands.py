@@ -302,7 +302,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore|migrate",
+        "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|reject|due|hook|backup|restore|migrate",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
@@ -391,6 +391,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "review [PATH]", "List pending drafts, or review one without its body.", "read-only"
             ),
             option(
+                "reject PATH --yes",
+                "Schema 3, human-only: remove a tracked core proposal without installing it.",
+                "preview",
+            ),
+            option(
                 "approve PATH [--yes]",
                 "Preview, then with --yes install one draft as an accepted record without "
                 "replacing any file, under a bounded lock. A superseding draft also marks its "
@@ -446,6 +451,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory propose",
             "memory review",
             "memory approve",
+            "memory reject",
             "memory due",
             "memory hook",
             "memory backup",
