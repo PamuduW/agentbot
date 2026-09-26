@@ -451,8 +451,23 @@ def _handle_memory_retrieve(context: CommandContext) -> int:
         return _print_memory_state(
             memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
         )
+    project, source = args.project, "explicit" if args.project else None
+    if (
+        project is None
+        and not args.cross_project
+        and not getattr(args, "no_auto_project", False)
+        and memory.read_marker(root) == 3
+    ):
+        from . import memory_projects
+
+        # cwd -> Git top level -> origin -> registry. Unresolved, colliding, or
+        # outside a repository: global and shared only, never a guess.
+        resolution = memory_projects.resolve(root, caller_path("."), context.paths.config_home)
+        if resolution.state == "resolved" and resolution.entry is not None:
+            project, source = resolution.entry["folder"], "auto"
+    scope = {"project": project, "project_source": source}
     request = retrieve.Request(
-        project=args.project,
+        project=project,
         cross_project=args.cross_project,
         history=bool(getattr(args, "history", False)),
         kind=getattr(args, "memory_type", None),
@@ -462,19 +477,19 @@ def _handle_memory_retrieve(context: CommandContext) -> int:
         if args.memory_command == "search":
             result = retrieve.search(root, args.query, request, limit=args.limit)
             if as_json:
-                print(json.dumps(retrieve.search_json(result), indent=2))
+                print(json.dumps({**retrieve.search_json(result), **scope}, indent=2))
             else:
                 print_memory_search(result)
         elif args.memory_command == "show":
             hit, body = retrieve.show(root, args.record_path, request, max_bytes=args.max_bytes)
             if as_json:
-                print(json.dumps(retrieve.show_json(hit, body), indent=2))
+                print(json.dumps({**retrieve.show_json(hit, body), **scope}, indent=2))
             else:
                 print_memory_record(hit, body)
         else:
             summary = retrieve.brief(root, request, tokens=args.tokens)
             if as_json:
-                print(json.dumps(retrieve.brief_json(summary), indent=2))
+                print(json.dumps({**retrieve.brief_json(summary), **scope}, indent=2))
             else:
                 print(summary.text, end="")
     except memory.MemoryVaultError as error:
@@ -611,6 +626,12 @@ def _add_migrate_parser(memory_sub: argparse._SubParsersAction) -> None:
 def _add_retrieval_scope(parser: argparse.ArgumentParser) -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--project", metavar="SLUG", help="Include this project's records")
+    group.add_argument(
+        "--no-auto-project",
+        action="store_true",
+        dest="no_auto_project",
+        help="Do not detect the project from the current repository",
+    )
     group.add_argument(
         "--cross-project",
         action="store_true",

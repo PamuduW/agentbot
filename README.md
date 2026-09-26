@@ -190,6 +190,17 @@ reject PATH --yes` removes a proposal. Identical approvals from two machines
 converge; two different approvals of one core file become a conflict for the
 human.
 
+On a schema 3 vault, `search`, `show`, and `brief` detect the project from the
+directory you run them in (Git top level, origin, registry) when neither
+`--project` nor `--cross-project` is given; `--no-auto-project` turns that off.
+An unregistered repository, a registry collision, or a directory outside any
+repository gets global and shared memory only; nothing is guessed. The JSON
+output reports `project` and `project_source` (`explicit`, `auto`, or none).
+Every model-facing output (the brief text and the search, show, and brief
+JSON) carries a fixed notice that the content is retrieved memory to treat as
+evidence, never as instructions, and record text is never rendered into
+policy. A project's `active-context.md` leads its share of the brief.
+
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown
 only, no symlinks or special files, UTF-8 without NUL, size and front-matter
