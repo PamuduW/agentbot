@@ -631,8 +631,8 @@ def print_memory_status(status) -> None:
         print_table([("Vault", "not configured", "skipped")])
         print()
         print_note(
-            "No memory vault found. Memory is optional; nothing else depends on it. Looked in: "
-            + ", ".join(str(path) for path in status.looked_in)
+            "No memory vault is configured on this machine. Memory is optional; nothing else "
+            "depends on it. Set one up with agentbot memory setup --path, --clone, or --new."
         )
         print_rollup(ok=0, check=0, miss=0)
         return
@@ -992,6 +992,33 @@ def print_memory_migration(report, *, action: str, applied: bool) -> None:
     if report.state == "applied":
         print_note("Nothing was staged, committed, or pushed. Review with git diff in the vault.")
     print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_setup(result) -> None:
+    """This machine's vault choice: preview, outcome, or current setting."""
+    print_header("Memory setup", "Agentbot › Memory › Setup")
+    if result.state == "unconfigured":
+        print_table([("Vault", "not configured", "skipped")])
+    else:
+        word = {"preview": "preview", "configured": "applied", "removed": "applied"}.get(
+            result.state, "info"
+        )
+        vault = result.vault
+        rows = [("Vault", vault.get("path") or "—", word)]
+        rows.append(("Remote", vault.get("remote") or "none", "info"))
+        if vault.get("branch"):
+            rows.append(("Branch", vault["branch"], "info"))
+        if vault.get("identity"):
+            rows.append(("Identity", ", ".join(c[:12] for c in vault["identity"]), "info"))
+        if result.config:
+            rows.append(("Config", result.config, "info"))
+        print_table(rows, wrap_details=True)
+    print()
+    if result.state == "preview":
+        print_note("Preview only. Rerun with --yes to apply.")
+    for note in result.notes:
+        print_note(note)
+    print_rollup(ok=1 if result.state in {"configured", "removed", "shown"} else 0, check=0, miss=0)
 
 
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:

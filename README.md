@@ -88,12 +88,30 @@ agentbot mcp status               # inspect MCP ownership without network access
 ## Memory vault
 
 `agentbot memory status` and `agentbot memory validate` inspect the private
-Markdown memory vault without writing to it. The vault is found the way
-`dotfiles-shared` is: `AGENTBOT_MEMORY_ROOT`, then `AGENTBOT_MEMORY_DIR`, then
-`agent-memory` beside this checkout, then `~/agent-memory`. A candidate counts
-only when it is a Git checkout carrying `.meta/vault.json`. No vault is a clean
-unconfigured state: both commands say so and exit `2`, and nothing else in
-Agentbot depends on memory.
+Markdown memory vault without writing to it. Agentbot never searches for a
+vault; each machine is set up explicitly, from the CLI or the menu's
+**Memory** entry:
+
+```bash
+agentbot memory setup --path /home/me/agent-memory            # an existing checkout
+agentbot memory setup --clone git@github.com:me/agent-memory.git --dest /home/me/agent-memory
+agentbot memory setup --new /home/me/agent-memory [--remote URL]
+agentbot memory setup                                          # show the current choice
+agentbot memory setup --remove                                 # forget it; the vault is untouched
+```
+
+Each previews first and applies only with `--yes`. The choice lives in
+`${XDG_CONFIG_HOME:-~/.config}/agentbot/memory.json` (`0600`, in a `0700`
+directory): the path, the vault's identity (its root commits), the remote, and
+the branch, never credentials. A remote URL with embedded credentials is
+refused; SSH keys or a Git credential helper authenticate. A configured path
+that later holds a different repository, or no vault, fails closed.
+`--clone` and `--new` refuse a destination that is not empty, is inside
+another repository, crosses a symlink, or sits on a Windows drive or in a
+temporary directory; `--new` creates an empty schema 2 vault and never pushes.
+`AGENTBOT_MEMORY_ROOT` and `AGENTBOT_MEMORY_DIR` still override the setting
+(the vault hooks use them). No vault configured is a clean state: memory
+commands say so and exit `2`, and nothing else in Agentbot depends on memory.
 
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown

@@ -10,14 +10,14 @@ Nothing here writes to the vault. Reads refuse symlinks at every component,
 are bounded, and require UTF-8. Findings carry relative paths, rule IDs and
 line numbers only: never a note body, a field value, or a matched secret.
 
-Resolution order, first valid checkout wins, the same shape as dotfiles-shared:
+Resolution: Agentbot never searches for a vault. First valid wins:
 
-1. ``AGENTBOT_MEMORY_ROOT``  already resolved by an entrypoint
+1. ``AGENTBOT_MEMORY_ROOT``  already resolved by an entrypoint (hooks, tests)
 2. ``AGENTBOT_MEMORY_DIR``   an operator naming the checkout outright
-3. ``<parent of this repo>/agent-memory``
-4. ``~/agent-memory``
+3. the vault configured with ``agentbot memory setup``, verified against its
+   recorded identity (see ``memory_setup``)
 
-No checkout found is not an error: memory is simply unconfigured.
+No vault configured is not an error: memory is simply unconfigured.
 """
 
 from __future__ import annotations
@@ -172,15 +172,20 @@ class VaultStatus:
 # --- Resolution --------------------------------------------------------------
 
 
-def candidates(
-    repo_root: Path, *, home: Path | None = None, environ: Mapping[str, str] | None = None
-) -> list[Path]:
+def config_home_for(home: Path | None = None, environ: Mapping[str, str] | None = None) -> Path:
+    """Agentbot's private config directory, the same rule as ``paths``."""
+    env = os.environ if environ is None else environ
+    xdg = env.get("XDG_CONFIG_HOME")
+    base = Path(xdg).expanduser() if xdg else (home or Path.home()) / ".config"
+    return base / "agentbot"
+
+
+def candidates(environ: Mapping[str, str] | None = None) -> list[Path]:
+    """Explicit environment overrides only. Nothing is searched for."""
     env = os.environ if environ is None else environ
     found = [
         Path(env[name]) for name in ("AGENTBOT_MEMORY_ROOT", "AGENTBOT_MEMORY_DIR") if env.get(name)
     ]
-    found.append(repo_root.parent / "agent-memory")
-    found.append((home or Path.home()) / "agent-memory")
     return list(dict.fromkeys(found))
 
 
@@ -193,14 +198,28 @@ def _is_vault(path: Path) -> bool:
 
 
 def find_vault(
-    repo_root: Path, *, home: Path | None = None, environ: Mapping[str, str] | None = None
+    repo_root: Path | None = None,
+    *,
+    home: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    config_home: Path | None = None,
 ) -> tuple[Path | None, tuple[Path, ...]]:
-    """The first valid vault checkout, and every place that was looked."""
-    looked = tuple(candidates(repo_root, home=home, environ=environ))
+    """The vault to use, and every source consulted.
+
+    ``repo_root`` is accepted for callers' convenience and not used: the
+    vault's location no longer depends on where Agentbot is checked out.
+    Raises ``MemoryVaultError`` when the configured vault is missing or is a
+    different repository from the one recorded.
+    """
+    from .memory_setup import config_path, configured_vault
+
+    looked = candidates(environ)
     for candidate in looked:
         if _is_vault(candidate):
-            return candidate, looked
-    return None, looked
+            return candidate, tuple(looked)
+    settings = config_home or config_home_for(home, environ)
+    looked.append(config_path(settings))
+    return configured_vault(settings), tuple(looked)
 
 
 # --- Safe reads --------------------------------------------------------------
@@ -885,7 +904,10 @@ def due_json(items: list[DueItem], total: int, schema: int, today: date) -> dict
 def status(
     repo_root: Path, *, home: Path | None = None, environ: Mapping[str, str] | None = None
 ) -> VaultStatus:
-    root, looked = find_vault(repo_root, home=home, environ=environ)
+    try:
+        root, looked = find_vault(repo_root, home=home, environ=environ)
+    except MemoryVaultError as error:
+        return VaultStatus(state="broken", looked_in=(), problem=str(error))
     if root is None:
         return VaultStatus(state="unconfigured", looked_in=looked)
     today = utc_today()

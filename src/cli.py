@@ -50,6 +50,7 @@ from .ui import (
     print_memory_record,
     print_memory_restore,
     print_memory_search,
+    print_memory_setup,
     print_memory_status,
     print_memory_validation,
     print_output_refresh_report,
@@ -608,9 +609,53 @@ def _add_retrieval_scope(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", dest="memory_json")
 
 
+def _handle_memory_setup(context: CommandContext) -> int:
+    from . import memory_setup as setup
+
+    args = context.args
+    config_home = context.paths.config_home
+    if args.setup_path:
+        result = setup.setup_path(caller_path(args.setup_path), config_home, apply=args.confirm)
+    elif args.setup_clone:
+        if not args.dest:
+            raise ValueError("--clone needs --dest PATH for the new checkout")
+        result = setup.setup_clone(
+            args.setup_clone, caller_path(args.dest), config_home, apply=args.confirm
+        )
+    elif args.setup_new:
+        result = setup.setup_new(
+            caller_path(args.setup_new), config_home, remote=args.remote, apply=args.confirm
+        )
+    elif args.setup_remove:
+        result = setup.remove(config_home, apply=args.confirm)
+    else:
+        result = setup.show(config_home)
+    if getattr(args, "memory_json", False):
+        print(json.dumps(setup.result_json(result), indent=2))
+    else:
+        print_memory_setup(result)
+    return 0
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
+    try:
+        return _dispatch_memory(context)
+    except memory.MemoryVaultError as error:
+        # One place for a configured vault that is missing or not the one
+        # recorded: every memory command reports it the same way.
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=(), problem=str(error)),
+            as_json=bool(getattr(context.args, "memory_json", False)),
+        )
+
+
+def _dispatch_memory(context: CommandContext) -> int:
+    from . import memory
+
+    if context.args.memory_command == "setup":
+        return _handle_memory_setup(context)
     if context.args.memory_command in {"propose", "review"}:
         return _handle_memory_drafts(context)
     if context.args.memory_command in {"approve", "hook"}:
@@ -1118,9 +1163,27 @@ def _add_gitlab_token_parser(subparsers: argparse._SubParsersAction) -> None:
     gitlab_token_sub.add_parser("remove", help="Delete the saved token")
 
 
+def _add_memory_setup_parser(memory_sub: argparse._SubParsersAction) -> None:
+    setup = memory_sub.add_parser("setup", help="Show, choose, or remove this machine's vault")
+    mode = setup.add_mutually_exclusive_group()
+    mode.add_argument("--path", dest="setup_path", metavar="PATH", help="Use an existing checkout")
+    mode.add_argument(
+        "--clone", dest="setup_clone", metavar="URL", help="Clone a vault (with --dest)"
+    )
+    mode.add_argument("--new", dest="setup_new", metavar="PATH", help="Create a new empty vault")
+    mode.add_argument(
+        "--remove", dest="setup_remove", action="store_true", help="Forget the configured vault"
+    )
+    setup.add_argument("--dest", metavar="PATH", help="Destination for --clone")
+    setup.add_argument("--remote", metavar="URL", help="Origin to record for --new")
+    setup.add_argument("--yes", action="store_true", dest="confirm")
+    setup.add_argument("--json", action="store_true", dest="memory_json")
+
+
 def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     memory = subparsers.add_parser("memory", help="Inspect and validate the private memory vault")
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    _add_memory_setup_parser(memory_sub)
     memory_status = memory_sub.add_parser("status", help="Show vault location, schema, and state")
     memory_status.add_argument("--json", action="store_true", dest="memory_json")
     memory_validate = memory_sub.add_parser(

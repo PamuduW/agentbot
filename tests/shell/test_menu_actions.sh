@@ -23,7 +23,7 @@ test_main_dispatch_and_pause_ownership() (
 	local calls="$TEST_ROOT/menu.calls"
 	: >"$calls"
 	local index=0
-	local -a choices=(status install update prune-skills token workspaces libraries quit)
+	local -a choices=(status install update prune-skills token workspaces memory libraries quit)
 	agentbot_menu_run() {
 		MENU_SIMPLE_RESULT="${choices[$index]}"
 		index=$((index + 1))
@@ -49,12 +49,16 @@ test_main_dispatch_and_pause_ownership() (
 		tui_menu_declare_owns_pause
 		printf 'workspaces\n' >>"$calls"
 	}
+	agentbot_menu_memory() {
+		tui_menu_declare_owns_pause
+		printf 'memory\n' >>"$calls"
+	}
 	agentbot_menu_libraries() {
 		tui_menu_declare_owns_pause
 		printf 'libraries\n' >>"$calls"
 	}
 	agentbot_menu_loop
-	[[ "$(<"$calls")" == $'status\npause\ninstall\npause\nupdate\npause\nprune-skills\npause\ntoken\nworkspaces\nlibraries' ]]
+	[[ "$(<"$calls")" == $'status\npause\ninstall\npause\nupdate\npause\nprune-skills\npause\ntoken\nworkspaces\nmemory\nlibraries' ]]
 )
 
 test_prune_skill_menu_removes_only_checked_names_and_refreshes_agents() (
@@ -384,6 +388,48 @@ test_workspaces_routes_read_preview_and_apply() (
 	[[ "$(<"$calls")" == $'backend:workspaces\npause\nbackend:resync --all\npause\nbackend:resync --all --yes\npause' ]]
 )
 
+test_memory_menu_previews_then_applies_only_when_confirmed() (
+	local calls="$TEST_ROOT/memory.calls"
+	: >"$calls"
+	local -a answers=('/home/u/agent-memory')
+	local answer_index=0
+	read_tty_line() {
+		printf -v "$1" '%s' "${answers[$answer_index]}"
+		answer_index=$((answer_index + 1))
+	}
+	agentbot_run_backend() { printf 'backend:%s\n' "$*" >>"$calls"; }
+	agentbot_menu_memory_confirm() { return 0; }
+	agentbot_menu_memory_dispatch setup-path >/dev/null
+	agentbot_menu_memory_confirm() { return 1; }
+	answer_index=0
+	agentbot_menu_memory_dispatch setup-path >/dev/null
+	answers=('')
+	answer_index=0
+	agentbot_menu_memory_dispatch setup-path >/dev/null
+	[[ "$(<"$calls")" == $'backend:memory setup --path /home/u/agent-memory\nbackend:memory setup --path /home/u/agent-memory --yes\nbackend:memory setup --path /home/u/agent-memory' ]]
+)
+
+test_memory_menu_clone_and_new_collect_their_inputs() (
+	local calls="$TEST_ROOT/memory-clone.calls"
+	: >"$calls"
+	local -a answers=('git@github.com:me/agent-memory.git' '/home/u/agent-memory' '/home/u/fresh' '')
+	local answer_index=0
+	read_tty_line() {
+		printf -v "$1" '%s' "${answers[$answer_index]}"
+		answer_index=$((answer_index + 1))
+	}
+	agentbot_run_backend() { printf 'backend:%s\n' "$*" >>"$calls"; }
+	agentbot_menu_memory_confirm() { return 1; }
+	agentbot_menu_memory_dispatch setup-clone >/dev/null
+	agentbot_menu_memory_dispatch setup-new >/dev/null
+	[[ "$(<"$calls")" == $'backend:memory setup --clone git@github.com:me/agent-memory.git --dest /home/u/agent-memory\nbackend:memory setup --new /home/u/fresh' ]]
+)
+
+test_memory_status_without_a_vault_is_not_a_failure() (
+	agentbot_run_backend() { return 2; }
+	agentbot_menu_memory_dispatch status >/dev/null 2>&1
+)
+
 test_declined_workspace_apply_is_non_destructive() (
 	local calls="$TEST_ROOT/workspace-decline.calls"
 	: >"$calls"
@@ -580,6 +626,9 @@ check 'token entry is hidden and reveal is confirmed' test_token_entry_is_hidden
 check 'token menu outcomes survive the redraw' test_token_menu_outcomes_survive_the_redraw
 check 'the saved token can be checked against GitHub from the menu' test_saved_token_can_be_checked_from_the_menu
 check 'Workspaces routes list preview and confirmed apply' test_workspaces_routes_read_preview_and_apply
+check 'Memory setup previews and applies only when confirmed' test_memory_menu_previews_then_applies_only_when_confirmed
+check 'Memory clone and new collect their inputs' test_memory_menu_clone_and_new_collect_their_inputs
+check 'Memory status without a vault is not a failure' test_memory_status_without_a_vault_is_not_a_failure
 check 'declined workspace apply performs no backend write' test_declined_workspace_apply_is_non_destructive
 check 'workspace removal prompts use the shared TTY adapter' test_workspace_removal_prompt_uses_the_shared_tty_adapter
 check 'failed menu actions use the shared red treatment' test_failed_actions_are_red

@@ -302,10 +302,17 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore|migrate",
+        "agentbot memory setup|status|validate|search|show|brief|propose|review|approve|due|hook|backup|restore|migrate",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
+            option(
+                "setup",
+                "Show this machine's vault, or choose one: --path PATH, --clone URL --dest PATH, "
+                "--new PATH [--remote URL]; --remove forgets it (the vault is untouched). "
+                "Preview first; --yes applies.",
+                "shows",
+            ),
             option(
                 "status", "Show vault path, schema, Git state, and validation totals.", "read-only"
             ),
@@ -396,6 +403,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("status", "doctor"),
         "public",
         (
+            "memory setup",
             "memory status",
             "memory validate",
             "memory search",

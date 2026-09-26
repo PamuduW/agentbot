@@ -163,8 +163,15 @@ class ResolutionTests(MemoryTestCase):
         status = memory.status(self.tmp / "agentbot", home=self.tmp / "home", environ={})
         self.assertEqual("unconfigured", status.state)
         self.assertEqual(
-            (self.tmp / "agent-memory", self.tmp / "home" / "agent-memory"), status.looked_in
+            (self.tmp / "home" / ".config" / "agentbot" / "memory.json",), status.looked_in
         )
+
+    def test_nothing_is_searched_for(self) -> None:
+        # A sibling or home checkout used to be found by guessing; it no longer is.
+        v1_vault(self.tmp / "agent-memory")
+        v1_vault(self.tmp / "home" / "agent-memory")
+        found, _ = memory.find_vault(self.tmp / "agentbot", home=self.tmp / "home", environ={})
+        self.assertIsNone(found)
 
     def test_environment_names_the_checkout_first(self) -> None:
         v1_vault(self.tmp / "named")
@@ -201,7 +208,11 @@ class ResolutionTests(MemoryTestCase):
     def test_a_symlinked_vault_root_is_broken(self) -> None:
         v1_vault(self.tmp / "real")
         (self.tmp / "agent-memory").symlink_to(self.tmp / "real")
-        status = memory.status(self.tmp / "agentbot", home=self.tmp / "h", environ={})
+        status = memory.status(
+            self.tmp / "agentbot",
+            home=self.tmp / "h",
+            environ={"AGENTBOT_MEMORY_DIR": str(self.tmp / "agent-memory")},
+        )
         self.assertEqual("broken", status.state)
 
 

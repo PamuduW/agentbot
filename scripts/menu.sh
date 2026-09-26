@@ -23,6 +23,8 @@ source "$_AGENTBOT_MENU_DIR/menus/tokens.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/workspaces.sh"
 # shellcheck disable=SC1091
+source "$_AGENTBOT_MENU_DIR/menus/memory.sh"
+# shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/command_lib.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/graphify.sh"
@@ -44,6 +46,7 @@ agentbot_menu_dispatch() {
 	prune-skills) agentbot_menu_prune_skills || rc=$? ;;
 	token) agentbot_menu_tokens || rc=$? ;;
 	workspaces) agentbot_menu_workspaces || rc=$? ;;
+	memory) agentbot_menu_memory || rc=$? ;;
 	libraries) agentbot_menu_libraries || rc=$? ;;
 	*)
 		printf 'Unknown Agentbot menu action: %s\n' "$choice" >&2
