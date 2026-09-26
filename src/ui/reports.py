@@ -654,6 +654,11 @@ def print_memory_status(status) -> None:
             ("Records", records, "info"),
             ("Drafts", f"{status.drafts} pending", "info"),
             (
+                "Review queue",
+                f"{status.due} due, {status.expired} expired",
+                "check" if status.due or status.expired else "ok",
+            ),
+            (
                 "Validation",
                 "valid"
                 if status.state == "ready"
@@ -794,6 +799,36 @@ def print_memory_approval(result) -> None:
             "preview": "Nothing was written. Rerun with --yes to install the record.",
             "applied": "Installed. Nothing was staged, committed, or pushed.",
         }.get(result.state, "Nothing was installed; the draft is intact.")
+    )
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_due(items, *, total: int, schema: int, today) -> None:
+    """Accepted records due for review or past validity. Status stays as written."""
+    print_header("Memory review queue", "Agentbot › Memory › Due")
+    if not items:
+        detail = (
+            "schema 1 records carry no review dates" if schema == 1 else "nothing due or expired"
+        )
+        print_table([("Review queue", detail, "ok")])
+        print_rollup(ok=1, check=0, miss=0)
+        return
+    rows = []
+    for item in items:
+        record = item.record
+        flags = [
+            f"review since {record.review_after}" if item.due else "",
+            f"expired after {record.valid_until}" if item.expired else "",
+        ]
+        detail = " · ".join(part for part in (record.path, record.title, *flags) if part)
+        rows.append((record.id or record.date, detail, "stale" if item.expired else "check"))
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    if total > len(items):
+        print_note(f"Showing {len(items)} of {total}. Use --limit to see more (at most 100).")
+    print_note(
+        f"UTC date {today.isoformat()}. Due and expired are derived: no record's status "
+        "or file changed. Expired records drop out of default retrieval."
     )
     print_rollup(ok=ok, check=check, miss=miss)
 

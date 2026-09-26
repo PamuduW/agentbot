@@ -60,6 +60,7 @@ SURFACES=(
 	'memory status'
 	'memory review'
 	'memory hook'
+	'memory due'
 	'graphify'
 	'workspaces'
 	'resync --all'

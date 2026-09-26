@@ -41,6 +41,7 @@ from .ui import (
     print_mcp_plan,
     print_mcp_status,
     print_memory_approval,
+    print_memory_due,
     print_memory_hooks,
     print_memory_proposal,
     print_memory_status,
@@ -402,6 +403,30 @@ def _handle_memory_changes(context: CommandContext) -> int:
         )
 
 
+def _handle_memory_due(context: CommandContext) -> int:
+    from . import memory
+
+    as_json = bool(getattr(context.args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    today = memory.utc_today()
+    try:
+        items, total, schema = memory.due_queue(root, today=today, limit=context.args.limit)
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+    if as_json:
+        print(json.dumps(memory.due_json(items, total, schema, today), indent=2))
+    else:
+        print_memory_due(items, total=total, schema=schema, today=today)
+    return 0
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
@@ -409,6 +434,8 @@ def _handle_memory(context: CommandContext) -> int:
         return _handle_memory_drafts(context)
     if context.args.memory_command in {"approve", "hook"}:
         return _handle_memory_changes(context)
+    if context.args.memory_command == "due":
+        return _handle_memory_due(context)
     as_json = bool(getattr(context.args, "memory_json", False))
     if context.args.memory_command == "status":
         status = memory.status(context.paths.root)
@@ -954,6 +981,9 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="RULE_ID",
     )
     approve.add_argument("--json", action="store_true", dest="memory_json")
+    due = memory_sub.add_parser("due", help="List accepted records due for review or expired")
+    due.add_argument("--limit", type=int, default=20, metavar="N")
+    due.add_argument("--json", action="store_true", dest="memory_json")
     hook = memory_sub.add_parser("hook", help="Inspect or manage the vault's owned Git hooks")
     hook.add_argument(
         "hook_action", nargs="?", default="status", choices=("status", "install", "remove")

@@ -142,6 +142,14 @@ a `core.hooksPath` outside the vault's Git directory is refused. The hooks are
 an accident guard (`--no-verify` bypasses them), and they do not scan
 `.obsidian/`, where plugin settings are committed unscanned.
 
+`agentbot memory due [--limit N]` is the bounded review queue (20 by default,
+at most 100): accepted records whose `review_after` date has arrived, and those
+past `valid_until`, oldest first, by UTC calendar day. A record is valid
+through its `valid_until` day. Both flags are derived; neither changes a
+record's status or file, and superseded or retired records never appear.
+`memory status` shows the due and expired counts. Schema 1 records carry no
+dates, so the queue is empty there.
+
 Remote and backup state, and migration, are not implemented yet.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They

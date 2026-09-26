@@ -29,7 +29,7 @@ import stat
 import subprocess
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -81,6 +81,8 @@ V2_REQUIRED = V1_FIELDS | {"id", "scope"}
 V2_OPTIONAL = frozenset({"supersedes", "review_after", "valid_until"})
 
 Severity = Literal["error", "warning"]
+# Record has a field named date, which shadows the type inside the class.
+Day = date
 
 
 class MemoryVaultError(RuntimeError):
@@ -107,6 +109,17 @@ class Record:
     title: str = ""
     date: str = ""
     projects: tuple[str, ...] = ()
+    scope: str | None = None
+    review_after: str | None = None
+    valid_until: str | None = None
+
+    def due(self, today: Day) -> bool:
+        """Reached its review date. A review candidate; its status is unchanged."""
+        return self.review_after is not None and date.fromisoformat(self.review_after) <= today
+
+    def expired(self, today: Day) -> bool:
+        """Valid through its valid_until day; out of default retrieval after it."""
+        return self.valid_until is not None and date.fromisoformat(self.valid_until) < today
 
 
 @dataclass
@@ -147,6 +160,8 @@ class VaultStatus:
     behind: int | None = None
     statuses: Mapping[str, int] = field(default_factory=dict)
     drafts: int = 0
+    due: int = 0
+    expired: int = 0
     errors: int = 0
     warnings: int = 0
     problem: str | None = None
@@ -461,6 +476,9 @@ class _RecordCheck:
             title=fields["title"],
             date=fields["date"],
             projects=tuple(fields["projects"]),
+            scope=fields.get("scope"),
+            review_after=fields.get("review_after"),
+            valid_until=fields.get("valid_until"),
         )
 
     def _common(self, fields: dict[str, Any]) -> str | None:
@@ -780,6 +798,77 @@ def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -
     return [*findings, *check.findings]
 
 
+# --- Review dates ------------------------------------------------------------
+
+DUE_LIST_DEFAULT = 20
+DUE_LIST_MAX = 100
+
+
+def utc_today() -> date:
+    return datetime.now(timezone.utc).date()
+
+
+def _reviewable(records: Iterable[Record]) -> list[Record]:
+    """Accepted canonical records. Superseded and retired stay out regardless of dates."""
+    return [record for record in records if not record.draft and record.status == "accepted"]
+
+
+@dataclass(frozen=True)
+class DueItem:
+    record: Record
+    due: bool
+    expired: bool
+
+
+def due_queue(
+    root: Path, *, today: date | None = None, limit: int = DUE_LIST_DEFAULT
+) -> tuple[list[DueItem], int, int]:
+    """Accepted records due for review or expired, oldest first.
+
+    Returns the bounded list, the total, and the schema. Nothing is edited: a
+    due or expired record keeps its status, file, and place in the vault.
+    """
+    report = validate(root)
+    day = today or utc_today()
+    items = [
+        DueItem(record, record.due(day), record.expired(day))
+        for record in _reviewable(report.records)
+        if record.due(day) or record.expired(day)
+    ]
+    items.sort(
+        key=lambda item: (
+            item.record.review_after or item.record.valid_until or "",
+            item.record.path,
+        )
+    )
+    return items[: max(1, min(limit, DUE_LIST_MAX))], len(items), report.schema
+
+
+def due_json(items: list[DueItem], total: int, schema: int, today: date) -> dict[str, Any]:
+    return {
+        "today": today.isoformat(),
+        "schema": schema,
+        "total": total,
+        "shown": len(items),
+        "records": [
+            {
+                "path": item.record.path,
+                "id": item.record.id,
+                "title": item.record.title,
+                "status": item.record.status,
+                "scope": item.record.scope,
+                "projects": list(item.record.projects),
+                "date": item.record.date,
+                "review_after": item.record.review_after,
+                "valid_until": item.record.valid_until,
+                "due": item.due,
+                "expired": item.expired,
+            }
+            for item in items
+        ],
+    }
+
+
 # --- Status ------------------------------------------------------------------
 
 
@@ -789,6 +878,7 @@ def status(
     root, looked = find_vault(repo_root, home=home, environ=environ)
     if root is None:
         return VaultStatus(state="unconfigured", looked_in=looked)
+    today = utc_today()
     try:
         report = validate(root)
         git = _git_state(root)
@@ -805,6 +895,8 @@ def status(
         schema=report.schema,
         statuses=counts,
         drafts=sum(1 for record in report.records if record.draft),
+        due=sum(1 for record in _reviewable(report.records) if record.due(today)),
+        expired=sum(1 for record in _reviewable(report.records) if record.expired(today)),
         errors=len(report.errors),
         warnings=len(report.warnings),
         **git,
@@ -843,6 +935,8 @@ def status_json(item: VaultStatus) -> dict[str, Any]:
         "behind": item.behind,
         "records": dict(item.statuses),
         "drafts": item.drafts,
+        "due": item.due,
+        "expired": item.expired,
         "errors": item.errors,
         "warnings": item.warnings,
         "problem": item.problem,

@@ -302,7 +302,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory status|validate|propose|review|approve|hook [--json]",
+        "agentbot memory status|validate|propose|review|approve|due|hook [--json]",
         "mutating",
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
@@ -330,6 +330,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "preview",
             ),
             option(
+                "due [--limit N]",
+                "List accepted records whose review date arrived or whose validity ended (UTC).",
+                "read-only; 20, max 100",
+            ),
+            option(
                 "hook [ACTION] [--yes]",
                 "Show, install, or remove the owned pre-commit and pre-push vault scan.",
                 "status; preview",
@@ -353,6 +358,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory propose",
             "memory review",
             "memory approve",
+            "memory due",
             "memory hook",
         ),
     ),
