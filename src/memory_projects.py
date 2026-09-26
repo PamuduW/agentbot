@@ -31,12 +31,13 @@ import re
 import subprocess
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from . import memory_setup
 from .memory import MemoryVaultError, registry_problems
-from .memory_sync import _registry, normalize_origin, register_origin
+from .memory_sync import _registry, normalize_origin, put_project, register_origin
 
 LOCAL_PREFIX = "local/"
 
@@ -146,13 +147,26 @@ def register(
     project_id = str(uuid.uuid4())
     if identity.canonical is not None:
         folder = folder_name(identity.canonical.rsplit("/", 1)[-1], registry)
+        origin = identity.canonical
         register_origin(vault, identity.origin_url or "", folder, project_id, client=client)
     else:
         folder = folder_name(identity.toplevel.name, registry)
         origin = f"{LOCAL_PREFIX}{project_id[:8]}-{folder}"
         register_origin(vault, origin, folder, project_id, client=client)
         memory_setup.bind(config_home, identity.toplevel, project_id)
+    put_project(vault, folder, "project.md", project_md(project_id, folder, origin), client=client)
     return {"id": project_id, "folder": folder}
+
+
+def project_md(project_id: str, folder: str, origin: str) -> bytes:
+    """The system-maintained identity record of one project."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    return (
+        "---\nschema: 3\n"
+        f"id: {project_id}\ntype: project\ntitle: {folder}\ndate: {today}\n"
+        f"status: accepted\nscope: project\nprojects: [{folder}]\ntags: []\n"
+        f"---\n\nOrigin: {origin}\n"
+    ).encode()
 
 
 def attach(vault: Path, cwd: Path, config_home: Path, project: str) -> dict[str, Any]:

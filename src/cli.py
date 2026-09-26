@@ -47,6 +47,7 @@ from .ui import (
     print_memory_migration,
     print_memory_migration_plan,
     print_memory_project,
+    print_memory_project_write,
     print_memory_proposal,
     print_memory_record,
     print_memory_restore,
@@ -646,20 +647,75 @@ def _handle_memory_setup(context: CommandContext) -> int:
 
 def _handle_memory_project(context: CommandContext) -> int:
     from . import memory
+    from . import memory_drafts as drafts
+    from . import memory_project_writes as writes
     from . import memory_projects as projects
 
-    as_json = bool(getattr(context.args, "memory_json", False))
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
     root, looked = memory.find_vault(context.paths.root)
     if root is None:
         return _print_memory_state(
             memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
         )
-    result = projects.resolve(root, caller_path("."), context.paths.config_home)
+    cwd = caller_path(".")
+    config_home = context.paths.config_home
+    action = getattr(args, "project_action", None) or "status"
+    if action == "status":
+        resolution = projects.resolve(root, cwd, config_home)
+        if as_json:
+            print(json.dumps(projects.resolution_json(resolution), indent=2))
+        else:
+            print_memory_project(resolution)
+        return 1 if resolution.state == "collision" else 0
+
+    def body() -> str:
+        source = caller_path(args.from_file) if args.from_file else None
+        return drafts.read_body(source, sys.stdin.buffer)
+
+    result: dict = {}
+    if action == "add":
+        result = writes.add(
+            root,
+            cwd,
+            config_home,
+            kind=args.kind,
+            title=args.title,
+            body=body(),
+            tags=args.tag or [],
+            supersedes=args.supersedes,
+        )
+    elif action == "edit":
+        text = body() if (args.stdin or args.from_file) else None
+        result = writes.edit(
+            root, cwd, config_home, args.path, body=text, title=args.title, tags=args.tag
+        )
+    elif action == "context":
+        result = writes.set_context(root, cwd, config_home, body())
+    elif action == "move":
+        result = writes.move(root, cwd, config_home, args.path, args.new_path)
+    elif action == "delete":
+        result = writes.delete(root, cwd, config_home, args.path)
+    elif action == "forget":
+        if not args.confirm:
+            folder = projects.require_project(root, cwd, config_home)["folder"]
+            result = {"state": "preview", "path": f"projects/{folder}"}
+        else:
+            result = writes.forget(root, cwd, config_home)
+    elif action == "register":
+        result = {"state": "registered", **projects.register(root, cwd, config_home)}
+    elif action == "attach":
+        result = {"state": "attached", **projects.attach(root, cwd, config_home, args.project)}
+    elif action == "link":
+        if not args.confirm:
+            result = {"state": "preview", "origin": args.origin, "project": args.project}
+        else:
+            result = {"state": "linked", **projects.link(root, args.origin, args.project)}
     if as_json:
-        print(json.dumps(projects.resolution_json(result), indent=2))
+        print(json.dumps(result, indent=2))
     else:
-        print_memory_project(result)
-    return 1 if result.state == "collision" else 0
+        print_memory_project_write(result, action=action)
+    return 0
 
 
 def _handle_memory(context: CommandContext) -> int:
@@ -1207,12 +1263,55 @@ def _add_memory_setup_parser(memory_sub: argparse._SubParsersAction) -> None:
     setup.add_argument("--json", action="store_true", dest="memory_json")
 
 
+def _add_memory_project_parser(memory_sub: argparse._SubParsersAction) -> None:
+    project = memory_sub.add_parser(
+        "project", help="Show or write the current repo's project memory"
+    )
+    project.add_argument("--json", action="store_true", dest="memory_json")
+    actions = project.add_subparsers(dest="project_action")
+
+    def with_body(parser: argparse.ArgumentParser, *, required: bool) -> None:
+        source = parser.add_mutually_exclusive_group(required=required)
+        source.add_argument("--stdin", action="store_true")
+        source.add_argument("--from-file", dest="from_file", metavar="PATH")
+
+    status = actions.add_parser("status", help="Show which project memory this repo resolves to")
+    add = actions.add_parser("add", help="Add a decision, lesson, or note to this project")
+    add.add_argument("--kind", required=True, choices=("decision", "lesson", "note"))
+    add.add_argument("--title", required=True)
+    add.add_argument("--tag", action="append", metavar="TAG")
+    add.add_argument("--supersedes", metavar="ID", help="A record in this project it replaces")
+    with_body(add, required=True)
+    edit = actions.add_parser("edit", help="Change a record's body, title, or tags")
+    edit.add_argument("path", metavar="PATH")
+    edit.add_argument("--title")
+    edit.add_argument("--tag", action="append", metavar="TAG")
+    with_body(edit, required=False)
+    context = actions.add_parser("context", help="Replace this project's active context")
+    with_body(context, required=True)
+    move = actions.add_parser("move", help="Move a record within this project")
+    move.add_argument("path", metavar="PATH")
+    move.add_argument("new_path", metavar="NEW_PATH")
+    delete = actions.add_parser("delete", help="Delete a record from this project")
+    delete.add_argument("path", metavar="PATH")
+    forget = actions.add_parser("forget", help="Remove this project's memory folder")
+    forget.add_argument("--yes", action="store_true", dest="confirm")
+    actions.add_parser("register", help="Give this repository project memory")
+    attach = actions.add_parser("attach", help="Bind this no-remote checkout to a project")
+    attach.add_argument("project", metavar="PROJECT")
+    link = actions.add_parser("link", help="Human-only: add an origin as a project alias")
+    link.add_argument("origin", metavar="ORIGIN_URL")
+    link.add_argument("project", metavar="PROJECT")
+    link.add_argument("--yes", action="store_true", dest="confirm")
+    for parser in (status, add, edit, context, move, delete, forget, attach, link):
+        parser.add_argument("--json", action="store_true", dest="memory_json")
+
+
 def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     memory = subparsers.add_parser("memory", help="Inspect and validate the private memory vault")
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     _add_memory_setup_parser(memory_sub)
-    project = memory_sub.add_parser("project", help="Show which project memory this repo uses")
-    project.add_argument("--json", action="store_true", dest="memory_json")
+    _add_memory_project_parser(memory_sub)
     memory_status = memory_sub.add_parser("status", help="Show vault location, schema, and state")
     memory_status.add_argument("--json", action="store_true", dest="memory_json")
     memory_validate = memory_sub.add_parser(

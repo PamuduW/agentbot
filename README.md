@@ -122,8 +122,10 @@ every machine. Forks and renames are separate projects until explicitly
 linked. A repository without a remote gets a generated `local/<id>-<name>`
 origin and must be attached on each extra machine; that binding stays in
 private `memory-bindings.json`. Two projects claiming one origin, alias, or
-folder is a collision, and project writes stop until it is fixed. Registering
-and linking arrive in the CLI with schema 3.
+folder is a collision, and project writes stop until it is fixed. On a schema 3 vault, `memory project register` gives the current repository
+project memory (a registry entry plus its `project.md`), `attach PROJECT`
+binds a no-remote checkout on another machine, and `link URL PROJECT --yes`
+(human-only) adds a rename or fork as an alias.
 
 Schema 3 (ADR-0009) splits the vault into trust tiers by path: `core/`
 (`user/profile.md`, `user/preferences.md`, `decisions/`, `lessons/`; global or
@@ -139,6 +141,22 @@ global `active-context.md` (move it into a project or `retire` it; retired
 records stay in Git history) and each project's origin (a Git URL or
 `local`) for you to choose. `check`, `apply`, and `rollback` follow the same
 snapshot, guard, lock, and marker-last pattern as the v1 migration.
+
+Project memory is written without approval, always for the repository you
+are in: `agentbot memory project add --kind decision|lesson|note --title T
+[--tag TAG] [--supersedes ID] --stdin`, `edit PATH [--title] [--tag]
+[--stdin]`, `context --stdin` (the project's active context), `move PATH
+NEW_PATH`, `delete PATH`, and `forget --yes` (the whole project folder; its
+registry identity stays, and `git revert` of the reported commit brings it
+back). Paths are relative to the project and cannot leave it; `project.md`
+cannot be moved or deleted. Each write generates or keeps valid v3 front
+matter, is validated for its destination and secret-scanned before anything
+is written, and is one structured operation committed locally with the
+version it expects, so a concurrent change on another machine becomes a
+preserved conflict at sync time instead of an overwrite. Superseding marks
+the replaced record in the same operation, all or nothing, and only within
+the project. `AGENTBOT_MEMORY_PROJECT_WRITES=off` turns project writes off;
+reads keep working.
 
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown

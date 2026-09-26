@@ -49,7 +49,7 @@ PUSH_ATTEMPTS = 5
 CASE_INSENSITIVE_FORGES = frozenset({"github.com", "gitlab.com", "bitbucket.org"})
 IDENTITY = ("-c", "user.name=agentbot-memory", "-c", "user.email=agentbot-memory@localhost")
 
-Kind = Literal["put", "delete", "forget", "approve", "register"]
+Kind = Literal["put", "delete", "forget", "approve", "register", "multi"]
 
 
 class SyncConflict(MemoryVaultError):
@@ -330,6 +330,8 @@ def _apply(root: Path, op: Op) -> str:
     """Apply one operation to the working tree. Returns applied or noop; raises SyncConflict."""
     if op.kind == "register":
         return _apply_register(root, op)
+    if op.kind == "multi":
+        return _apply_multi(root, op)
     if op.kind == "forget":
         current_digest = _subtree_digest(root, op.path)
         if current_digest is None:
@@ -359,6 +361,74 @@ def _apply(root: Path, op: Op) -> str:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(target)
     return "applied"
+
+
+def _apply_multi(root: Path, op: Op) -> str:
+    """Several files in one project, all or nothing: every expectation is checked first."""
+    items = json.loads(op.content or "[]")
+    plan: list[tuple[str, bytes | None]] = []
+    for item in items:
+        if not item["path"].startswith(op.path + "/"):
+            raise MemoryVaultError(f"{item['path']} is outside {op.path}")
+        current = _current(root, item["path"])
+        current_hash = None if current is None else _sha(current)
+        target = None if item["content"] is None else base64.b64decode(item["content"])
+        done = (current is None) if target is None else current_hash == _sha(target)
+        if done:
+            continue
+        if current_hash != item["expected"]:
+            raise SyncConflict(f"{item['path']} changed since it was read")
+        plan.append((item["path"], target))
+    if not plan:
+        return "noop"
+    for path, target in plan:
+        if target is not None:
+            _scan(path, target)
+    for path, target in plan:
+        destination = root / path
+        if target is None:
+            destination.unlink()
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(target)
+    return "applied"
+
+
+def change_project(
+    root: Path, project: str, changes: list[tuple[str, bytes | None]], *, client: str = "unknown"
+) -> Op:
+    """Put or delete several records of one project as a single operation."""
+    folder = f"projects/{project}"
+    if not SLUG.match(project):
+        raise MemoryVaultError(f"invalid project folder: {project!r}")
+    items = []
+    for relative, data in changes:
+        if not relative.startswith(folder + "/"):
+            raise MemoryVaultError(f"{relative} is outside {folder}")
+        _safe_rel(relative.split("/", 2)[2])
+        if data is not None:
+            _scan(relative, data)
+        prior = _current(root, relative)
+        if data is None and prior is None:
+            raise MemoryVaultError(f"{relative} does not exist")
+        items.append(
+            {
+                "path": relative,
+                "content": None if data is None else base64.b64encode(data).decode(),
+                "expected": None if prior is None else _sha(prior),
+            }
+        )
+    op = Op(
+        str(uuid.uuid4()),
+        "multi",
+        "project",
+        folder,
+        project,
+        json.dumps(items),
+        None,
+        client=client,
+    )
+    return _record(root, op)
 
 
 def _apply_register(root: Path, op: Op) -> str:

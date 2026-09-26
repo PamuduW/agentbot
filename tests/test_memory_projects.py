@@ -225,7 +225,9 @@ class CollisionTests(IdentityTestCase):
         projects.register(self.fleet.b, b, self.tmp / "config-b")
         sync.sync(self.fleet.a)
         result = sync.sync(self.fleet.b)
-        self.assertEqual(1, len(result.conflicts))
+        # Registration is two operations (registry entry and project.md); both are
+        # contested, and both are preserved rather than half applied.
+        self.assertEqual({"register", "put"}, {c["kind"] for c in result.conflicts})
         self.fleet.settle()
         self.assertEqual("resolved", projects.resolve(self.fleet.b, b, self.tmp / "config-b").state)
 

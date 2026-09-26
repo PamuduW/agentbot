@@ -1050,6 +1050,26 @@ def print_memory_project(result) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def print_memory_project_write(result, *, action: str) -> None:
+    """One project-memory write: where it landed, and that it awaits sync."""
+    print_header("Memory project", f"Agentbot › Memory › Project › {action}")
+    state = result.get("state", "")
+    word = "preview" if state == "preview" else "applied"
+    rows = [
+        (key.replace("_", " ").capitalize(), str(value), "info")
+        for key, value in result.items()
+        if key != "state"
+    ]
+    rows.insert(0, ("Result", state, word))
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    if state == "preview":
+        print_note("Preview only. Rerun with --yes to apply.")
+    elif state == "committed-locally":
+        print_note("Committed to the vault locally; it is pushed on the next sync.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:
     """Render the owned vault hooks, and what an install or remove did or would do."""
     from ..memory_hook import SCANNER_GAP

@@ -307,9 +307,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Locate, validate, and review the private memory vault; propose one local draft.",
         (
             option(
-                "project",
-                "Show which project memory the current repository resolves to, by Git origin.",
-                "read-only",
+                "project [ACTION]",
+                "status (default) shows how this repo resolves; add --kind K --title T, "
+                "edit PATH, context, move PATH NEW, delete PATH, forget --yes write this "
+                "project's memory without approval (v3 vaults; bodies via --stdin or "
+                "--from-file); register, attach PROJECT, link URL PROJECT --yes manage identity.",
+                "status",
             ),
             option(
                 "setup",
@@ -409,7 +412,16 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "public",
         (
             "memory setup",
-            "memory project",
+            "memory project status",
+            "memory project add",
+            "memory project edit",
+            "memory project context",
+            "memory project move",
+            "memory project delete",
+            "memory project forget",
+            "memory project register",
+            "memory project attach",
+            "memory project link",
             "memory status",
             "memory validate",
             "memory search",
