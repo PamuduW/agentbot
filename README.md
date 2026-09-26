@@ -113,6 +113,18 @@ temporary directory; `--new` creates an empty schema 2 vault and never pushes.
 (the vault hooks use them). No vault configured is a clean state: memory
 commands say so and exit `2`, and nothing else in Agentbot depends on memory.
 
+`agentbot memory project` shows which project memory the current repository
+resolves to. Resolution goes from the Git top level to `remote.origin.url`,
+normalized (SSH, `ssh://`, and HTTPS forms, credentials stripped, and case
+folded on GitHub, GitLab, and Bitbucket), to an entry in the vault's
+`.meta/projects.json`, so the same repository maps to the same folder on
+every machine. Forks and renames are separate projects until explicitly
+linked. A repository without a remote gets a generated `local/<id>-<name>`
+origin and must be attached on each extra machine; that binding stays in
+private `memory-bindings.json`. Two projects claiming one origin, alias, or
+folder is a collision, and project writes stop until it is fixed. Registering
+and linking arrive in the CLI with schema 3.
+
 The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
 Validation covers every tracked or unignored file plus local drafts: Markdown
 only, no symlinks or special files, UTF-8 without NUL, size and front-matter

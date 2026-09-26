@@ -1021,6 +1021,31 @@ def print_memory_setup(result) -> None:
     print_rollup(ok=1 if result.state in {"configured", "removed", "shown"} else 0, check=0, miss=0)
 
 
+def print_memory_project(result) -> None:
+    """How the current directory resolves to project memory."""
+    print_header("Memory project", "Agentbot › Memory › Project")
+    identity = result.identity
+    rows = []
+    if identity is None:
+        rows.append(("Repository", "not inside a Git repository", "skipped"))
+    else:
+        rows.append(("Repository", str(identity.toplevel), "info"))
+        rows.append(("Origin", identity.canonical or "no remote (local repository)", "info"))
+        word = {"resolved": "ok", "unregistered": "skipped", "collision": "conflict"}[result.state]
+        detail = (
+            f"{result.entry['folder']} ({result.entry['id']})"
+            if result.entry
+            else "no project memory yet"
+        )
+        rows.append(("Project", detail, word))
+        rows += [("Problem", problem, "error") for problem in result.problems]
+    ok, check, miss = print_table(rows, wrap_details=True)
+    if result.state == "collision":
+        print()
+        print_note("Project writes stop until the registry collision is fixed.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_memory_hooks(state, *, action: str, applied: bool) -> None:
     """Render the owned vault hooks, and what an install or remove did or would do."""
     from ..memory_hook import SCANNER_GAP

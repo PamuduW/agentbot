@@ -46,6 +46,7 @@ from .ui import (
     print_memory_hooks,
     print_memory_migration,
     print_memory_migration_plan,
+    print_memory_project,
     print_memory_proposal,
     print_memory_record,
     print_memory_restore,
@@ -637,6 +638,24 @@ def _handle_memory_setup(context: CommandContext) -> int:
     return 0
 
 
+def _handle_memory_project(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_projects as projects
+
+    as_json = bool(getattr(context.args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    result = projects.resolve(root, caller_path("."), context.paths.config_home)
+    if as_json:
+        print(json.dumps(projects.resolution_json(result), indent=2))
+    else:
+        print_memory_project(result)
+    return 1 if result.state == "collision" else 0
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
@@ -656,6 +675,8 @@ def _dispatch_memory(context: CommandContext) -> int:
 
     if context.args.memory_command == "setup":
         return _handle_memory_setup(context)
+    if context.args.memory_command == "project":
+        return _handle_memory_project(context)
     if context.args.memory_command in {"propose", "review"}:
         return _handle_memory_drafts(context)
     if context.args.memory_command in {"approve", "hook"}:
@@ -1184,6 +1205,8 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     memory = subparsers.add_parser("memory", help="Inspect and validate the private memory vault")
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     _add_memory_setup_parser(memory_sub)
+    project = memory_sub.add_parser("project", help="Show which project memory this repo uses")
+    project.add_argument("--json", action="store_true", dest="memory_json")
     memory_status = memory_sub.add_parser("status", help="Show vault location, schema, and state")
     memory_status.add_argument("--json", action="store_true", dest="memory_json")
     memory_validate = memory_sub.add_parser(

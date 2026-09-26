@@ -47,7 +47,13 @@ def _git(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     try:
         return subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, check=False, env=env, timeout=300
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=300,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise MemoryVaultError("git is unavailable or did not respond") from error
@@ -85,7 +91,9 @@ def _write_config(config_home: Path, vault: dict[str, Any]) -> Path:
     path = config_path(config_home)
     if path.is_symlink():
         raise MemoryVaultError(f"{path} is a symlink; refusing to write it")
-    write_text_atomic(path, json.dumps({"version": CONFIG_VERSION, "vault": vault}, indent=2) + "\n")
+    write_text_atomic(
+        path, json.dumps({"version": CONFIG_VERSION, "vault": vault}, indent=2) + "\n"
+    )
     os.chmod(path, 0o600)
     return path
 
@@ -108,6 +116,33 @@ def configured_vault(config_home: Path) -> Path | None:
     return vault
 
 
+BINDINGS_NAME = "memory-bindings.json"
+
+
+def bindings(config_home: Path) -> dict[str, str]:
+    """This machine's checkout -> project ID bindings, for repositories with no remote."""
+    path = config_home / BINDINGS_NAME
+    if path.is_symlink():
+        raise MemoryVaultError(f"{path} is a symlink; refusing to read it")
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise MemoryVaultError(f"{path} is unreadable") from error
+    return {str(key): str(value) for key, value in data.get("bindings", {}).items()}
+
+
+def bind(config_home: Path, toplevel: Path, project_id: str) -> None:
+    current = bindings(config_home)
+    current[str(toplevel.resolve())] = project_id
+    config_home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(config_home, 0o700)
+    path = config_home / BINDINGS_NAME
+    write_text_atomic(path, json.dumps({"version": 1, "bindings": current}, indent=2) + "\n")
+    os.chmod(path, 0o600)
+
+
 # --- Validation ---------------------------------------------------------------
 
 
@@ -115,7 +150,9 @@ def sanitize_url(url: str) -> str:
     """Accept SSH, scp-style, HTTPS, or a local path; refuse embedded credentials."""
     value = url.strip()
     if not value or any(ch.isspace() or ord(ch) < 32 for ch in value):
-        raise MemoryVaultError("the remote URL is empty or contains whitespace or control characters")
+        raise MemoryVaultError(
+            "the remote URL is empty or contains whitespace or control characters"
+        )
     if value.startswith("/"):
         return value
     if SCP_URL.match(value) and "://" not in value:
@@ -149,15 +186,23 @@ def check_destination(path: Path, *, allow_empty: bool = True) -> Path:
         raise MemoryVaultError("give an absolute destination path")
     for parent in (path, *path.parents):
         if parent.is_symlink():
-            raise MemoryVaultError(f"{parent} is a symlink; refusing to create the vault through it")
+            raise MemoryVaultError(
+                f"{parent} is a symlink; refusing to create the vault through it"
+            )
     resolved = path.resolve()
     if resolved in {Path("/"), Path.home().resolve()}:
-        raise MemoryVaultError("the vault cannot be the filesystem root or the home directory itself")
+        raise MemoryVaultError(
+            "the vault cannot be the filesystem root or the home directory itself"
+        )
     if WSL_DRIVE.match(str(resolved)):
         raise MemoryVaultError("the vault must live on the Linux filesystem, not a Windows drive")
-    if any(str(resolved) == root or str(resolved).startswith(root + "/") for root in VOLATILE_ROOTS):
+    if any(
+        str(resolved) == root or str(resolved).startswith(root + "/") for root in VOLATILE_ROOTS
+    ):
         raise MemoryVaultError("the vault must not live in a temporary directory")
-    if resolved.exists() and (not resolved.is_dir() or (any(resolved.iterdir()) or not allow_empty)):
+    if resolved.exists() and (
+        not resolved.is_dir() or (any(resolved.iterdir()) or not allow_empty)
+    ):
         raise MemoryVaultError(f"{resolved} already exists and is not empty")
     owner = _inside_repository(resolved)
     if owner is not None:
@@ -228,10 +273,14 @@ def setup_path(path: Path, config_home: Path, *, apply: bool = False) -> SetupRe
     return result
 
 
-def setup_clone(url: str, destination: Path, config_home: Path, *, apply: bool = False) -> SetupResult:
+def setup_clone(
+    url: str, destination: Path, config_home: Path, *, apply: bool = False
+) -> SetupResult:
     source = sanitize_url(url)
     target = check_destination(destination)
-    result = SetupResult(state="preview", mode="clone", vault={"path": str(target), "remote": source})
+    result = SetupResult(
+        state="preview", mode="clone", vault={"path": str(target), "remote": source}
+    )
     if not apply:
         result.notes.append(f"Will clone {source} into {target}; nothing is pushed.")
         return result
@@ -327,7 +376,9 @@ def show(config_home: Path) -> SetupResult:
             mode="show",
             notes=["No vault is configured. Use agentbot memory setup --path, --clone, or --new."],
         )
-    return SetupResult(state="shown", mode="show", vault=data["vault"], config=str(config_path(config_home)))
+    return SetupResult(
+        state="shown", mode="show", vault=data["vault"], config=str(config_path(config_home))
+    )
 
 
 def result_json(result: SetupResult) -> dict[str, Any]:

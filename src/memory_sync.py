@@ -310,11 +310,9 @@ def register_origin(
     """Add a project, or an alias to an existing project ID."""
     if not SLUG.match(folder):
         raise MemoryVaultError(f"invalid project folder: {folder!r}")
-    entry = {
-        "id": project_id or str(uuid.uuid4()),
-        "origin": normalize_origin(origin_url),
-        "folder": folder,
-    }
+    # A generated local origin is already canonical; everything else is a URL.
+    origin = origin_url if origin_url.startswith("local/") else normalize_origin(origin_url)
+    entry = {"id": project_id or str(uuid.uuid4()), "origin": origin, "folder": folder}
     op = Op(
         str(uuid.uuid4()),
         "register",
