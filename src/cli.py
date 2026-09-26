@@ -1986,7 +1986,12 @@ def run_agentbot_install(
     # prints the same one. The result still decides the exit code: this is a
     # quieter surface, not a dropped check.
     if os.environ.get("AGENTBOT_INSTALL_SHOW_DOCTOR", "1") == "0":
-        doctor_rc = 1 if outcome.diagnostics.issues else 0
+        # The same verdict print_doctor_summary gives: errors fail, warnings
+        # do not. Failing on any issue here exited 1 on a single warning the
+        # operator had no table to see.
+        doctor_rc = (
+            1 if any(i.level.lower() == "error" for i in outcome.diagnostics.issues) else 0
+        )
     else:
         doctor_rc = print_doctor_summary(list(outcome.diagnostics.issues))
     # Last, after the report it describes -- the same place the sibling

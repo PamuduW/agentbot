@@ -564,11 +564,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(1, rc)
         self.assertIn("Error: failed to install source 'test': offline", stderr)
 
-    def test_bootstrap_header_uses_install_breadcrumb(self) -> None:
+    @staticmethod
+    def _install_outcome(issues: tuple = ()):
         from pathlib import Path
 
         from src.boost import BoostStatus
-        from src.cli import run_agentbot_install
         from src.graphify import GraphifyStatus
         from src.models import DiagnosticsSnapshot, InstallOutcome, OutputRefreshOutcome
         from src.paths import AgentbotPaths
@@ -607,18 +607,46 @@ class CliTests(unittest.TestCase):
                 "Boost is not installed.",
             ),
             outputs=OutputRefreshOutcome(3, 2, 1),
-            diagnostics=DiagnosticsSnapshot((), 0, True, True, False, 0, 0, 0, 0, "missing", ()),
+            diagnostics=DiagnosticsSnapshot(
+                (), 0, True, True, False, 0, 0, 0, 0, "missing", issues
+            ),
         )
+        return paths, outcome
+
+    def _run_install(self, outcome, paths) -> tuple[int, str]:
+        from src.cli import run_agentbot_install
+
         lifecycle = MagicMock()
         lifecycle.install.return_value = outcome
         output = io.StringIO()
-
         with patch("sys.stdout", output):
             rc = run_agentbot_install(lifecycle, paths)
+        return rc, output.getvalue()
+
+    def test_bootstrap_header_uses_install_breadcrumb(self) -> None:
+        paths, outcome = self._install_outcome()
+
+        rc, stdout = self._run_install(outcome, paths)
 
         self.assertEqual(0, rc)
-        self.assertIn("Agentbot › Install Agentbot", output.getvalue())
-        self.assertIn("3 linked, 2 updated, 1 skipped", output.getvalue())
+        self.assertIn("Agentbot › Install Agentbot", stdout)
+        self.assertIn("3 linked, 2 updated, 1 skipped", stdout)
+
+    def test_hidden_doctor_fails_install_only_on_errors(self) -> None:
+        # A full run hides the doctor table, and a warning there once failed
+        # the install with nothing on screen to say why. Hidden or shown, the
+        # verdict must be the same one: errors fail, warnings do not.
+        from src.models import DoctorIssue
+
+        warning = DoctorIssue("warning", "reproducibility", "manual skill")
+        error = DoctorIssue("error", "global baseline", "missing")
+        for show in ("0", "1"):
+            for issues, expected in (((warning,), 0), ((warning, error), 1)):
+                with self.subTest(show_doctor=show, levels=[i.level for i in issues]):
+                    paths, outcome = self._install_outcome(issues)
+                    with patch.dict(os.environ, {"AGENTBOT_INSTALL_SHOW_DOCTOR": show}):
+                        rc, _stdout = self._run_install(outcome, paths)
+                    self.assertEqual(expected, rc)
 
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")
