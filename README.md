@@ -161,11 +161,15 @@ reads keep working.
 
 Syncing is automatic on a schema 3 vault. After every Agentbot-owned write
 the vault is synced: fetched, pending operations replayed on the remote tip,
-and pushed, never forced. Reads (`status`, `validate`, `search`, `show`,
-`brief`, `due`, `project`) fetch first, at most once per interval (300 seconds
-by default). Offline, writes stay committed locally and pending until the next
-sync; uncommitted manual edits pause automation until they are committed or
-reverted; neither ever fails the command. `agentbot memory sync` syncs now;
+and pushed, never forced. Reads (`status`, `search`, `show`, `brief`, `due`,
+`project`) fetch first, at most once per interval (300 seconds by default);
+`validate` does not, because hooks run it mid-commit. Offline, writes stay
+committed locally and pending until the next sync; uncommitted manual edits
+pause automation until they are committed or reverted; neither ever fails the
+command. Obsidian's per-device files (`.obsidian/workspace.json`,
+`workspace-mobile.json`, and `.trash/`) are not manual edits: they never pause
+sync, and the first sync adds them to a managed block in the vault's
+`.gitignore` and stops tracking them, keeping each machine's copy. `agentbot memory sync` syncs now;
 `--status` shows the mode, pending operations, open conflicts, and last sync;
 `--mode manual` stops automatic pushing and fetching (writes are still
 committed locally), and `--interval SECONDS` sets the fetch interval. When two

@@ -49,7 +49,7 @@ PUSH_ATTEMPTS = 5
 CASE_INSENSITIVE_FORGES = frozenset({"github.com", "gitlab.com", "bitbucket.org"})
 IDENTITY = ("-c", "user.name=agentbot-memory", "-c", "user.email=agentbot-memory@localhost")
 
-Kind = Literal["put", "delete", "forget", "approve", "register", "multi"]
+Kind = Literal["put", "delete", "forget", "approve", "register", "multi", "untrack"]
 
 
 class SyncConflict(MemoryVaultError):
@@ -135,8 +135,26 @@ def _log(root: Path, op_id: str, outcome: str, detail: str = "") -> None:
     _save(root, "log.json", entries)
 
 
+# Obsidian rewrites these on every open, per device. They are never memory, so
+# they neither block automatic work nor belong in Git.
+DEVICE_STATE_PATHS = (".obsidian/workspace.json", ".obsidian/workspace-mobile.json")
+DEVICE_STATE_DIRS = (".trash/",)
+DEVICE_STATE_BLOCK = "# Obsidian per-device state, managed by Agentbot"
+
+
+def _device_state(path: str) -> bool:
+    path = path.strip().strip('"')
+    return path in DEVICE_STATE_PATHS or path.startswith(DEVICE_STATE_DIRS)
+
+
 def _require_clean(root: Path) -> None:
-    if _git(root, "status", "--porcelain=v1", "--untracked-files=normal").stdout.strip():
+    status = _git(root, "status", "--porcelain=v1", "--untracked-files=normal").stdout
+    manual = [
+        line
+        for line in status.splitlines()
+        if line.strip() and not all(_device_state(part) for part in line[3:].split(" -> "))
+    ]
+    if manual:
         raise MemoryVaultError(
             "the vault has uncommitted manual changes; commit or revert them before automatic memory work"
         )
@@ -337,6 +355,8 @@ def _apply(root: Path, op: Op) -> str:
     """Apply one operation to the working tree. Returns applied or noop; raises SyncConflict."""
     if op.kind == "register":
         return _apply_register(root, op)
+    if op.kind == "untrack":
+        return _apply_untrack(root)
     if op.kind == "multi":
         return _apply_multi(root, op)
     if op.kind == "forget":
@@ -399,6 +419,53 @@ def _apply_multi(root: Path, op: Op) -> str:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(target)
     return "applied"
+
+
+def _tracked_device_state(root: Path) -> list[str]:
+    tracked = _git(root, "ls-files", "--", *DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS).stdout
+    return [line for line in tracked.splitlines() if line.strip()]
+
+
+def _gitignore_with_device_state(root: Path) -> bytes | None:
+    """The .gitignore with the managed block, or None when it already has it."""
+    current = (_current(root, ".gitignore") or b"").decode("utf-8")
+    lines = current.splitlines()
+    if DEVICE_STATE_BLOCK in lines and all(
+        entry in lines for entry in (*DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS)
+    ):
+        return None
+    block = [DEVICE_STATE_BLOCK, *DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS]
+    kept = [line for line in lines if line not in block]
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return ("\n".join([*kept, "", *block] if kept else block) + "\n").encode("utf-8")
+
+
+def _apply_untrack(root: Path) -> str:
+    """Ignore Obsidian's per-device files and drop them from Git, keeping the local copies.
+
+    Recomputed from the current tree on every replay, so two machines doing it
+    at once converge instead of conflicting.
+    """
+    gitignore = _gitignore_with_device_state(root)
+    tracked = _tracked_device_state(root)
+    if gitignore is None and not tracked:
+        return "noop"
+    if gitignore is not None:
+        (root / ".gitignore").write_bytes(gitignore)
+    if tracked:
+        _git(root, "rm", "-q", "--cached", "--", *tracked)
+    return "applied"
+
+
+def untrack_device_state(root: Path, *, client: str = "agentbot") -> Op | None:
+    """Queue the one-time clean-up when a vault used with Obsidian still needs it."""
+    tracked = _tracked_device_state(root)
+    opened_in_obsidian = (root / ".obsidian").is_dir()
+    if not tracked and not (opened_in_obsidian and _gitignore_with_device_state(root) is not None):
+        return None
+    op = Op(str(uuid.uuid4()), "untrack", "meta", ".", None, None, None, client=client)
+    return _record(root, op)
 
 
 CORE_PREFIXES = ("core/", "proposals/core/")
@@ -506,6 +573,8 @@ def _apply_register(root: Path, op: Op) -> str:
 
 def _summary(op: Op) -> str:
     """What the commit changed, in words `git log` can show."""
+    if op.kind == "untrack":
+        return "untrack Obsidian per-device state"
     if op.kind != "multi":
         return f"{op.kind} {op.path}"
     items = json.loads(op.content or "[]")
@@ -522,6 +591,8 @@ def _commit(root: Path, op: Op) -> None:
         # Stage exactly the operation's own files, added or removed.
         paths = [item["path"] for item in json.loads(op.content or "[]")]
         _git(root, "add", "-A", "--", *paths)
+    elif op.kind == "untrack":  # git rm --cached already staged the removals
+        _git(root, "add", "--", ".gitignore")
     elif op.kind != "forget":  # git rm already staged a forget
         _git(root, "add", "-A", "--", op.path)
     message = (
@@ -556,6 +627,13 @@ def sync(root: Path, *, remote: str = "origin") -> SyncResult:
     started = time.monotonic()
     result = SyncResult(state="synced")
     _require_clean(root)
+    # The reset below would put back the remote's copy of a tracked layout
+    # file; each machine keeps its own.
+    device_state = {
+        path: (root / path).read_bytes()
+        for path in DEVICE_STATE_PATHS
+        if (root / path).is_file() and not (root / path).is_symlink()
+    }
     branch = _branch(root)
     upstream = f"{remote}/{branch}"
     for attempt in range(1, PUSH_ATTEMPTS + 1):
@@ -603,6 +681,11 @@ def sync(root: Path, *, remote: str = "origin") -> SyncResult:
         _save(root, "pending.json", remaining)
     else:
         result.state = "retry-exhausted"
+    for path, data in device_state.items():
+        target = root / path
+        if not target.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
     result.seconds = time.monotonic() - started
     return result
 

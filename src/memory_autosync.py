@@ -99,6 +99,7 @@ def run(vault: Path) -> dict[str, Any]:
     if _nested():
         return {"state": "nested", "pending": len(memory_sync.pending(vault))}
     try:
+        memory_sync.untrack_device_state(vault)
         result = memory_sync.sync(vault)
     except MemoryVaultError as error:
         message = str(error)
