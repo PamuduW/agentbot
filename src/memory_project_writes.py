@@ -37,8 +37,10 @@ from .memory import (
     _destination_v3,
     _front_matter,
     _RecordCheck,
+    project_hub_link,
     read_bounded,
     read_marker,
+    record_link,
     scan_secrets,
     validate,
 )
@@ -83,6 +85,7 @@ def render(
     body: str,
     tags: list[str],
     supersedes: list[str] | None = None,
+    replaces: list[str] | None = None,
     created: str | None = None,
 ) -> bytes:
     lines = [
@@ -99,6 +102,9 @@ def render(
     ]
     if supersedes:
         lines.append(f"supersedes: {_yaml_list(supersedes)}")
+    lines.append(f"up: {json.dumps(project_hub_link(folder))}")
+    if replaces:
+        lines.append(f"replaces: {_yaml_list([json.dumps(link) for link in replaces])}")
     lines += ["---", ""]
     return ("\n".join(lines) + (body if body.endswith("\n") else body + "\n")).encode("utf-8")
 
@@ -207,6 +213,7 @@ def add(
     relative = f"projects/{folder}/{KIND_DIRS[kind]}/{today}-{_slug(title)}.md"
     if (vault / relative).exists():
         relative = relative[:-3] + f"-{record_id[:8]}.md"
+    target = _supersede_target(vault, folder, supersedes) if supersedes else None
     data = render(
         record_id=record_id,
         kind=KIND_TYPES[kind],
@@ -215,12 +222,13 @@ def add(
         body=body,
         tags=list(tags or []),
         supersedes=[supersedes] if supersedes else None,
+        replaces=[record_link(target[0])] if target else None,
     )
     _require_valid(relative, data)
     warnings = _pressure(vault, folder, relative, data, adding=not supersedes)
     changes: list[tuple[str, bytes | None]] = [(relative, data)]
-    if supersedes:
-        changes.append(_supersede_target(vault, folder, supersedes))
+    if target:
+        changes.append(target)
     op = memory_sync.change_project(vault, folder, changes, client=client)
     return _result(op, path=relative, id=record_id, warnings=warnings)
 
@@ -248,6 +256,37 @@ def _set_status(text: str, status: str) -> bytes:
         if lines[index].startswith("status:"):
             lines[index] = f"status: {status}"
     return "\n".join(lines).encode("utf-8")
+
+
+def _with_up(head: str, folder: str, relative: str) -> str:
+    """Give a record written before links existed its project link."""
+    if relative == f"projects/{folder}/project.md":
+        return head
+    lines = head.split("\n")
+    if any(line.startswith("up:") for line in lines):
+        return head
+    return "\n".join([*lines[:-1], f"up: {json.dumps(project_hub_link(folder))}", lines[-1]])
+
+
+def _relink(vault: Path, folder: str, old: str, new: str) -> list[tuple[str, bytes | None]]:
+    """Rewrite replaces links in this project that point at a moved record."""
+    old_link, new_link = json.dumps(record_link(old)), json.dumps(record_link(new))
+    changes: list[tuple[str, bytes | None]] = []
+    for record in validate(vault).records:
+        if not record.path.startswith(f"projects/{folder}/") or record.path == old:
+            continue
+        text = read_bounded(vault, record.path, MAX_FILE_BYTES).decode("utf-8")
+        head, rest = _split(text)
+        if old_link not in head:
+            continue
+        head = "\n".join(
+            line.replace(old_link, new_link) if line.startswith("replaces:") else line
+            for line in head.split("\n")
+        )
+        data = (head + "\n" + rest).encode("utf-8")
+        _require_valid(record.path, data)
+        changes.append((record.path, data))
+    return changes
 
 
 def _split(text: str) -> tuple[str, str]:
@@ -286,6 +325,7 @@ def edit(
             else line
             for line in head.split("\n")
         )
+    head = _with_up(head, folder, relative)
     new_body = old_body if body is None else "\n" + (body if body.endswith("\n") else body + "\n")
     data = (head + "\n" + new_body).encode("utf-8")
     _require_valid(relative, data)
@@ -330,8 +370,11 @@ def move(
         data = read_bounded(vault, source, MAX_FILE_BYTES)
     except FileNotFoundError as error:
         raise MemoryVaultError(f"{source} does not exist") from error
+    head, rest = _split(data.decode("utf-8"))
+    data = (_with_up(head, folder, target) + "\n" + rest).encode("utf-8")
     _require_valid(target, data)
-    op = memory_sync.change_project(vault, folder, [(target, data), (source, None)], client=client)
+    changes = [(target, data), (source, None), *_relink(vault, folder, source, target)]
+    op = memory_sync.change_project(vault, folder, changes, client=client)
     return _result(op, path=target, moved_from=source)
 
 

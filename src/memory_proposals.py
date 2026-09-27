@@ -34,6 +34,7 @@ from .memory import (
     _RecordCheck,
     read_bounded,
     read_marker,
+    record_link,
     scan_secrets,
     validate,
 )
@@ -184,6 +185,15 @@ def _set(text: str, values: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _with_field(text: str, key: str, value: str) -> str:
+    """Set one front-matter key, adding it before the closing marker if absent."""
+    if any(line.startswith(f"{key}:") for line in text.split("\n")[1:]):
+        return _set(text, {key: value})
+    lines = text.split("\n")
+    end = next(i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r") == "---")
+    return "\n".join([*lines[:end], f"{key}: {value}", *lines[end:]])
+
+
 def approve(vault: Path, relative: str, *, client: str = "human") -> dict[str, Any]:
     """Human-only: install the proposal in core, all or nothing."""
     _require_v3(vault)
@@ -202,9 +212,9 @@ def approve(vault: Path, relative: str, *, client: str = "human") -> dict[str, A
         destination = f"core/{KIND_DIRS[kind]}/{relative.rsplit('/', 1)[-1]}"
         if (vault / destination).exists():
             raise MemoryVaultError(f"{destination} already exists")
-    accepted = _set(data.decode("utf-8"), values).encode("utf-8")
-    _require_valid(destination, accepted)
-    changes: list[tuple[str, bytes | None]] = [(destination, accepted), (relative, None)]
+    accepted_text = _set(data.decode("utf-8"), values)
+    changes: list[tuple[str, bytes | None]] = [(relative, None)]
+    replaced: list[str] = []
     records = {
         record.id: record for record in validate(vault).records if record.id and not record.draft
     }
@@ -218,6 +228,12 @@ def approve(vault: Path, relative: str, *, client: str = "human") -> dict[str, A
         marked = _set(original, {"status": "superseded"}).encode("utf-8")
         _require_valid(target.path, marked)
         changes.append((target.path, marked))
+        replaced.append(json.dumps(record_link(target.path)))
+    if replaced:
+        accepted_text = _with_field(accepted_text, "replaces", f"[{', '.join(replaced)}]")
+    accepted = accepted_text.encode("utf-8")
+    _require_valid(destination, accepted)
+    changes.insert(0, (destination, accepted))
     op = memory_sync.change_core(vault, changes, tier="core", client=client)
     return {"state": "approved", "path": destination, "removed": relative, "op": op.id}
 

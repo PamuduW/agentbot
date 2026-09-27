@@ -49,7 +49,7 @@ PUSH_ATTEMPTS = 5
 CASE_INSENSITIVE_FORGES = frozenset({"github.com", "gitlab.com", "bitbucket.org"})
 IDENTITY = ("-c", "user.name=agentbot-memory", "-c", "user.email=agentbot-memory@localhost")
 
-Kind = Literal["put", "delete", "forget", "approve", "register", "multi", "untrack"]
+Kind = Literal["put", "delete", "forget", "approve", "register", "multi", "untrack", "obsidian"]
 
 
 class SyncConflict(MemoryVaultError):
@@ -355,8 +355,8 @@ def _apply(root: Path, op: Op) -> str:
     """Apply one operation to the working tree. Returns applied or noop; raises SyncConflict."""
     if op.kind == "register":
         return _apply_register(root, op)
-    if op.kind == "untrack":
-        return _apply_untrack(root)
+    if op.kind in {"untrack", "obsidian"}:
+        return _apply_obsidian(root)
     if op.kind == "multi":
         return _apply_multi(root, op)
     if op.kind == "forget":
@@ -426,7 +426,7 @@ def _tracked_device_state(root: Path) -> list[str]:
     return [line for line in tracked.splitlines() if line.strip()]
 
 
-def _gitignore_with_device_state(root: Path) -> bytes | None:
+def gitignore_with_device_state(root: Path) -> bytes | None:
     """The .gitignore with the managed block, or None when it already has it."""
     current = (_current(root, ".gitignore") or b"").decode("utf-8")
     lines = current.splitlines()
@@ -441,30 +441,32 @@ def _gitignore_with_device_state(root: Path) -> bytes | None:
     return ("\n".join([*kept, "", *block] if kept else block) + "\n").encode("utf-8")
 
 
-def _apply_untrack(root: Path) -> str:
-    """Ignore Obsidian's per-device files and drop them from Git, keeping the local copies.
+def _apply_obsidian(root: Path) -> str:
+    """The vault's Obsidian setup (see memory_obsidian), keeping local device files.
 
     Recomputed from the current tree on every replay, so two machines doing it
-    at once converge instead of conflicting.
+    at once converge instead of conflicting. The older ``untrack`` operation,
+    which did only the device-state part, replays through here too.
     """
-    gitignore = _gitignore_with_device_state(root)
+    from . import memory_obsidian
+
+    wrote = memory_obsidian.apply(root)
     tracked = _tracked_device_state(root)
-    if gitignore is None and not tracked:
-        return "noop"
-    if gitignore is not None:
-        (root / ".gitignore").write_bytes(gitignore)
     if tracked:
         _git(root, "rm", "-q", "--cached", "--", *tracked)
-    return "applied"
+    return "applied" if wrote or tracked else "noop"
 
 
-def untrack_device_state(root: Path, *, client: str = "agentbot") -> Op | None:
-    """Queue the one-time clean-up when a vault used with Obsidian still needs it."""
+def setup_obsidian(root: Path, *, client: str = "agentbot") -> Op | None:
+    """Queue the vault's Obsidian setup when a vault used with Obsidian needs it."""
+    from . import memory_obsidian
+
     tracked = _tracked_device_state(root)
-    opened_in_obsidian = (root / ".obsidian").is_dir()
-    if not tracked and not (opened_in_obsidian and _gitignore_with_device_state(root) is not None):
+    if not tracked and not (
+        memory_obsidian.opened_in_obsidian(root) and memory_obsidian.changes(root)
+    ):
         return None
-    op = Op(str(uuid.uuid4()), "untrack", "meta", ".", None, None, None, client=client)
+    op = Op(str(uuid.uuid4()), "obsidian", "meta", ".", None, None, None, client=client)
     return _record(root, op)
 
 
@@ -575,6 +577,8 @@ def _summary(op: Op) -> str:
     """What the commit changed, in words `git log` can show."""
     if op.kind == "untrack":
         return "untrack Obsidian per-device state"
+    if op.kind == "obsidian":
+        return "set up Obsidian views and settings"
     if op.kind != "multi":
         return f"{op.kind} {op.path}"
     items = json.loads(op.content or "[]")
@@ -591,8 +595,13 @@ def _commit(root: Path, op: Op) -> None:
         # Stage exactly the operation's own files, added or removed.
         paths = [item["path"] for item in json.loads(op.content or "[]")]
         _git(root, "add", "-A", "--", *paths)
-    elif op.kind == "untrack":  # git rm --cached already staged the removals
-        _git(root, "add", "--", ".gitignore")
+    elif op.kind in {"untrack", "obsidian"}:  # git rm --cached staged the removals
+        from .memory_obsidian import KIT_PATHS
+
+        for path in KIT_PATHS:
+            # One at a time: git refuses a whole batch if one path is ignored.
+            if (root / path).is_file():
+                _git(root, "add", "--", path, check=False)
     elif op.kind != "forget":  # git rm already staged a forget
         _git(root, "add", "-A", "--", op.path)
     message = (

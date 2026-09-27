@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src import memory
 from src import memory_autosync as autosync
+from src import memory_obsidian as obsidian
 from src import memory_project_writes as writes
 from src import memory_sync as sync
 from tests.test_memory_autosync import AutosyncTestCase
@@ -42,7 +43,7 @@ class DeviceStateTests(AutosyncTestCase):
         self.assertIn("drafts/*", ignore)  # the existing rules stay
         self.assertEqual("", git(self.a, "status", "--porcelain"))
         self.assertIn(
-            "memory(meta): untrack Obsidian per-device state",
+            "memory(meta): set up Obsidian views and settings",
             git(self.origin, "log", "-3", "--format=%s", "main"),
         )
         self.assertEqual([], memory.validate(self.a).findings)
@@ -61,8 +62,8 @@ class DeviceStateTests(AutosyncTestCase):
         )
 
     def test_both_machines_untracking_at_once_converge_without_conflict(self) -> None:
-        sync.untrack_device_state(self.a)
-        sync.untrack_device_state(self.b)
+        sync.setup_obsidian(self.a)
+        sync.setup_obsidian(self.b)
         self.assertEqual("synced", autosync.run(self.a)["state"])
         outcome = autosync.run(self.b)
         self.assertEqual(("synced", 0), (outcome["state"], outcome["conflicts"]))
@@ -84,3 +85,82 @@ if __name__ == "__main__":
     import unittest
 
     unittest.main()
+
+
+class ObsidianKitTests(AutosyncTestCase):
+    """The vault's Obsidian setup: dashboard, settings, and nothing the user owns."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        obsidian = self.a / ".obsidian"
+        obsidian.mkdir()
+        (obsidian / "core-plugins.json").write_text('{"graph": true, "bases": false}\n')
+        (obsidian / "app.json").write_text('{"userIgnoreFilters": ["mine/"], "vimMode": true}\n')
+        (obsidian / "graph.json").write_text('{"colorGroups": [], "scale": 1.5}\n')
+        git(self.a, "add", ".obsidian")
+        git(self.a, "commit", "-q", "-m", "Obsidian config")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+
+    def json(self, relative: str) -> dict:
+        import json
+
+        return json.loads((self.a / relative).read_text())
+
+    def test_sync_sets_up_views_and_only_the_owned_settings(self) -> None:
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        self.assertTrue((self.a / obsidian.VIEW_PATH).is_file())
+        self.assertEqual({"graph": True, "bases": True}, self.json(".obsidian/core-plugins.json"))
+        app = self.json(".obsidian/app.json")
+        self.assertEqual(
+            (True, "absolute", True, ["mine/", "templates/", "exports/"]),
+            (
+                app["vimMode"],
+                app["newLinkFormat"],
+                app["alwaysUpdateLinks"],
+                app["userIgnoreFilters"],
+            ),
+        )
+        graph = self.json(".obsidian/graph.json")
+        self.assertEqual((1.5, 3), (graph["scale"], len(graph["colorGroups"])))
+        self.assertEqual("", git(self.a, "status", "--porcelain"))
+        self.assertEqual([], memory.validate(self.a).findings)
+        # Once only; the other machine receives it.
+        head = git(self.a, "rev-parse", "HEAD")
+        autosync.run(self.a)
+        self.assertEqual(head, git(self.a, "rev-parse", "HEAD"))
+        autosync.run(self.b)
+        self.assertTrue((self.b / obsidian.VIEW_PATH).is_file())
+
+    def test_the_users_dashboard_and_colour_groups_are_never_overwritten(self) -> None:
+        (self.a / "views").mkdir()
+        (self.a / obsidian.VIEW_PATH).write_text("views: []\n")
+        (self.a / ".obsidian/graph.json").write_text('{"colorGroups": [{"query": "tag:x"}]}\n')
+        git(self.a, "add", "-A")
+        git(self.a, "commit", "-q", "-m", "mine")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        self.assertEqual("views: []\n", (self.a / obsidian.VIEW_PATH).read_text())
+        self.assertEqual([{"query": "tag:x"}], self.json(".obsidian/graph.json")["colorGroups"])
+
+    def test_a_broken_settings_file_is_left_alone(self) -> None:
+        (self.a / ".obsidian/app.json").write_text("{not json")
+        git(self.a, "commit", "-q", "-am", "broken")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        self.assertEqual("{not json", (self.a / ".obsidian/app.json").read_text())
+        self.assertTrue(self.json(".obsidian/core-plugins.json")["bases"])
+
+    def test_a_vault_never_opened_in_obsidian_is_untouched(self) -> None:
+        head = git(self.b, "rev-parse", "HEAD")
+        self.assertIsNone(sync.setup_obsidian(self.b))
+        self.assertEqual(head, git(self.b, "rev-parse", "HEAD"))
+
+    def test_the_dashboard_is_scanned_like_any_vault_file(self) -> None:
+        from tests.test_memory import FAKE_GITHUB_TOKEN
+
+        (self.a / "views").mkdir()
+        (self.a / "views/leak.base").write_text(f"# {FAKE_GITHUB_TOKEN}\nviews: []\n")
+        (self.a / "views/Bad Name.base").write_text("views: []\n")
+        rules = {(f.path, f.rule) for f in memory.validate(self.a).findings}
+        self.assertTrue(any(path == "views/leak.base" for path, _ in rules))
+        self.assertIn(("views/Bad Name.base", "MEMORY_FILE_TYPE"), rules)

@@ -143,6 +143,20 @@ records stay in Git history) and each project's origin (a Git URL or
 `local`) for you to choose. `check`, `apply`, and `rollback` follow the same
 snapshot, guard, lock, and marker-last pattern as the v1 migration.
 
+In Obsidian, the vault is a linked graph. Every project record carries
+`up: "[[projects/<folder>/project]]"`, so `project.md` is the project's hub and
+its backlinks list the project; a superseding record carries `replaces:` links
+to what it replaced. Both are derived from `projects` and `supersedes`, which
+stay canonical, and `project move` keeps them pointing at the right file. The
+first sync of a vault that has been opened in Obsidian also adds
+`views/memory.base`, a Bases dashboard (project memory by project, core
+memory, proposals waiting for approval, records due for review, and superseded
+or retired records), enables the Bases core plugin, makes new links absolute
+vault paths that update on rename, excludes `templates/` and `exports/` from
+search and the graph, and colours core, projects and proposals in the graph
+when no colour groups exist yet. It never overwrites a dashboard or colour
+groups you already have.
+
 Project memory is written without approval, always for the repository you
 are in: `agentbot memory project add --kind decision|lesson|note --title T
 [--tag TAG] [--supersedes ID] --stdin`, `edit PATH [--title] [--tag]

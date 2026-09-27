@@ -103,6 +103,21 @@ SCOPES = frozenset({"global", "shared", "project"})
 V1_FIELDS = frozenset({"schema", "type", "title", "date", "status", "projects", "tags"})
 V2_REQUIRED = V1_FIELDS | {"id", "scope"}
 V2_OPTIONAL = frozenset({"supersedes", "review_after", "valid_until"})
+# Schema 3 links Obsidian draws, derived by Agentbot from `projects` and
+# `supersedes`: the project hub, and the records a record replaces.
+V3_LINKS = frozenset({"up", "replaces"})
+LINK = re.compile(r"\[\[([^\[\]|#^\n]+)\]\]")
+VIEW_FILE = re.compile(r"views/[a-z0-9][a-z0-9-]*\.base")
+
+
+def record_link(relative: str) -> str:
+    """An Obsidian link to a record by its vault path, as Agentbot writes it."""
+    return f"[[{relative.removesuffix('.md')}]]"
+
+
+def project_hub_link(folder: str) -> str:
+    return record_link(f"projects/{folder}/project.md")
+
 
 Severity = Literal["error", "warning"]
 # Record has a field named date, which shadows the type inside the class.
@@ -561,6 +576,8 @@ class _RecordCheck:
     def run(self, fields: dict[str, Any]) -> Record | None:
         required = V1_FIELDS if self.schema == 1 else V2_REQUIRED
         allowed = required | (V2_OPTIONAL if self.schema >= 2 else frozenset())
+        if self.schema == 3:
+            allowed |= V3_LINKS
         for key in sorted(set(fields) - allowed):
             self.fail("MEMORY_FIELD", f"unknown key: {key}")
         for key in sorted(required - set(fields)):
@@ -640,6 +657,24 @@ class _RecordCheck:
         if "supersedes" in fields:
             self._supersedes(fields, kind)
         self._dates(fields)
+        if self.schema == 3:
+            self._links(fields)
+
+    def _links(self, fields: dict[str, Any]) -> None:
+        if "up" in fields:
+            folder = self.destination.project
+            if folder is None or self.path == f"projects/{folder}/project.md":
+                self.fail("MEMORY_LINK", "only a project record other than project.md has up")
+            elif fields["up"] != project_hub_link(folder):
+                self.fail("MEMORY_LINK", f"up must be {project_hub_link(folder)}")
+        if "replaces" in fields:
+            links = fields["replaces"]
+            if not isinstance(links, list) or not 1 <= len(links) <= SUPERSEDES_MAX:
+                self.fail("MEMORY_LINK", f"replaces must list 1-{SUPERSEDES_MAX} links")
+            elif not all(isinstance(item, str) and LINK.fullmatch(item) for item in links):
+                self.fail("MEMORY_LINK", 'replaces holds something that is not a "[[path]]" link')
+            elif "supersedes" not in fields:
+                self.fail("MEMORY_LINK", "replaces needs the supersedes it is drawn from")
 
     def _scope(self, fields: dict[str, Any], kind: str) -> None:
         scope = fields["scope"]
@@ -994,6 +1029,12 @@ def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -
     if not stat.S_ISREG(mode):
         return fail("MEMORY_SPECIAL_FILE", "not a regular file")
     allowed_other = V3_NON_MARKDOWN if schema == 3 else NON_MARKDOWN_ALLOWED
+    if schema == 3 and VIEW_FILE.fullmatch(relative):
+        # An Obsidian Bases view: YAML, never memory, but still scanned.
+        try:
+            return scan_secrets(relative, _decode(read_bounded(root, relative, MAX_FILE_BYTES)))
+        except _Unsafe as error:
+            return fail(error.rule, error.message)
     if not relative.endswith(".md"):
         return (
             []
