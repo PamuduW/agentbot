@@ -21,7 +21,7 @@ from tests.test_memory_sync import GIT, Fleet, git
 def repo(
     path: Path, origin: str | None = None, *, extra_remotes: dict[str, str] | None = None
 ) -> Path:
-    subprocess.run([*GIT, "init", "-q", str(path)], check=True)
+    subprocess.run([*GIT, "init", "-q", "-b", "main", str(path)], check=True)
     if origin:
         git(path, "remote", "add", "origin", origin)
     for name, url in (extra_remotes or {}).items():

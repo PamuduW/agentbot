@@ -67,7 +67,9 @@ class VaultFixture:
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "init", "-q", "-b", "main", str(root)], check=True, capture_output=True
+        )
         self.write(".gitignore", GITIGNORE)
         self.write(
             ".meta/vault.json", json.dumps({"agentbot_memory_schema": 3, "vault_id": VAULT_ID})

@@ -80,7 +80,7 @@ class PathSetupTests(SetupTestCase):
     def test_only_a_real_vault_checkout_top_is_accepted(self) -> None:
         (self.tmp / "link").symlink_to(self.vault.root)
         plain = self.tmp / "plain"
-        subprocess.run(["git", "init", "-q", str(plain)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
         for bad in (
             self.vault.root / "core",
             self.tmp / "link",
@@ -144,7 +144,7 @@ class CloneAndNewTests(SetupTestCase):
 
     def test_clone_of_a_non_vault_leaves_nothing_behind(self) -> None:
         plain = self.tmp / "plain"
-        subprocess.run(["git", "init", "-q", str(plain)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
         (plain / "x.txt").write_text("x")
         subprocess.run(["git", "-C", str(plain), "add", "."], check=True)
         subprocess.run(
@@ -180,7 +180,7 @@ class CloneAndNewTests(SetupTestCase):
 
     def test_new_creates_a_valid_empty_vault_and_never_pushes(self) -> None:
         bare = self.tmp / "empty-remote.git"
-        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", "--bare", str(bare)], check=True)
         dest = self.tmp / "fresh"
         result = setup.setup_new(dest, self.config, remote=str(bare), apply=True)
         self.assertEqual("configured", result.state)

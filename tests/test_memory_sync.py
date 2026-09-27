@@ -45,7 +45,7 @@ def record(title: str, body: str = "Synthetic body.") -> bytes:
 class Fleet:
     def __init__(self, base: Path) -> None:
         self.origin = base / "origin.git"
-        subprocess.run([*GIT, "init", "-q", "--bare", str(self.origin)], check=True)
+        subprocess.run([*GIT, "init", "-q", "-b", "main", "--bare", str(self.origin)], check=True)
         seed = base / "seed"
         subprocess.run(
             [*GIT, "clone", "-q", str(self.origin), str(seed)], check=True, capture_output=True

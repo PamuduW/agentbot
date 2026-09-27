@@ -33,7 +33,7 @@ class WorkspaceServiceTests(unittest.TestCase):
     def _git_repo(self, name: str) -> Path:
         path = self.root / name
         path.mkdir()
-        subprocess.run(["git", "init", "-q", str(path)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
         return path
 
     def test_apply_registers_a_successful_folder_render(self) -> None:

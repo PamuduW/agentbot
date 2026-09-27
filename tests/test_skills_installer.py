@@ -257,7 +257,7 @@ sources:
         skill = checkout / "skills" / "alpha" / "SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("---\nname: alpha\n---\n", encoding="utf-8")
-        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(checkout)], check=True)
         subprocess.run(["git", "-C", str(checkout), "add", "skills"], check=True)
         subprocess.run(
             [
@@ -287,7 +287,7 @@ sources:
 
         remote = self.root / "remote"
         remote.mkdir()
-        subprocess.run(["git", "init", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(remote)], check=True)
         skill = remote / "skills" / "alpha" / "SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("first\n", encoding="utf-8")
@@ -319,7 +319,7 @@ sources:
 
         remote = self.root / "remote"
         remote.mkdir()
-        subprocess.run(["git", "init", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(remote)], check=True)
         skill = remote / "skills" / "alpha" / "SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("first\n", encoding="utf-8")
@@ -410,7 +410,7 @@ sources:
 
         remote = self.root / "remote"
         remote.mkdir()
-        subprocess.run(["git", "init", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(remote)], check=True)
         skill = remote / "skills" / "brainstorming" / "SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("first\n", encoding="utf-8")
