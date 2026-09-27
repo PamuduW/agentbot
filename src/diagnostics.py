@@ -91,6 +91,7 @@ class Diagnostics:
         issues: list[DoctorIssue] = []
         issues.extend(self._token_doctor_issues())
         issues.extend(facts.mcp_issues)
+        issues.extend(self._memory_doctor_issues())
 
         if not self.paths.global_agents.exists():
             issues.append(
@@ -224,6 +225,83 @@ class Diagnostics:
                     "under 'Prune Skills'"
                 )
             issues.append(DoctorIssue("warning", "reproducibility", message))
+        return issues
+
+    def _memory_doctor_issues(self) -> list[DoctorIssue]:
+        """What the memory vault needs from the user. Local only: never fetches or syncs.
+
+        Silent when no vault is configured (memory is optional) or when
+        nothing needs attention, so a healthy vault adds nothing to Doctor.
+        """
+        from . import memory, memory_proposals, memory_sync
+
+        try:
+            root, _ = memory.find_vault(self.paths.root, config_home=self.paths.config_home)
+            if root is None:
+                return []
+            schema = memory.read_marker(root)
+            report = memory.validate(root)
+        except memory.MemoryVaultError as error:
+            return [DoctorIssue("error", "memory", f"memory vault: {error}")]
+        issues: list[DoctorIssue] = []
+        errors = [item for item in report.findings if item.severity == "error"]
+        if errors:
+            issues.append(
+                DoctorIssue(
+                    "error",
+                    "memory",
+                    f"{len(errors)} vault finding(s), first {errors[0].path}: "
+                    f"{errors[0].rule}; run agentbot memory validate",
+                )
+            )
+        if schema != 3:
+            return issues
+        if memory_sync.manual_changes(root):
+            issues.append(
+                DoctorIssue(
+                    "warning",
+                    "memory",
+                    "sync is paused: the vault has uncommitted hand edits; commit or "
+                    f"revert them in {root}",
+                )
+            )
+        pending = len(memory_sync.pending(root))
+        if pending:
+            issues.append(
+                DoctorIssue(
+                    "warning",
+                    "memory",
+                    f"{pending} memory write(s) not pushed yet; agentbot memory sync",
+                )
+            )
+        conflicts = [c for c in memory_sync.conflicts(root) if "resolved" not in c]
+        if conflicts:
+            issues.append(
+                DoctorIssue(
+                    "warning",
+                    "memory",
+                    f"{len(conflicts)} memory conflict(s) to resolve; agentbot memory conflict list",
+                )
+            )
+        waiting = len(memory_proposals.queue(root))
+        if waiting:
+            issues.append(
+                DoctorIssue(
+                    "warning",
+                    "memory",
+                    f"{waiting} core memory proposal(s) wait for your approval; "
+                    "agentbot memory review",
+                )
+            )
+        _, due, _ = memory.due_queue(root)
+        if due:
+            issues.append(
+                DoctorIssue(
+                    "warning",
+                    "memory",
+                    f"{due} memory record(s) due for review; agentbot memory due",
+                )
+            )
         return issues
 
     def graphify_status(self) -> GraphifyStatus:

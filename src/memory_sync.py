@@ -160,6 +160,15 @@ def _require_clean(root: Path) -> None:
         )
 
 
+def manual_changes(root: Path) -> bool:
+    """Whether hand edits would pause automatic sync (read-only; for Doctor)."""
+    try:
+        _require_clean(root)
+    except MemoryVaultError:
+        return True
+    return False
+
+
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
