@@ -485,9 +485,9 @@ class EnforceExclusionsTests(PruneTests):
         self.assertTrue((self.store / "keeper").is_dir())
 
     def test_enforcement_leaves_orphans_and_manual_skills_alone(self):
-        # Only `excluded` is enforced at install time. Removing an orphan or a
-        # user-placed skill mid-install would be a surprise; that stays an
-        # explicit `skills prune`.
+        # A pin to a repository the manifest never named, and a user-placed
+        # skill, are the user's. Removing them mid-install would be a surprise;
+        # that stays an explicit `skills prune`.
         from src.skill_prune import enforce_exclusions
 
         self._skill("leftover")
@@ -498,6 +498,37 @@ class EnforceExclusionsTests(PruneTests):
         self.assertEqual((), enforce_exclusions(self.paths, config))
         self.assertTrue((self.store / "leftover").is_dir())
         self.assertTrue((self.store / "graphify").is_dir())
+
+    def test_enforcement_removes_skills_of_a_disabled_source(self):
+        """Disabling a source is the decision; install applies it (2026-09-27 skill review)."""
+        from src.skill_prune import enforce_exclusions
+
+        self._skill("dropped")
+        self._skill("foreign")
+        self._lock({"dropped": "owner/repo", "foreign": "someone/else"})
+        claude_link, codex_link = self._bridge("dropped")
+        config = self._manifest(self.BASE + "    enabled: false\n")
+
+        self.assertEqual(("dropped",), enforce_exclusions(self.paths, config))
+        self.assertFalse((self.store / "dropped").exists())
+        self.assertFalse(claude_link.is_symlink() or codex_link.is_symlink())
+        self.assertTrue((self.store / "foreign").is_dir())
+
+    def test_an_unpinned_copy_of_an_excluded_skill_is_removed(self):
+        """Break caught: four excluded Akindu skills sat on disk with no lock entry."""
+        from src.skill_prune import enforce_exclusions
+
+        self._skill("alpha")
+        self._skill("mine")
+        self._lock({})
+        config = self._manifest(self.BASE + "    exclude:\n      - alpha\n")
+
+        report = plan_prune(self.paths, config)
+        self.assertEqual([("alpha", "excluded")], [(i.name, i.reason) for i in report.removable])
+        self.assertEqual(["mine"], [item.name for item in report.manual])
+        self.assertEqual(("alpha",), enforce_exclusions(self.paths, config))
+        self.assertFalse((self.store / "alpha").exists())
+        self.assertTrue((self.store / "mine").is_dir())
 
     def test_enforcement_is_a_no_op_when_nothing_is_excluded(self):
         from src.skill_prune import enforce_exclusions

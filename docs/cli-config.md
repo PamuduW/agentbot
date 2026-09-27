@@ -61,6 +61,11 @@ are refused. Codex's desired state uses this to turn off Codex's own memory
 (`[features] memories = false`), so the `agentbot memory` vault is the only
 memory Codex consults (ADR-0008).
 
+Claude's desired state also owns `skillOverrides`, which decides how each
+skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
+Agentbot owns that whole object, so add personal overrides in
+`cli/claude.settings.json` rather than in `~/.claude/settings.json`.
+
 ## Remote Control
 
 Both agents are kept reachable from the Claude and ChatGPT mobile apps.

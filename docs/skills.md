@@ -56,6 +56,21 @@ are preserved unless explicitly included. `skills remove-manual` accepts exact
 names and never treats an empty selection as permission to remove everything.
 Agentbot-protected Graphify output is not a manual-removal candidate.
 
+Every install and update also applies two of those decisions without a
+separate prune: a skill a source `exclude`s is removed (including an unpinned
+copy on disk with that name), and so is a skill the lock pins to a manifest
+source set to `enabled: false`. A skill pinned to a repository the manifest
+never names is left alone, because the user installed it.
+
+## Claude listing states
+
+Every listed skill's description is sent in every Claude session. The
+`skillOverrides` key in `cli/claude.settings.json` (merged by
+`cli-config apply`, `install` and `update`) sets each skill to `name-only`,
+`user-invocable-only` or `off` without editing the skill. Building blocks that
+other skills call are `name-only`, so they stay callable. Codex and Cursor
+have no equivalent setting, so duplicates are removed at the source instead.
+
 ## Graphify
 
 Dotfiles owns the `graphify` executable. Agentbot runs

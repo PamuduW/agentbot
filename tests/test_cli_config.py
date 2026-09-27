@@ -316,3 +316,17 @@ class CliConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShippedDesiredStateTests(unittest.TestCase):
+    """The desired-state files this repository ships, not fixtures."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_claude_skill_overrides_use_only_documented_states(self) -> None:
+        """A typo in a state would silently leave the skill listed (2026-09-27 skill review)."""
+        desired = json.loads((self.ROOT / "cli" / "claude.settings.json").read_text())
+        overrides = desired["skillOverrides"]
+        states = {"on", "name-only", "user-invocable-only", "off"}
+        self.assertEqual({}, {k: v for k, v in overrides.items() if v not in states})
+        self.assertNotIn("agent-memory", overrides)
