@@ -265,6 +265,21 @@ class RecordedBackupTests(BackupTestCase):
         setup.setup_path(self.vault.root, self.config, apply=True)
         self.assertIsNotNone(setup.recorded_backup(self.config))
 
+    def test_recording_a_backup_keeps_the_sync_settings(self) -> None:
+        from src import memory_autosync as autosync
+
+        autosync.set_settings(self.config, mode="manual", fetch_interval=900)
+        setup.record_backup(self.config, self.dest, "unknown")
+        setup.setup_path(self.vault.root, self.config, apply=True)
+        self.assertEqual(
+            ("manual", 900),
+            (
+                autosync.settings(self.config)["mode"],
+                autosync.settings(self.config)["fetch_interval"],
+            ),
+        )
+        self.assertIsNotNone(setup.recorded_backup(self.config))
+
     def test_a_backup_that_cannot_be_refreshed_is_reported_not_raised(self) -> None:
         setup.record_backup(self.config, self.vault.root / "inside", "unknown")
         detail, result = self.refresh()

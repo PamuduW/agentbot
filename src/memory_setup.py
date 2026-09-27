@@ -95,19 +95,20 @@ def read_config(config_home: Path) -> dict[str, Any] | None:
 def _write_config(
     config_home: Path, vault: dict[str, Any], backup: dict[str, str] | None = None
 ) -> Path:
-    if backup is None:
-        # Setting up the same vault again keeps its recorded backup.
-        current = read_config(config_home)
-        if current and current["vault"].get("identity") == vault.get("identity"):
-            backup = current.get("backup")
+    # Keep what this file holds besides the vault, such as the sync mode and
+    # interval: rewriting only the vault silently turned manual sync back to
+    # auto. A recorded backup belongs to one vault, so it goes with it.
+    data: dict[str, Any] = dict(read_config(config_home) or {})
+    if data and data["vault"].get("identity") != vault.get("identity"):
+        data.pop("backup", None)
+    data.update(version=CONFIG_VERSION, vault=vault)
+    if backup is not None:
+        data["backup"] = backup
     config_home.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(config_home, 0o700)
     path = config_path(config_home)
     if path.is_symlink():
         raise MemoryVaultError(f"{path} is a symlink; refusing to write it")
-    data: dict[str, Any] = {"version": CONFIG_VERSION, "vault": vault}
-    if backup:
-        data["backup"] = backup
     write_text_atomic(path, json.dumps(data, indent=2) + "\n")
     os.chmod(path, 0o600)
     return path
