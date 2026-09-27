@@ -504,6 +504,19 @@ def _apply_register(root: Path, op: Op) -> str:
     return "applied"
 
 
+def _summary(op: Op) -> str:
+    """What the commit changed, in words `git log` can show."""
+    if op.kind != "multi":
+        return f"{op.kind} {op.path}"
+    items = json.loads(op.content or "[]")
+    removed = [item for item in items if item["content"] is None]
+    verb = "delete" if len(removed) == len(items) else "update" if not removed else "change"
+    first = next((item["path"] for item in items if item["content"] is not None), None)
+    first = first or (items[0]["path"] if items else op.path)
+    more = f" (+{len(items) - 1} more)" if len(items) > 1 else ""
+    return f"{verb} {first}{more}"
+
+
 def _commit(root: Path, op: Op) -> None:
     if op.kind == "multi":
         # Stage exactly the operation's own files, added or removed.
@@ -512,7 +525,7 @@ def _commit(root: Path, op: Op) -> None:
     elif op.kind != "forget":  # git rm already staged a forget
         _git(root, "add", "-A", "--", op.path)
     message = (
-        f"memory({op.tier}): {op.kind} {op.path}\n\n"
+        f"memory({op.tier}): {_summary(op)}\n\n"
         f"Agentbot-Op: {op.id}\nAgentbot-Tier: {op.tier}\nAgentbot-Client: {op.client}\n"
     )
     # Plumbing, not `git commit`: a user's git wrapper or commit hooks (for

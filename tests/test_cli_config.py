@@ -153,13 +153,47 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(parsed["model"], "root")
         self.assertEqual(parsed["tui"]["model"], "table-scoped")
 
-    def test_a_declared_toml_table_is_refused_not_half_written(self) -> None:
-        self._declare("codex", '[hooks]\nbefore = "x"\n')
+    def test_a_nested_toml_table_is_refused_not_half_written(self) -> None:
+        self._declare("codex", '[hooks.state]\nbefore = "x"\n')
 
         plan = plan_cli(self.paths.root, self.clis["codex"])
 
         self.assertIsNotNone(plan.error)
-        self.assertIn("tables are not supported", plan.error)
+        self.assertIn("nested tables are not supported", plan.error)
+
+    def test_a_declared_table_key_merges_and_its_neighbours_survive(self) -> None:
+        """Codex's native memory switch lives in [features]; only that key is owned."""
+        self._write_config(
+            "codex",
+            'model = "m"\n\n[features]\napps = true\nmemories = true # native\n\n'
+            "[hooks]\n[hooks.state]\nx = 1\n",
+        )
+        self._declare("codex", 'model = "m"\n\n[features]\nmemories = false\n')
+
+        plan = plan_cli(self.paths.root, self.clis["codex"])
+        self.assertEqual({"features.memories": (True, False)}, plan.changes)
+        apply(self.paths)
+
+        text = self.clis["codex"].config_path.read_text(encoding="utf-8")
+        self.assertIn("memories = false # native\n", text)
+        config = self._read_config("codex")
+        self.assertEqual({"apps": True, "memories": False}, config["features"])
+        self.assertEqual({"state": {"x": 1}}, config["hooks"])
+        self.assertTrue(plan_cli(self.paths.root, self.clis["codex"]).is_noop)
+
+    def test_a_missing_table_and_key_are_added(self) -> None:
+        for original in (
+            'model = "m"\n',
+            'model = "m"\n\n[features]\napps = true\n\n[tui]\nt = 1\n',
+        ):
+            with self.subTest(original=original):
+                merged = merge_toml_text(original, {"features": {"memories": False}})
+                parsed = tomllib.loads(merged)
+                self.assertFalse(parsed["features"]["memories"])
+                self.assertEqual("m", parsed["model"])
+                if "[tui]" in original:
+                    self.assertEqual({"t": 1}, parsed["tui"])
+                    self.assertTrue(parsed["features"]["apps"])
 
     def test_credential_shaped_values_are_refused(self) -> None:
         """The desired-state files are committed, so a literal here would be a

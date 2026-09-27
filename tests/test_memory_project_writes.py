@@ -301,3 +301,17 @@ class ProjectWriteCliTests(WritesTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CommitSubjectTests(WritesTestCase):
+    def test_subjects_name_the_changed_record(self) -> None:
+        added = writes.add(self.a, self.code, self.config, kind="lesson", title="Named", body="n")
+        self.assertEqual(
+            f"memory(project): update {added['path']}",
+            git(self.a, "log", "-1", "--format=%s").strip(),
+        )
+        writes.delete(self.a, self.code, self.config, added["path"].split("/", 2)[2])
+        self.assertEqual(
+            f"memory(project): delete {added['path']}",
+            git(self.a, "log", "-1", "--format=%s").strip(),
+        )

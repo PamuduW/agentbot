@@ -210,7 +210,7 @@ class ScopeAndLifecycleTests(RetrieveTestCase):
         self.assertEqual({"decision"}, {hit.record.type for hit in result.hits})
         pointer = result.hits[0].pointer()
         self.assertEqual(
-            {"id", "path", "status", "date", "scope", "projects", "labels"}, set(pointer)
+            {"id", "path", "status", "date", "scope", "projects", "tags", "labels"}, set(pointer)
         )
         self.assertTrue(
             all(len(hit.excerpt) <= retrieve.EXCERPT_MAX for hit in self.search(limit=50).hits)

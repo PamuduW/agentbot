@@ -191,6 +191,14 @@ reject PATH --yes` removes a proposal. Identical approvals from two machines
 converge; two different approvals of one core file become a conflict for the
 human.
 
+Human-only confirmations need a person at a terminal. `approve --yes` and
+`reject --yes` (schema 2 drafts too) and `conflict resolve` for a core
+conflict refuse unless standard input is a terminal, then ask you to type the
+short code shown (the record's or operation's first 8 characters). Agent
+shells have no terminal, so an agent that is told to approve gets the command
+to hand back instead. This deters; it is not a security boundary against an
+agent that drives a real terminal on purpose.
+
 On a schema 3 vault, `search`, `show`, and `brief` detect the project from the
 directory you run them in (Git top level, origin, registry) when neither
 `--project` nor `--cross-project` is given; `--no-auto-project` turns that off.

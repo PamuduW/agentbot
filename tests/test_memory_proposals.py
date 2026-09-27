@@ -13,7 +13,7 @@ from src import memory_proposals as proposals
 from src import memory_retrieve as retrieve
 from src import memory_sync as sync
 from src.memory import MemoryVaultError
-from tests.support import run_cli_main
+from tests.support import TerminalInput, run_cli_main
 from tests.test_memory import FAKE_GITHUB_TOKEN
 from tests.test_memory_autosync import AutosyncTestCase
 from tests.test_memory_sync import git
@@ -186,7 +186,7 @@ class ProposalCliTests(ProposalCase):
 
         memory_setup.setup_path(self.a, self.config, apply=True)
 
-    def _cli(self, *argv: str, stdin: bytes = b"") -> tuple[int, dict]:
+    def _cli(self, *argv: str, stdin: bytes = b"", typed: str | None = None) -> tuple[int, dict]:
         env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")}
         env.update(
             HOME=str(self.tmp / "home"),
@@ -194,12 +194,17 @@ class ProposalCliTests(ProposalCase):
             XDG_CONFIG_HOME=str(self.tmp / "xdg"),
             AGENTBOT_CALLER_PWD=str(self.tmp),
         )
-        stream = io.TextIOWrapper(io.BytesIO(stdin))
+        stream: io.TextIOBase = (
+            TerminalInput(typed + "\n")
+            if typed is not None
+            else io.TextIOWrapper(io.BytesIO(stdin))
+        )
         with patch.dict(os.environ, env, clear=True), patch("sys.stdin", stream):
-            rc, stdout, _ = run_cli_main(
+            rc, stdout, stderr = run_cli_main(
                 ["agentbot", "--root", str(self.tmp / "agentbot"), *argv, "--json"]
             )
-        return rc, json.loads(stdout)
+        self.stderr = stderr
+        return rc, json.loads(stdout) if stdout.strip() else {}
 
     def test_cli_propose_review_approve(self) -> None:
         _rc, proposed = self._cli(
@@ -220,13 +225,67 @@ class ProposalCliTests(ProposalCase):
         _rc, preview = self._cli("memory", "approve", proposed["path"])
         self.assertEqual("preview", preview["state"])
         self.assertTrue((self.a / proposed["path"]).exists())
-        _rc, approved = self._cli("memory", "approve", proposed["path"], "--yes")
+        code = proposed["id"][:8]
+        _rc, approved = self._cli("memory", "approve", proposed["path"], "--yes", typed=code)
         self.assertEqual("approved", approved["state"])
         self.assertIn(
             f"Agentbot-Op: {approved['op']}", git(self.origin, "log", "--format=%B", "main")
         )
-        _rc, preview = self._cli("memory", "reject", "proposals/core/lessons/x.md")
-        self.assertEqual("preview", preview["state"])
+        rc, _missing = self._cli("memory", "reject", "proposals/core/lessons/x.md")
+        self.assertEqual(1, rc)
+
+    def test_approve_and_reject_need_a_person_at_a_terminal(self) -> None:
+        """Ticket 12 run 4: Codex ran approve --yes itself when told to approve."""
+        _rc, proposed = self._cli(
+            "memory",
+            "propose",
+            "--type",
+            "lesson",
+            "--title",
+            "Guarded",
+            "--scope",
+            "global",
+            "--stdin",
+            stdin=b"x\n",
+        )
+        head = git(self.a, "rev-parse", "HEAD")
+        for command in ("approve", "reject"):
+            with self.subTest(command=command):
+                rc, _ = self._cli("memory", command, proposed["path"], "--yes")
+                self.assertEqual(1, rc)
+                self.assertIn("human-only", self.stderr)
+                self.assertIn(f"agentbot memory {command} {proposed['path']} --yes", self.stderr)
+                rc, _ = self._cli("memory", command, proposed["path"], "--yes", typed="nope")
+                self.assertEqual(1, rc)
+                self.assertIn("cancelled", self.stderr)
+        self.assertEqual(head, git(self.a, "rev-parse", "HEAD"))
+        _rc, rejected = self._cli(
+            "memory", "reject", proposed["path"], "--yes", typed=proposed["id"][:8]
+        )
+        self.assertEqual("rejected", rejected["state"])
+
+    def test_a_core_conflict_is_resolved_only_by_hand(self) -> None:
+        first = proposals.propose(self.a, kind="preference", title="Prefs A", body="- A")
+        autosync.after_write(self.a, self.config)
+        autosync.run(self.b)
+        second = proposals.propose(self.b, kind="preference", title="Prefs B", body="- B")
+        autosync.after_write(self.b, self.config_b)
+        autosync.run(self.a)
+        proposals.approve(self.b, second["path"])
+        autosync.after_write(self.b, self.config_b)
+        proposals.approve(self.a, first["path"])
+        self.assertEqual(1, autosync.after_write(self.a, self.config)["conflicts"])
+        (conflict,) = autosync.open_conflicts(self.a)
+        op = conflict["op"]
+        rc, _ = self._cli("memory", "conflict", "resolve", op, "--keep", "theirs")
+        self.assertEqual(1, rc)
+        self.assertIn("human-only", self.stderr)
+        self.assertEqual(1, len(autosync.open_conflicts(self.a)))
+        rc, resolved = self._cli(
+            "memory", "conflict", "resolve", op, "--keep", "theirs", typed=op[:8]
+        )
+        self.assertEqual((0, "theirs"), (rc, resolved["kept"]))
+        self.assertEqual([], autosync.open_conflicts(self.a))
 
 
 if __name__ == "__main__":

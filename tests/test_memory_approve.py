@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import stat
@@ -15,7 +16,7 @@ from unittest.mock import patch
 
 from src import memory, memory_approve, memory_hook
 from src import memory_drafts as drafts
-from tests.support import run_cli_main
+from tests.support import TerminalInput, run_cli_main
 from tests.test_memory import (
     FAKE_GITHUB_TOKEN,
     FAKE_PASSWORD_LINE,
@@ -382,7 +383,7 @@ class HookTests(ApproveTestCase):
 
 
 class ApproveCliTests(ApproveTestCase):
-    def _cli(self, *argv: str) -> tuple[int, str]:
+    def _cli(self, *argv: str, typed: str | None = None) -> tuple[int, str]:
         env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")}
         env.update(
             HOME=str(self.tmp / "home"),
@@ -390,8 +391,12 @@ class ApproveCliTests(ApproveTestCase):
             AGENTBOT_MEMORY_DIR=str(self.vault.root),
             XDG_CONFIG_HOME=str(self.config),
         )
-        with patch.dict(os.environ, env, clear=True):
-            rc, stdout, _ = run_cli_main(["agentbot", "--root", str(self.tmp / "agentbot"), *argv])
+        stdin = TerminalInput(typed + "\n") if typed is not None else io.StringIO()
+        with patch.dict(os.environ, env, clear=True), patch("sys.stdin", stdin):
+            rc, stdout, stderr = run_cli_main(
+                ["agentbot", "--root", str(self.tmp / "agentbot"), *argv]
+            )
+        self.stderr = stderr
         return rc, stdout
 
     def test_preview_then_apply(self) -> None:
@@ -400,12 +405,25 @@ class ApproveCliTests(ApproveTestCase):
         self.assertEqual(0, rc, stdout)
         self.assertIn("Rerun with --yes", stdout)
         self.assertTrue((self.vault.root / relative).exists())
-        rc, stdout = self._cli("memory", "approve", relative, "--yes", "--json")
+        _rc, stdout = self._cli("memory", "approve", relative, "--json")
+        code = json.loads(stdout)["id"][:8]
+        rc, stdout = self._cli("memory", "approve", relative, "--yes", "--json", typed=code)
         self.assertEqual(0, rc, stdout)
         self.assertEqual("applied", json.loads(stdout)["state"])
         self.assertNotIn(SENTINEL, stdout)
+        rc, _ = self._cli("memory", "approve", relative, "--yes", typed=code)
+        self.assertEqual(1, rc)
+
+    def test_approval_without_a_terminal_or_the_code_is_refused(self) -> None:
+        """Ticket 12 run 4: an agent approved when the user said so. Agents have no terminal."""
+        relative = self.draft()
         rc, _ = self._cli("memory", "approve", relative, "--yes")
         self.assertEqual(1, rc)
+        self.assertIn("human-only", self.stderr)
+        rc, _ = self._cli("memory", "approve", relative, "--yes", typed="wrong")
+        self.assertEqual(1, rc)
+        self.assertIn("cancelled", self.stderr)
+        self.assertTrue((self.vault.root / relative).exists())
 
     def test_hook_preview_does_not_write(self) -> None:
         rc, stdout = self._cli("memory", "hook", "install")

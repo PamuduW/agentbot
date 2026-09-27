@@ -372,6 +372,24 @@ def _handle_memory_drafts(context: CommandContext) -> int:
         )
 
 
+def _confirm_by_hand(code: str, action: str, command: str) -> None:
+    """A human-only action needs a person at a terminal typing its short code.
+
+    Agent shells run commands without a terminal, so an agent cannot confirm
+    even when asked to: in Ticket 12 run 4, Codex ran `approve --yes` itself
+    after the user said "approve it now". This is a deterrent, not a security
+    boundary; an agent driving a real terminal on purpose is not stopped.
+    """
+    if not sys.stdin.isatty():
+        raise ValueError(
+            f"{action} is human-only and needs a terminal. Run it yourself in your own "
+            f"terminal: {command}"
+        )
+    print(f"  Type {code} to {action}: ", end="", file=sys.stderr, flush=True)
+    if input().strip() != code:
+        raise ValueError(f"{action} cancelled: the code did not match")
+
+
 def _handle_memory_changes(context: CommandContext) -> int:
     from . import memory, memory_approve, memory_hook
 
@@ -384,6 +402,21 @@ def _handle_memory_changes(context: CommandContext) -> int:
         )
     try:
         if args.memory_command == "approve":
+            if args.confirm:
+                preview = memory_approve.approve(
+                    root,
+                    args.draft_path,
+                    config_home=context.paths.config_home,
+                    apply=False,
+                    acknowledge=args.acknowledge_warning or (),
+                    allow_cross_scope=args.allow_cross_scope,
+                )
+                if preview.state == "preview" and preview.id:
+                    _confirm_by_hand(
+                        preview.id[:8],
+                        f"approve {args.draft_path}",
+                        f"agentbot memory approve {args.draft_path} --yes",
+                    )
             result = memory_approve.approve(
                 root,
                 args.draft_path,
@@ -791,20 +824,22 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
             result = {"state": "open", **match[0]}
         else:
             result = {"state": "queue", "open": len(items), "proposals": items}
-    elif command == "approve":
+    else:
+        waiting = {item["path"]: item for item in proposals.queue(root)}
+        if args.draft_path not in waiting:
+            raise ValueError(f"no open proposal at {args.draft_path}")
         if not args.confirm:
-            waiting = {item["path"]: item for item in proposals.queue(root)}
-            if args.draft_path not in waiting:
-                raise ValueError(f"no open proposal at {args.draft_path}")
             result = {"state": "preview", **waiting[args.draft_path]}
         else:
-            result = proposals.approve(root, args.draft_path)
-    else:
-        result = (
-            proposals.reject(root, args.draft_path)
-            if args.confirm
-            else {"state": "preview", "path": args.draft_path}
-        )
+            _confirm_by_hand(
+                str(waiting[args.draft_path]["id"])[:8],
+                f"{command} {args.draft_path}",
+                f"agentbot memory {command} {args.draft_path} --yes",
+            )
+            if command == "approve":
+                result = proposals.approve(root, args.draft_path)
+            else:
+                result = proposals.reject(root, args.draft_path)
     if result["state"] in {"proposed", "approved", "rejected"}:
         result["sync"] = memory_autosync.after_write(root, context.paths.config_home)
     if getattr(args, "memory_json", False):
@@ -866,6 +901,15 @@ def _handle_memory_sync(context: CommandContext) -> int:
         elif action == "show":
             payload = memory_autosync.show(root, args.op)
         else:
+            conflict = next(
+                (c for c in memory_autosync.open_conflicts(root) if c["op"] == args.op), None
+            )
+            if conflict is not None and conflict.get("resolver") == "human":
+                _confirm_by_hand(
+                    args.op[:8],
+                    f"resolve core conflict {args.op} keeping {args.keep}",
+                    f"agentbot memory conflict resolve {args.op} --keep {args.keep}",
+                )
             payload = memory_autosync.resolve(root, config_home, args.op, args.keep)
         title = f"conflict {action}"
         code = 0

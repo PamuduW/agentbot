@@ -400,7 +400,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
             ),
             option(
                 "reject PATH --yes",
-                "Schema 3, human-only: remove a tracked core proposal without installing it.",
+                "Schema 3, human-only: remove a tracked core proposal without installing it. "
+                "--yes needs a terminal and the typed short code.",
                 "preview",
             ),
             option(
@@ -408,7 +409,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "Preview, then with --yes install one draft as an accepted record without "
                 "replacing any file, under a bounded lock. A superseding draft also marks its "
                 "targets superseded in the same transition; --allow-cross-scope permits a "
-                "reviewed cross-type or cross-scope replacement.",
+                "reviewed cross-type or cross-scope replacement. Human-only: --yes needs a "
+                "terminal and the typed short code.",
                 "preview",
             ),
             option(
@@ -429,8 +431,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
             ),
         ),
         "propose writes a new ignored draft; approve --yes installs one record and removes "
-        "its draft; hook --yes writes only Agentbot-marked hooks. Nothing is staged, "
-        "committed, or pushed. backup and restore --yes write only their destination. "
+        "its draft; hook --yes writes only Agentbot-marked hooks. On schema 2 nothing is "
+        "staged, committed, or pushed; on schema 3 each write is committed and synced. "
+        "backup and restore --yes write only their destination. "
         "Exit 2 means no vault is configured.",
         ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
         ("status", "doctor"),

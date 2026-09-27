@@ -119,12 +119,18 @@ def read_desired(root: Path, cli: ManagedCli) -> tuple[dict[str, object], str | 
             parsed = tomllib.loads(text)
         except tomllib.TOMLDecodeError as error:
             return {}, f"cannot parse {source}: {error}"
-        nested = sorted(key for key, value in parsed.items() if isinstance(value, dict))
+        nested = sorted(
+            f"{key}.{inner}"
+            for key, value in parsed.items()
+            if isinstance(value, dict)
+            for inner, item in value.items()
+            if isinstance(item, dict)
+        )
         if nested:
-            # Merging a TOML table means rewriting a whole section without
-            # disturbing the rest of it, which this does not attempt. Refusing
-            # is better than half-writing somebody's [hooks] block.
-            return {}, f"{source}: tables are not supported yet ({', '.join(nested)})"
+            # One table level is merged key by key. Deeper nesting would mean
+            # rewriting sections such as [hooks.state] without disturbing the
+            # rest of them, which this does not attempt.
+            return {}, f"{source}: nested tables are not supported ({', '.join(nested)})"
 
     secrets = _secret_keys(parsed)
     if secrets:
@@ -166,12 +172,36 @@ def plan_cli(root: Path, cli: ManagedCli) -> CliConfigPlan:
     if error:
         plan.error = error
         return plan
-    for key, value in desired.items():
-        if key not in current:
+    for key, value in _owned(cli, desired):
+        present, existing = _lookup(current, key)
+        if not present:
             plan.additions[key] = value
-        elif current[key] != value:
-            plan.changes[key] = (current[key], value)
+        elif existing != value:
+            plan.changes[key] = (existing, value)
     return plan
+
+
+def _owned(cli: ManagedCli, desired: dict[str, object]) -> list[tuple[str, object]]:
+    """Owned keys, with a TOML table's keys named `table.key`."""
+    if cli.fmt == "json":
+        return list(desired.items())
+    owned: list[tuple[str, object]] = []
+    for key, value in desired.items():
+        if isinstance(value, dict):
+            owned.extend((f"{key}.{inner}", item) for inner, item in value.items())
+        else:
+            owned.append((key, value))
+    return owned
+
+
+def _lookup(current: dict[str, object], key: str) -> tuple[bool, object]:
+    if key in current:
+        return True, current[key]
+    table, _, inner = key.partition(".")
+    section = current.get(table)
+    if inner and isinstance(section, dict) and inner in section:
+        return True, section[inner]
+    return False, None
 
 
 def _render_toml_scalar(value: object) -> str:
@@ -187,45 +217,78 @@ def _render_toml_scalar(value: object) -> str:
 
 
 def merge_toml_text(text: str, desired: dict[str, object]) -> str:
-    """Set top-level keys in TOML text, leaving tables and comments alone.
+    """Set owned keys in TOML text, leaving everything else and comments alone.
 
-    Only the region before the first table header is rewritten, because a bare
-    `key = value` after a `[table]` header belongs to that table, not to the
-    document root.
+    Top-level keys are set only in the region before the first table header,
+    because a bare `key = value` after a `[table]` header belongs to that
+    table, not to the document root. A declared table's keys are set inside
+    that table's own region, and a missing table is appended.
     """
     lines = text.splitlines(keepends=True)
-    first_table = len(lines)
-    for index, line in enumerate(lines):
-        if line.lstrip().startswith("["):
-            first_table = index
-            break
-
+    first_table = next(
+        (index for index, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines)
+    )
     head = lines[:first_table]
     tail = lines[first_table:]
+    scalars = {key: value for key, value in desired.items() if not isinstance(value, dict)}
+    _set_keys(head, scalars)
+    for table, values in desired.items():
+        if isinstance(values, dict):
+            tail = _set_table(tail, table, values)
+    return "".join(head) + "".join(tail)
+
+
+def _set_keys(region: list[str], desired: dict[str, object]) -> None:
+    """Set keys within one region: the document root or one table's body."""
     try:
-        current = tomllib.loads("".join(head))
+        current = tomllib.loads("".join(region))
     except tomllib.TOMLDecodeError:
         current = {}
     for key, value in desired.items():
         pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
-        for index, line in enumerate(head):
+        for index, line in enumerate(region):
             if not pattern.match(line):
                 continue
             # A key already holding the declared value is left alone: rewriting
             # it would drop the operator's note for no change in meaning.
             if key in current and current[key] == value:
                 break
-            head[index] = f"{key} = {_render_toml_scalar(value)}{_trailing_comment(line)}\n"
+            region[index] = f"{key} = {_render_toml_scalar(value)}{_trailing_comment(line)}\n"
             break
         else:
             # Appending to a file whose last line has no newline produced
             # `model = "gpt-5"effort = "low"`, which is not TOML at all. The
             # merge was rejected by the verify step, so apply failed outright on
             # any config that did not end in a newline.
-            if head and not head[-1].endswith("\n"):
-                head[-1] += "\n"
-            head.append(f"{key} = {_render_toml_scalar(value)}\n")
-    return "".join(head) + "".join(tail)
+            if region and not region[-1].endswith("\n"):
+                region[-1] += "\n"
+            region.append(f"{key} = {_render_toml_scalar(value)}\n")
+
+
+def _set_table(lines: list[str], table: str, values: dict[str, object]) -> list[str]:
+    header = re.compile(rf"^\s*\[\s*{re.escape(table)}\s*\]\s*(#.*)?$")
+    start = next(
+        (index for index, line in enumerate(lines) if header.match(line.rstrip("\n"))), None
+    )
+    if start is None:
+        if lines and not lines[-1].endswith("\n"):
+            lines = [*lines[:-1], lines[-1] + "\n"]
+        body: list[str] = []
+        _set_keys(body, values)
+        separator = ["\n"] if lines and lines[-1].strip() else []
+        return [*lines, *separator, f"[{table}]\n", *body]
+    end = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].lstrip().startswith("[")),
+        len(lines),
+    )
+    region = lines[start + 1 : end]
+    # Blank lines before the next header stay after any key appended here.
+    trailing = 0
+    while trailing < len(region) and not region[len(region) - 1 - trailing].strip():
+        trailing += 1
+    body = region[: len(region) - trailing]
+    _set_keys(body, values)
+    return [*lines[: start + 1], *body, *region[len(region) - trailing :], *lines[end:]]
 
 
 def _trailing_comment(line: str) -> str:
@@ -263,8 +326,9 @@ def _verify(cli: ManagedCli, text: str, desired: dict[str, object]) -> None:
         parsed = json.loads(strip_jsonc(text))
     else:
         parsed = tomllib.loads(text)
-    for key, value in desired.items():
-        if parsed.get(key) != value:
+    for key, value in _owned(cli, desired):
+        present, landed = _lookup(parsed, key)
+        if not present or landed != value:
             raise ValueError(f"{cli.name}: {key} did not survive the merge")
 
 

@@ -131,3 +131,21 @@ class BriefAndDataTests(DetectionTestCase):
         # Memory never reaches rendered policy: the global policy source has no vault text.
         policy = (Path(__file__).resolve().parents[1] / "global" / "AGENTS.md").read_text()
         self.assertNotIn(INJECTED, policy)
+
+
+class TicketTwelveFollowUpTests(DetectionTestCase):
+    """Ticket 12 run 4: agents could not see tags or read a proposal they had made."""
+
+    def test_show_and_search_report_tags(self) -> None:
+        added = writes.add(
+            self.a, self.code, self.config, kind="decision", title="Tagged", body="t", tags=["t12"]
+        )
+        _rc, shown = self.cli(self.code, "memory", "show", added["path"])
+        self.assertEqual(["t12"], shown["tags"])
+        _rc, found = self.cli(self.code, "memory", "search", "Tagged")
+        self.assertIn(["t12"], [item["tags"] for item in found["results"]])
+
+    def test_show_on_a_proposal_points_to_review(self) -> None:
+        rc, payload = self.cli(self.code, "memory", "show", "proposals/core/lessons/p.md")
+        self.assertEqual(1, rc)
+        self.assertIn("agentbot memory review proposals/core/lessons/p.md", json.dumps(payload))

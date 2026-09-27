@@ -97,6 +97,7 @@ class Hit:
             "date": record.date,
             "scope": scope_of(record),
             "projects": list(record.projects),
+            "tags": list(record.tags),
             "labels": list(self.labels),
         }
 
@@ -329,6 +330,10 @@ def show(
         (item for item in report.records if item.path == relative and not item.draft), None
     )
     if record is None:
+        if relative.startswith("proposals/"):
+            raise MemoryVaultError(
+                f"{relative} is a proposal, not memory; read it with: agentbot memory review {relative}"
+            )
         raise MemoryVaultError(f"{relative} is not a valid canonical record")
     if any(item.path == relative for item in report.findings):
         raise MemoryVaultError(f"{relative} has validation or scanner findings; fix them first")
