@@ -7,6 +7,7 @@ the stress-run metrics as JSON.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import statistics
@@ -17,7 +18,8 @@ import unittest
 from pathlib import Path
 
 from src import memory_sync as sync
-from src.memory import MemoryVaultError, scan_secrets
+from src.memory import MemoryVaultError, scan_secrets, validate
+from src.memory_projects import project_md
 
 GIT = [
     "git",
@@ -38,8 +40,38 @@ def git(root: Path, *args: str) -> str:
     ).stdout
 
 
-def record(title: str, body: str = "Synthetic body.") -> bytes:
-    return f"---\ntitle: {title}\n---\n\n{body}\n".encode()
+KINDS = {"lessons": "lesson", "decisions": "decision", "notes": "project"}
+VAULT_ID = "f1f1f1f1-0000-4000-8000-000000000000"
+
+
+def record(where: str, title: str, body: str = "Synthetic body.") -> bytes:
+    """A valid schema 3 record for the vault path it is written to.
+
+    The ID comes from the path and content, so writing the same record twice
+    gives the same bytes, as a real replay would.
+    """
+    parts = [*where.split("/"), "", ""]
+    if parts[0] == "projects":
+        # Unknown folders fall back to a lesson: path tests hand in bad paths
+        # on purpose, and the engine, not this helper, must refuse them.
+        kind = "context" if parts[2] == "active-context.md" else KINDS.get(parts[2], "lesson")
+        scope, projects = "project", f"[{parts[1]}]"
+    else:
+        kind = (
+            "preference" if where == "core/user/preferences.md" else KINDS.get(parts[1], "lesson")
+        )
+        scope, projects = "global", "[]"
+    h = hashlib.sha256(f"{where}\0{title}\0{body}".encode()).hexdigest()
+    record_id = f"{h[:8]}-{h[8:12]}-4{h[13:16]}-8{h[17:20]}-{h[20:32]}"
+    return (
+        f"---\nschema: 3\nid: {record_id}\ntype: {kind}\ntitle: {json.dumps(title)}\n"
+        f"date: 2026-09-27\nstatus: accepted\nscope: {scope}\nprojects: {projects}\n"
+        f"tags: []\n---\n\n{body}\n"
+    ).encode()
+
+
+def at(project: str, rel: str) -> str:
+    return f"projects/{project}/{rel}"
 
 
 class Fleet:
@@ -51,28 +83,33 @@ class Fleet:
             [*GIT, "clone", "-q", str(self.origin), str(seed)], check=True, capture_output=True
         )
         (seed / ".meta").mkdir()
-        (seed / ".meta/vault.json").write_text('{"agentbot_memory_schema": 3}\n')
+        (seed / ".meta/vault.json").write_text(
+            json.dumps({"agentbot_memory_schema": 3, "vault_id": VAULT_ID}) + "\n"
+        )
         registry = {"projects": []}
         for index, project in enumerate(PROJECTS):
             folder = seed / "projects" / project
             (folder / "lessons").mkdir(parents=True)
-            (folder / "active-context.md").write_bytes(record(f"{project} context"))
-            for n in range(10):
-                (folder / "lessons" / f"l{n}.md").write_bytes(record(f"{project} lesson {n}"))
-            registry["projects"].append(
-                {
-                    "id": f"0000000{index}-0000-4000-8000-000000000000",
-                    "origin": f"github.com/fixture/{project}",
-                    "folder": project,
-                }
+            project_id = f"0000000{index}-0000-4000-8000-000000000000"
+            origin = f"github.com/fixture/{project}"
+            (folder / "project.md").write_bytes(project_md(project_id, project, origin))
+            (folder / "active-context.md").write_bytes(
+                record(at(project, "active-context.md"), f"{project} context")
             )
+            for n in range(10):
+                (folder / "lessons" / f"l{n}.md").write_bytes(
+                    record(at(project, f"lessons/l{n}.md"), f"{project} lesson {n}")
+                )
+            registry["projects"].append({"id": project_id, "origin": origin, "folder": project})
         (seed / ".meta/projects.json").write_text(
             json.dumps(registry, indent=2, sort_keys=True) + "\n"
         )
         (seed / "core/user").mkdir(parents=True)
-        (seed / "core/user/preferences.md").write_bytes(record("Working preferences"))
+        (seed / "core/user/preferences.md").write_bytes(
+            record("core/user/preferences.md", "Working preferences")
+        )
         (seed / "core/lessons").mkdir()
-        (seed / "core/lessons/c1.md").write_bytes(record("Core lesson"))
+        (seed / "core/lessons/c1.md").write_bytes(record("core/lessons/c1.md", "Core lesson"))
         git(seed, "add", "-A")
         git(seed, "commit", "-qm", "seed")
         git(seed, "push", "-q", "origin", "main")
@@ -111,8 +148,12 @@ class FleetTestCase(unittest.TestCase):
 
 class DeterministicCases(FleetTestCase):
     def test_01_independent_creates_converge(self) -> None:
-        sync.put_project(self.a, "hot", "lessons/new-a.md", record("from A"))
-        sync.put_project(self.b, "hot", "decisions/new-b.md", record("from B"))
+        sync.put_project(
+            self.a, "hot", "lessons/new-a.md", record(at("hot", "lessons/new-a.md"), "from A")
+        )
+        sync.put_project(
+            self.b, "hot", "decisions/new-b.md", record(at("hot", "decisions/new-b.md"), "from B")
+        )
         self.converged()
         for clone in (self.a, self.b):
             self.assertTrue((clone / "projects/hot/lessons/new-a.md").exists())
@@ -120,16 +161,30 @@ class DeterministicCases(FleetTestCase):
         self.assertEqual([], sync.conflicts(self.a) + sync.conflicts(self.b))
 
     def test_02_cross_project_writes_do_not_conflict(self) -> None:
-        sync.put_project(self.a, "alpha", "lessons/l0.md", record("alpha edited"))
-        sync.put_project(self.b, "beta", "lessons/l0.md", record("beta edited"))
+        sync.put_project(
+            self.a, "alpha", "lessons/l0.md", record(at("alpha", "lessons/l0.md"), "alpha edited")
+        )
+        sync.put_project(
+            self.b, "beta", "lessons/l0.md", record(at("beta", "lessons/l0.md"), "beta edited")
+        )
         self.converged()
         self.assertIn(b"alpha edited", (self.b / "projects/alpha/lessons/l0.md").read_bytes())
         self.assertIn(b"beta edited", (self.a / "projects/beta/lessons/l0.md").read_bytes())
         self.assertEqual([], sync.conflicts(self.a) + sync.conflicts(self.b))
 
     def test_03_same_record_conflict_loses_nothing(self) -> None:
-        sync.put_project(self.a, "hot", "active-context.md", record("A's context"))
-        op_b = sync.put_project(self.b, "hot", "active-context.md", record("B's context"))
+        sync.put_project(
+            self.a,
+            "hot",
+            "active-context.md",
+            record(at("hot", "active-context.md"), "A's context"),
+        )
+        op_b = sync.put_project(
+            self.b,
+            "hot",
+            "active-context.md",
+            record(at("hot", "active-context.md"), "B's context"),
+        )
         sync.sync(self.a)
         result = sync.sync(self.b)
         self.assertEqual([op_b.id], [c["op"] for c in result.conflicts])
@@ -144,7 +199,9 @@ class DeterministicCases(FleetTestCase):
 
     def test_04_delete_versus_edit_has_no_silent_winner(self) -> None:
         delete = sync.delete_project(self.a, "hot", "lessons/l1.md")
-        edit = sync.put_project(self.b, "hot", "lessons/l1.md", record("edited on B"))
+        edit = sync.put_project(
+            self.b, "hot", "lessons/l1.md", record(at("hot", "lessons/l1.md"), "edited on B")
+        )
         sync.sync(self.a)
         result = sync.sync(self.b)
         self.assertEqual([edit.id], [c["op"] for c in result.conflicts])
@@ -156,7 +213,9 @@ class DeterministicCases(FleetTestCase):
         )
         self.assertEqual("applied", sync.outcomes(self.a)[delete.id])
         # And the other order: the edit lands first, the delete conflicts.
-        edit2 = sync.put_project(self.a, "hot", "lessons/l2.md", record("edited on A"))
+        edit2 = sync.put_project(
+            self.a, "hot", "lessons/l2.md", record(at("hot", "lessons/l2.md"), "edited on A")
+        )
         delete2 = sync.delete_project(self.b, "hot", "lessons/l2.md")
         sync.sync(self.a)
         result = sync.sync(self.b)
@@ -169,7 +228,9 @@ class DeterministicCases(FleetTestCase):
         before = git(self.a, "ls-tree", "-r", "HEAD", "projects/alpha")
         core_before = git(self.a, "ls-tree", "-r", "HEAD", "core", ".meta")
         forget = sync.forget_project(self.a, "alpha")
-        sync.put_project(self.b, "beta", "lessons/new.md", record("beta addition"))
+        sync.put_project(
+            self.b, "beta", "lessons/new.md", record(at("beta", "lessons/new.md"), "beta addition")
+        )
         self.converged()
         for clone in (self.a, self.b):
             self.assertFalse((clone / "projects/alpha").exists())
@@ -183,7 +244,12 @@ class DeterministicCases(FleetTestCase):
 
     def test_05b_forget_conflicts_with_a_concurrent_write_to_that_project(self) -> None:
         forget = sync.forget_project(self.a, "alpha")
-        sync.put_project(self.b, "alpha", "lessons/late.md", record("late alpha write"))
+        sync.put_project(
+            self.b,
+            "alpha",
+            "lessons/late.md",
+            record(at("alpha", "lessons/late.md"), "late alpha write"),
+        )
         sync.sync(self.b)
         result = sync.sync(self.a)
         self.assertEqual([forget.id], [c["op"] for c in result.conflicts])
@@ -191,8 +257,16 @@ class DeterministicCases(FleetTestCase):
         self.assertTrue((self.a / "projects/alpha/lessons/late.md").exists())
 
     def test_06_core_conflicts_are_never_auto_resolved(self) -> None:
-        sync.approve_core(self.a, "user/preferences.md", record("Preferences, A's approval"))
-        op_b = sync.approve_core(self.b, "user/preferences.md", record("Preferences, B's approval"))
+        sync.approve_core(
+            self.a,
+            "user/preferences.md",
+            record("core/" + "user/preferences.md", "Preferences, A's approval"),
+        )
+        op_b = sync.approve_core(
+            self.b,
+            "user/preferences.md",
+            record("core/" + "user/preferences.md", "Preferences, B's approval"),
+        )
         sync.sync(self.a)
         result = sync.sync(self.b)
         self.assertEqual([op_b.id], [c["op"] for c in result.conflicts])
@@ -204,14 +278,30 @@ class DeterministicCases(FleetTestCase):
         url = git(self.a, "remote", "get-url", "origin").strip()
         git(self.a, "remote", "set-url", "origin", str(Path(self._tmp.name) / "unreachable.git"))
         offline = [
-            sync.put_project(self.a, "hot", "lessons/off1.md", record("offline 1")),
-            sync.put_project(self.a, "hot", "lessons/off2.md", record("offline 2")),
-            sync.put_project(self.a, "hot", "active-context.md", record("offline context")),
+            sync.put_project(
+                self.a, "hot", "lessons/off1.md", record(at("hot", "lessons/off1.md"), "offline 1")
+            ),
+            sync.put_project(
+                self.a, "hot", "lessons/off2.md", record(at("hot", "lessons/off2.md"), "offline 2")
+            ),
+            sync.put_project(
+                self.a,
+                "hot",
+                "active-context.md",
+                record(at("hot", "active-context.md"), "offline context"),
+            ),
         ]
         self.assertEqual("offline", sync.sync(self.a).state)
         self.assertEqual(3, len(sync.pending(self.a)))
-        sync.put_project(self.b, "hot", "active-context.md", record("online context"))
-        sync.put_project(self.b, "beta", "lessons/on.md", record("online beta"))
+        sync.put_project(
+            self.b,
+            "hot",
+            "active-context.md",
+            record(at("hot", "active-context.md"), "online context"),
+        )
+        sync.put_project(
+            self.b, "beta", "lessons/on.md", record(at("beta", "lessons/on.md"), "online beta")
+        )
         sync.sync(self.b)
         git(self.a, "remote", "set-url", "origin", url)
         result = sync.sync(self.a)
@@ -224,7 +314,10 @@ class DeterministicCases(FleetTestCase):
         before = self.fleet.head(self.a)
         with self.assertRaises(MemoryVaultError):
             sync.put_project(
-                self.a, "hot", "lessons/leak.md", record("leak", f"token {FAKE_TOKEN}")
+                self.a,
+                "hot",
+                "lessons/leak.md",
+                record(at("hot", "lessons/leak.md"), "leak", f"token {FAKE_TOKEN}"),
             )
         self.assertEqual(before, self.fleet.head(self.a))
         self.assertEqual([], sync.pending(self.a))
@@ -272,15 +365,19 @@ class BoundaryCases(FleetTestCase):
     def test_paths_cannot_escape_the_project(self) -> None:
         for rel in ("../../core/user/preferences.md", "/abs.md", "a/../b.md", "notes.txt", ""):
             with self.subTest(rel=rel), self.assertRaises(MemoryVaultError):
-                sync.put_project(self.a, "hot", rel, record("x"))
+                sync.put_project(self.a, "hot", rel, record(at("hot", rel), "x"))
         for project in ("../core", "Hot", ""):
             with self.subTest(project=project), self.assertRaises(MemoryVaultError):
-                sync.put_project(self.a, project, "lessons/x.md", record("x"))
+                sync.put_project(
+                    self.a, project, "lessons/x.md", record(at(project, "lessons/x.md"), "x")
+                )
 
     def test_manual_edits_and_manual_commits_pause_automation(self) -> None:
-        (self.a / "projects/hot/lessons/l0.md").write_bytes(record("half-finished edit"))
+        (self.a / "projects/hot/lessons/l0.md").write_bytes(
+            record("projects/hot/lessons/l0.md", "half-finished edit")
+        )
         with self.assertRaises(MemoryVaultError):
-            sync.put_project(self.a, "hot", "lessons/x.md", record("x"))
+            sync.put_project(self.a, "hot", "lessons/x.md", record(at("hot", "lessons/x.md"), "x"))
         with self.assertRaises(MemoryVaultError):
             sync.sync(self.a)
         git(self.a, "commit", "-qam", "a manual commit")
@@ -288,10 +385,10 @@ class BoundaryCases(FleetTestCase):
             sync.sync(self.a)
 
     def test_the_remote_is_never_force_pushed(self) -> None:
-        sync.put_project(self.a, "hot", "lessons/x.md", record("x"))
+        sync.put_project(self.a, "hot", "lessons/x.md", record(at("hot", "lessons/x.md"), "x"))
         sync.sync(self.a)
         first = self.fleet.tip()
-        sync.put_project(self.b, "hot", "lessons/y.md", record("y"))
+        sync.put_project(self.b, "hot", "lessons/y.md", record(at("hot", "lessons/y.md"), "y"))
         sync.sync(self.b)
         self.assertEqual(
             "0", git(self.fleet.origin, "rev-list", "--count", f"main..{first}").strip()
@@ -307,7 +404,7 @@ def run_stress(seed: int = 7, pairs: int = 100, *, phantom: bool = False) -> dic
         fleet = Fleet(Path(tmp))
         clones = {"a": fleet.a, "b": fleet.b}
         issued: dict[str, tuple[str, str]] = {}
-        refused_secrets = 0
+        refused_secrets = refused_invalid = 0
         times: list[float] = []
         for step in range(pairs * 2):
             name = "a" if step % 2 == 0 else "b"
@@ -316,14 +413,26 @@ def run_stress(seed: int = 7, pairs: int = 100, *, phantom: bool = False) -> dic
             roll = rng.random()
             try:
                 if roll < 0.02:
-                    sync.put_project(root, project, "lessons/leak.md", record("leak", FAKE_TOKEN))
+                    sync.put_project(
+                        root,
+                        project,
+                        "lessons/leak.md",
+                        record(at(project, "lessons/leak.md"), "leak", FAKE_TOKEN),
+                    )
                     continue
                 if roll < 0.04 and project != "hot" and (root / f"projects/{project}").exists():
                     op = sync.forget_project(root, project)
                 elif roll < 0.07:
-                    op = sync.approve_core(root, "lessons/c1.md", record(f"core v{step}"))
+                    op = sync.approve_core(
+                        root, "lessons/c1.md", record("core/" + "lessons/c1.md", f"core v{step}")
+                    )
                 elif roll < 0.25:
-                    op = sync.put_project(root, project, "active-context.md", record(f"ctx {step}"))
+                    op = sync.put_project(
+                        root,
+                        project,
+                        "active-context.md",
+                        record(at(project, "active-context.md"), f"ctx {step}"),
+                    )
                 else:
                     lessons = (
                         sorted((root / f"projects/{project}/lessons").glob("*.md"))
@@ -335,20 +444,26 @@ def run_stress(seed: int = 7, pairs: int = 100, *, phantom: bool = False) -> dic
                             root, project, f"lessons/{rng.choice(lessons).name}"
                         )
                     elif lessons and roll < 0.6:
+                        rel = f"lessons/{rng.choice(lessons).name}"
                         op = sync.put_project(
-                            root,
-                            project,
-                            f"lessons/{rng.choice(lessons).name}",
-                            record(f"edit {step}"),
+                            root, project, rel, record(at(project, rel), f"edit {step}")
                         )
                     else:
                         op = sync.put_project(
-                            root, project, f"lessons/s{step}.md", record(f"new {step}")
+                            root,
+                            project,
+                            f"lessons/s{step}.md",
+                            record(at(project, f"lessons/s{step}.md"), f"new {step}"),
                         )
                 issued[op.id] = (name, op.kind)
             except MemoryVaultError as error:
                 if "secret scanner" in str(error):
                     refused_secrets += 1
+                    continue
+                if "would make the vault invalid" in str(error):
+                    # A write into a project this clone has forgotten: its
+                    # folder would have no project.md.
+                    refused_invalid += 1
                     continue
                 raise
             if rng.random() < 0.35:
@@ -358,7 +473,9 @@ def run_stress(seed: int = 7, pairs: int = 100, *, phantom: bool = False) -> dic
         if phantom:
             # Negative control: an operation with no outcome anywhere must count as lost.
             issued["00000000-0000-4000-8000-00000000dead"] = ("a", "put")
-        return _check(fleet, clones, issued, refused_secrets, times)
+        metrics = _check(fleet, clones, issued, refused_secrets, times)
+        metrics["refused_invalid"] = refused_invalid
+        return metrics
 
 
 def _check(
@@ -393,7 +510,7 @@ def _check(
             roots = {"/".join(p.split("/")[:2]) for p in paths}
             if len(roots) > 1 or any(not p.startswith("projects/") for p in paths):
                 boundary_violations += 1
-        elif tier == "core" and any(not p.startswith("core/") for p in paths):
+        elif tier == "core" and any(not p.startswith(sync.CORE_PREFIXES) for p in paths):
             boundary_violations += 1
     lost = []
     for op_id in issued:
@@ -419,6 +536,7 @@ def _check(
             secret_commits += 1
     core_auto = sum(1 for c in conflicts if c["tier"] == "core" and c["op"] in landed)
     trees = {git(root, "rev-parse", "HEAD^{tree}").strip() for root in clones.values()}
+    invalid_at_tip = sum(1 for item in validate(clones["a"]).findings if item.severity == "error")
     times.sort()
     return {
         "operations": len(issued),
@@ -430,6 +548,7 @@ def _check(
         "conflict_rate": round(len(conflicts) / max(1, len(issued)), 3),
         "lost_writes": len(lost),
         "boundary_violations": boundary_violations,
+        "invalid_at_tip": invalid_at_tip,
         "secret_blobs_on_remote": secret_commits,
         "core_conflicts_auto_resolved": core_auto,
         "pending_left": len(sync.pending(clones["a"])) + len(sync.pending(clones["b"])),
@@ -448,6 +567,7 @@ class StressPass(unittest.TestCase):
         metrics = run_stress(seed=7, pairs=100)
         self.assertEqual(0, metrics["lost_writes"], metrics)
         self.assertEqual(0, metrics["boundary_violations"], metrics)
+        self.assertEqual(0, metrics["invalid_at_tip"], metrics)
         self.assertEqual(0, metrics["secret_blobs_on_remote"], metrics)
         self.assertEqual(0, metrics["core_conflicts_auto_resolved"], metrics)
         self.assertEqual(0, metrics["pending_left"], metrics)

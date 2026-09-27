@@ -21,31 +21,43 @@ automatically. Pushes are never forced; a rejected push re-fetches and
 replays again. The registry merges by entry, so two machines adding different
 projects never conflict.
 
-This prototype checks path boundaries and runs the secret scanner on every
-write. Full schema v3 validation arrives with ticket M4.
+One operation runs at a time per clone: every write and every sync holds an
+exclusive lock on ``.git/agentbot-memory/lock``. A write is staged in a
+private Git index, never the user's, and the vault as it would be after the
+commit is validated first; a change that adds a validation error is refused,
+and on replay it becomes a conflict. The queue entry is written before HEAD
+moves, so a write that was interrupted is finished or replayed on the next
+run, never lost. Replay skips operations the remote already has.
 """
 
 from __future__ import annotations
 
 import base64
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
+import threading
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 from .atomic_io import write_text_atomic
-from .memory import SLUG, MemoryVaultError, scan_secrets
+from .memory import SLUG, MemoryVaultError, scan_secrets, validate
 
 REGISTRY = ".meta/projects.json"
 STATE_DIR = "agentbot-memory"
 RECOVERY_PREFIX = "refs/agentbot-memory/recovery"
 PUSH_ATTEMPTS = 5
+LOCK_WAIT = 120.0
 CASE_INSENSITIVE_FORGES = frozenset({"github.com", "gitlab.com", "bitbucket.org"})
 IDENTITY = ("-c", "user.name=agentbot-memory", "-c", "user.email=agentbot-memory@localhost")
 
@@ -92,16 +104,27 @@ class SyncResult:
 SYNCING_ENV = "AGENTBOT_MEMORY_SYNCING"
 
 
-def _git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    root: Path, *args: str, check: bool = True, index: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", SYNCING_ENV: "1"}
-    result = subprocess.run(
-        ["git", "-C", str(root), *IDENTITY, *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-        timeout=120,
-    )
+    if index is not None:
+        env["GIT_INDEX_FILE"] = str(index)
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *IDENTITY, *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        # A hung fetch or push is the network, not a broken vault: callers
+        # that tolerate failure (check=False) see it as one.
+        if check:
+            raise MemoryVaultError(f"git {args[0]} timed out") from None
+        return subprocess.CompletedProcess(list(args), 124, "", "timed out")
     if check and result.returncode != 0:
         raise MemoryVaultError(f"git {args[0]} failed: {result.stderr.strip()[:200]}")
     return result
@@ -127,6 +150,81 @@ def _load(root: Path, name: str) -> list[dict[str, Any]]:
 
 def _save(root: Path, name: str, items: list[dict[str, Any]]) -> None:
     write_text_atomic(_state(root) / name, json.dumps(items, indent=1) + "\n")
+
+
+# How deep this thread already holds each clone's lock (re-entrancy only).
+_held = threading.local()
+
+
+@contextlib.contextmanager
+def _locked(root: Path) -> Iterator[None]:
+    """One memory operation at a time in this clone, across processes.
+
+    Re-entrant within a process. The first holder also finishes or rolls back
+    any write an earlier process left half done (see ``_recover``).
+    """
+    state = _state(root)
+    key = str(state)
+    depth: dict[str, int] = _held.__dict__.setdefault("depth", {})
+    if depth.get(key):
+        depth[key] += 1
+        try:
+            yield
+        finally:
+            depth[key] -= 1
+        return
+    with open(state / "lock", "a+", encoding="utf-8") as handle:
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise MemoryVaultError(
+                        "another Agentbot memory operation is still running on this vault"
+                    ) from None
+                time.sleep(0.05)
+        depth[key] = 1
+        try:
+            _recover(root)
+            yield
+        finally:
+            depth[key] = 0
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _in_history(root: Path, op_id: str, rev: str) -> str | None:
+    """The commit in ``rev``'s history that carries this operation, if any."""
+    found = _git(
+        root, "log", "-n", "1", "--format=%H", "-F", f"--grep=Agentbot-Op: {op_id}", rev
+    ).stdout.strip()
+    return found or None
+
+
+def _recover(root: Path) -> None:
+    """Finish or undo a write that was queued but stopped before its commit was recorded.
+
+    The queue entry is written before HEAD moves. If the commit reached HEAD,
+    record it; otherwise put the operation's files back as HEAD has them. The
+    entry stays queued either way, so the next sync applies it: a write that
+    was queued is never lost.
+    """
+    items = _load(root, "pending.json")
+    changed = False
+    for item in items:
+        if item.get("commit"):
+            continue
+        op = Op(**item)
+        found = _in_history(root, op.id, "HEAD")
+        if found:
+            item["commit"] = found
+            _refresh_index(root, op)
+        else:
+            _restore(root, op)
+        changed = True
+    if changed:
+        _save(root, "pending.json", items)
 
 
 def _log(root: Path, op_id: str, outcome: str, detail: str = "") -> None:
@@ -265,15 +363,61 @@ def _scan(relative: str, data: bytes) -> None:
 
 
 def _record(root: Path, op: Op) -> Op:
-    """Apply to the local tree, commit, and queue for sync."""
-    _require_clean(root)
-    _apply(root, op)
-    _commit(root, op)
-    op.commit = _git(root, "rev-parse", "HEAD").stdout.strip()
-    pending = _load(root, "pending.json")
-    pending.append(asdict(op))
-    _save(root, "pending.json", pending)
-    return op
+    """Apply to the local tree, check the whole vault, queue, then commit."""
+    with _locked(root):
+        _require_clean(root)
+        before = _errors(root)
+        index: Path | None = None
+        try:
+            _apply(root, op)
+            index = _stage(root, op)
+            problems = _new_errors(root, before, index)
+            if problems:
+                raise MemoryVaultError(
+                    f"{op.path} was not written: it would make the vault invalid ("
+                    + "; ".join(problems)
+                    + ")"
+                )
+        except BaseException:
+            _restore(root, op)
+            if index is not None:
+                index.unlink(missing_ok=True)
+            raise
+        pending = _load(root, "pending.json")
+        pending.append(asdict(op))
+        _save(root, "pending.json", pending)
+        try:
+            op.commit = _commit(root, op, index)
+        except MemoryVaultError:
+            _save(
+                root, "pending.json", [i for i in _load(root, "pending.json") if i["id"] != op.id]
+            )
+            _restore(root, op)
+            raise
+        finally:
+            index.unlink(missing_ok=True)
+        _save(
+            root,
+            "pending.json",
+            [
+                {**i, "commit": op.commit} if i["id"] == op.id else i
+                for i in _load(root, "pending.json")
+            ],
+        )
+        return op
+
+
+def _errors(root: Path, index: Path | None = None) -> set[tuple[str, str]]:
+    return {
+        (item.path, item.rule)
+        for item in validate(root, index=index).findings
+        if item.severity == "error"
+    }
+
+
+def _new_errors(root: Path, before: set[tuple[str, str]], index: Path) -> list[str]:
+    """Validation errors the staged change would add. Ones already there do not block it."""
+    return [f"{path}: {rule}" for path, rule in sorted(_errors(root, index) - before)]
 
 
 def put_project(root: Path, project: str, rel: str, data: bytes, *, client: str = "unknown") -> Op:
@@ -374,7 +518,7 @@ def _apply(root: Path, op: Op) -> str:
             return "noop"
         if current_digest != op.expected:
             raise SyncConflict(f"{op.path} changed since it was forgotten")
-        _git(root, "rm", "-r", "-q", "--", op.path)
+        shutil.rmtree(root / op.path)
         return "applied"
     current = _current(root, op.path)
     current_hash = None if current is None else _sha(current)
@@ -460,10 +604,7 @@ def _apply_obsidian(root: Path) -> str:
     from . import memory_obsidian
 
     wrote = memory_obsidian.apply(root)
-    tracked = _tracked_device_state(root)
-    if tracked:
-        _git(root, "rm", "-q", "--cached", "--", *tracked)
-    return "applied" if wrote or tracked else "noop"
+    return "applied" if wrote or _tracked_device_state(root) else "noop"
 
 
 def setup_obsidian(root: Path, *, client: str = "agentbot") -> Op | None:
@@ -599,31 +740,85 @@ def _summary(op: Op) -> str:
     return f"{verb} {first}{more}"
 
 
-def _commit(root: Path, op: Op) -> None:
+def _paths(op: Op) -> list[str]:
+    """The files (or, for forget, the folder) an operation writes in the work tree."""
     if op.kind == "multi":
-        # Stage exactly the operation's own files, added or removed.
-        paths = [item["path"] for item in json.loads(op.content or "[]")]
-        _git(root, "add", "-A", "--", *paths)
-    elif op.kind in {"untrack", "obsidian"}:  # git rm --cached staged the removals
+        return [item["path"] for item in json.loads(op.content or "[]")]
+    if op.kind in {"untrack", "obsidian"}:
         from .memory_obsidian import KIT_PATHS
 
-        for path in KIT_PATHS:
+        return list(KIT_PATHS)
+    return [op.path]
+
+
+def _in_head(root: Path, path: str) -> bool:
+    return _git(root, "cat-file", "-e", f"HEAD:{path}", check=False).returncode == 0
+
+
+def _restore(root: Path, op: Op) -> None:
+    """Put an operation's files back as HEAD has them. Device state is never touched."""
+    for path in _paths(op):
+        target = root / path
+        if _in_head(root, path):
+            _git(root, "checkout", "-q", "HEAD", "--", path)
+        elif target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target)
+        elif target.exists() or target.is_symlink():
+            target.unlink()
+        # Folders the write created and left empty go too; Git ignores them,
+        # but Obsidian would still show them.
+        parent = target.parent
+        while parent != root and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+
+
+def _stage(root: Path, op: Op) -> Path:
+    """The vault after this operation, in a private index. The user's index is not used."""
+    handle, name = tempfile.mkstemp(prefix="index-", dir=_state(root))
+    os.close(handle)
+    index = Path(name)
+    index.unlink()  # git builds it; an empty file is not a valid index
+    _git(root, "read-tree", "HEAD", index=index)
+    if op.kind == "forget":
+        _git(root, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", op.path, index=index)
+    elif op.kind in {"untrack", "obsidian"}:
+        # Per-device files leave Git; this machine's copies stay on disk.
+        untrack = [*DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS]
+        _git(root, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", *untrack, index=index)
+        for path in _paths(op):
             # One at a time: git refuses a whole batch if one path is ignored.
             if (root / path).is_file():
-                _git(root, "add", "--", path, check=False)
-    elif op.kind != "forget":  # git rm already staged a forget
-        _git(root, "add", "-A", "--", op.path)
+                _git(root, "add", "--", path, check=False, index=index)
+    else:
+        _git(root, "add", "-A", "--", *_paths(op), index=index)
+    return index
+
+
+def _refresh_index(root: Path, op: Op) -> None:
+    """Bring the user's index in line with HEAD for this operation's paths only."""
+    paths = _paths(op)
+    if op.kind in {"untrack", "obsidian"}:
+        paths += [*DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS]
+    for path in paths:
+        # One at a time: a path in neither HEAD nor the index fails on its own.
+        _git(root, "reset", "-q", "--", path, check=False)
+
+
+def _commit(root: Path, op: Op, index: Path) -> str:
     message = (
         f"memory({op.tier}): {_summary(op)}\n\n"
         f"Agentbot-Op: {op.id}\nAgentbot-Tier: {op.tier}\nAgentbot-Client: {op.client}\n"
     )
     # Plumbing, not `git commit`: a user's git wrapper or commit hooks (for
     # example one that fetches first) must not change what the engine does,
-    # and offline commits must work. The engine has already secret-scanned.
-    tree = _git(root, "write-tree").stdout.strip()
+    # and offline commits must work. The staged vault was validated first.
+    tree = _git(root, "write-tree", index=index).stdout.strip()
     parent = _git(root, "rev-parse", "HEAD").stdout.strip()
     commit = _git(root, "commit-tree", tree, "-p", parent, "-m", message).stdout.strip()
     _git(root, "update-ref", "HEAD", commit, parent)
+    _refresh_index(root, op)
+    return commit
 
 
 # --- Sync -----------------------------------------------------------------------
@@ -642,6 +837,11 @@ def _local_commits_are_ours(root: Path, upstream: str, pending: list[dict[str, A
 
 def sync(root: Path, *, remote: str = "origin") -> SyncResult:
     """Fetch, replay queued operations on the remote tip, push. Never force."""
+    with _locked(root):
+        return _sync(root, remote)
+
+
+def _sync(root: Path, remote: str) -> SyncResult:
     started = time.monotonic()
     result = SyncResult(state="synced")
     _require_clean(root)
@@ -654,11 +854,28 @@ def sync(root: Path, *, remote: str = "origin") -> SyncResult:
     }
     branch = _branch(root)
     upstream = f"{remote}/{branch}"
+    reset_to: list[str] = []
+    try:
+        _replay_and_push(root, remote, branch, upstream, result, reset_to)
+    finally:
+        _keep_device_state(root, device_state, ["HEAD", *reset_to])
+    result.seconds = time.monotonic() - started
+    return result
+
+
+def _replay_and_push(
+    root: Path,
+    remote: str,
+    branch: str,
+    upstream: str,
+    result: SyncResult,
+    reset_to: list[str],
+) -> None:
     for attempt in range(1, PUSH_ATTEMPTS + 1):
         result.attempts = attempt
         if _git(root, "fetch", "-q", remote, check=False).returncode != 0:
             result.state = "offline"
-            break
+            return
         pending = _load(root, "pending.json")
         has_upstream = (
             _git(root, "rev-parse", "--verify", "-q", upstream, check=False).returncode == 0
@@ -668,17 +885,36 @@ def sync(root: Path, *, remote: str = "origin") -> SyncResult:
                 "the vault has local commits Agentbot did not make; push them by hand first"
             )
         if has_upstream:
-            _git(root, "reset", "-q", "--hard", upstream)
+            tip = _git(root, "rev-parse", upstream).stdout.strip()
+            reset_to.append(tip)
+            _git(root, "reset", "-q", "--hard", tip)
+        before = _errors(root)
         remaining: list[dict[str, Any]] = []
         for item in pending:
             op = Op(**item)
+            # Pushed by an earlier run that stopped before it cleared the
+            # queue: replaying it again could only conflict with itself.
+            if has_upstream and _in_history(root, op.id, upstream):
+                result.noops.append(op.id)
+                continue
             try:
                 outcome = _apply(root, op)
             except SyncConflict as error:
+                _restore(root, op)
                 _preserve(root, op, str(error), result)
                 continue
             if outcome == "applied":
-                _commit(root, op)
+                index = _stage(root, op)
+                try:
+                    problems = _new_errors(root, before, index)
+                    if problems:
+                        _restore(root, op)
+                        reason = "it would make the vault invalid (" + "; ".join(problems) + ")"
+                        _preserve(root, op, reason, result)
+                        continue
+                    _commit(root, op, index)
+                finally:
+                    index.unlink(missing_ok=True)
                 result.applied.append(op.id)
             else:
                 result.noops.append(op.id)
@@ -692,20 +928,38 @@ def sync(root: Path, *, remote: str = "origin") -> SyncResult:
             _save(root, "pending.json", [])
             if not has_upstream:
                 _git(root, "branch", "-q", "--set-upstream-to", upstream, check=False)
-            break
+            return
         # Someone pushed first: keep the queue, fetch, and replay again.
         result.applied.clear()
         result.noops.clear()
         _save(root, "pending.json", remaining)
-    else:
-        result.state = "retry-exhausted"
-    for path, data in device_state.items():
+    result.state = "retry-exhausted"
+
+
+def _keep_device_state(root: Path, saved: dict[str, bytes], revs: list[str]) -> None:
+    """Put back a per-device file only where Git changed it, never over a newer edit."""
+    for path, data in saved.items():
         target = root / path
-        if not target.is_symlink():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-    result.seconds = time.monotonic() - started
-    return result
+        if target.is_symlink():
+            continue
+        now = target.read_bytes() if target.is_file() else None
+        if now == data:
+            continue
+        if now is not None:
+            # Changed since sync started. Git did it only if the file is now
+            # exactly what one of the checked-out revisions tracks; otherwise
+            # it is an edit made meanwhile, and it stays.
+            written = _git(root, "hash-object", "--", path, check=False).stdout.strip()
+            blobs = {
+                _git(
+                    root, "rev-parse", "-q", "--verify", f"{rev}:{path}", check=False
+                ).stdout.strip()
+                for rev in revs
+            }
+            if written not in blobs - {""}:
+                continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
 
 
 def _preserve(root: Path, op: Op, reason: str, result: SyncResult) -> None:
@@ -739,12 +993,13 @@ def conflicts(root: Path) -> list[dict[str, Any]]:
 
 def mark_resolved(root: Path, op_id: str, keep: str, resolution_op: str | None) -> None:
     """Record how a conflict was settled; the recovery ref stays for audit."""
-    items = _load(root, "conflicts.json")
-    for item in items:
-        if item["op"] == op_id:
-            item["resolved"] = keep
-            item["resolution_op"] = resolution_op
-    _save(root, "conflicts.json", items)
+    with _locked(root):
+        items = _load(root, "conflicts.json")
+        for item in items:
+            if item["op"] == op_id:
+                item["resolved"] = keep
+                item["resolution_op"] = resolution_op
+        _save(root, "conflicts.json", items)
 
 
 def outcomes(root: Path) -> dict[str, str]:

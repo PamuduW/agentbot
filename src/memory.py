@@ -346,10 +346,12 @@ def read_marker(root: Path) -> int:
 # --- Git ---------------------------------------------------------------------
 
 
-def _git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+def _git(root: Path, *args: str, index: Path | None = None) -> subprocess.CompletedProcess[bytes]:
     # GIT_OPTIONAL_LOCKS=0 keeps `git status` from refreshing the index, so a
     # read-only command really writes nothing into the vault.
     env = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+    if index is not None:
+        env["GIT_INDEX_FILE"] = str(index)
     try:
         return subprocess.run(
             ["git", "-C", str(root), *args],
@@ -369,8 +371,8 @@ def _git_text(root: Path, *args: str) -> str | None:
     return result.stdout.decode("utf-8", "replace").strip() or None
 
 
-def _listed_paths(root: Path) -> list[str]:
-    result = _git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+def _listed_paths(root: Path, index: Path | None = None) -> list[str]:
+    result = _git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", index=index)
     if result.returncode != 0:
         raise MemoryVaultError("git could not list the vault's files")
     paths = {item for item in result.stdout.decode("utf-8", "surrogateescape").split("\0") if item}
@@ -851,13 +853,19 @@ def scan_secrets(relative: str, text: str) -> list[Finding]:
 # --- Validation --------------------------------------------------------------
 
 
-def validate(root: Path, *, acknowledge: Iterable[str] = ()) -> ValidationReport:
-    """Validate the complete vault tree against the schema its marker names."""
+def validate(
+    root: Path, *, acknowledge: Iterable[str] = (), index: Path | None = None
+) -> ValidationReport:
+    """Validate the complete vault tree against the schema its marker names.
+
+    ``index`` lists files from another Git index: the sync engine stages a
+    change there and validates the vault as it would be after the commit.
+    """
     schema = read_marker(root)
     report = ValidationReport(
         root=root, schema=schema, acknowledged=frozenset(acknowledge) & WARNING_RULES
     )
-    listed = _listed_paths(root)
+    listed = _listed_paths(root, index)
     for relative in listed:
         if relative.startswith(IGNORED_PREFIXES):
             continue

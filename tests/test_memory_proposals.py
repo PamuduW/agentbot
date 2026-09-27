@@ -116,14 +116,19 @@ class ApproveRejectTests(ProposalCase):
         self.assertEqual([], memory.validate(self.a).findings)
 
     def test_approval_refuses_project_targets_and_existing_destinations(self) -> None:
-        cross = proposals.propose(
-            self.a, kind="lesson", title="Cross tier", body="x", supersedes=[uid(6)]
-        )
-        with self.assertRaises(MemoryVaultError):
-            proposals.approve(self.a, cross["path"])
+        # A proposal to supersede a project record is refused when it is made:
+        # the vault would hold a cross-tier supersession.
+        with self.assertRaises(MemoryVaultError) as raised:
+            proposals.propose(
+                self.a, kind="lesson", title="Cross tier", body="x", supersedes=[uid(6)]
+            )
+        self.assertIn("MEMORY_SUPERSEDES_TIER", str(raised.exception))
         clash = proposals.propose(self.a, kind="lesson", title="Clash", body="x")
         name = clash["path"].rsplit("/", 1)[-1]
-        self.vault_write(f"core/lessons/{name}", (self.a / clash["path"]).read_bytes())
+        taken = (
+            (self.a / clash["path"]).read_bytes().replace(clash["id"].encode(), uid(99).encode())
+        )
+        self.vault_write(f"core/lessons/{name}", taken)
         with self.assertRaises(MemoryVaultError):
             proposals.approve(self.a, clash["path"])
 

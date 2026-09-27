@@ -16,7 +16,7 @@ from src.memory import MemoryVaultError
 from tests.support import run_cli_main
 from tests.test_memory import old_schema_vault, uid
 from tests.test_memory_project_writes import LESSON, WritesTestCase
-from tests.test_memory_sync import git
+from tests.test_memory_sync import git, record
 
 
 class AutosyncTestCase(WritesTestCase):
@@ -221,6 +221,10 @@ class HookReentryTests(AutosyncTestCase):
         self.assertIn("AGENTBOT_MEMORY_NO_SYNC=1", memory_hook.render_hook(self.tmp))
 
 
+NOTE = "projects/alpha/notes/n.md"
+PREFERENCES = "core/user/preferences.md"
+
+
 class ReapplyKindsTests(AutosyncTestCase):
     def lose(self, make_a, make_b) -> dict:
         make_a()
@@ -232,15 +236,15 @@ class ReapplyKindsTests(AutosyncTestCase):
 
     def test_keep_mine_for_a_single_put(self) -> None:
         conflict = self.lose(
-            lambda: sync.put_project(self.a, "alpha", "notes/n.md", b"---\nA\n---\n"),
-            lambda: sync.put_project(self.b, "alpha", "notes/n.md", b"---\nB\n---\n"),
+            lambda: sync.put_project(self.a, "alpha", "notes/n.md", record(NOTE, "A")),
+            lambda: sync.put_project(self.b, "alpha", "notes/n.md", record(NOTE, "B")),
         )
         autosync.resolve(self.b, self.config_b, conflict["op"], "mine")
-        self.assertEqual(b"---\nB\n---\n", (self.b / "projects/alpha/notes/n.md").read_bytes())
+        self.assertEqual(record(NOTE, "B"), (self.b / NOTE).read_bytes())
 
     def test_keep_mine_for_a_delete(self) -> None:
         conflict = self.lose(
-            lambda: sync.put_project(self.a, "alpha", "notes/n.md", b"---\nA\n---\n"),
+            lambda: sync.put_project(self.a, "alpha", "notes/n.md", record(NOTE, "A")),
             lambda: sync.delete_project(self.b, "alpha", "notes/n.md"),
         )
         autosync.resolve(self.b, self.config_b, conflict["op"], "mine")
@@ -248,12 +252,12 @@ class ReapplyKindsTests(AutosyncTestCase):
 
     def test_keep_mine_for_a_core_approval_is_the_humans_call(self) -> None:
         conflict = self.lose(
-            lambda: sync.approve_core(self.a, "user/preferences.md", b"---\nA\n---\n"),
-            lambda: sync.approve_core(self.b, "user/preferences.md", b"---\nB\n---\n"),
+            lambda: sync.approve_core(self.a, "user/preferences.md", record(PREFERENCES, "A")),
+            lambda: sync.approve_core(self.b, "user/preferences.md", record(PREFERENCES, "B")),
         )
         self.assertEqual("human", conflict["resolver"])
         autosync.resolve(self.b, self.config_b, conflict["op"], "mine")
-        self.assertEqual(b"---\nB\n---\n", (self.b / "core/user/preferences.md").read_bytes())
+        self.assertEqual(record(PREFERENCES, "B"), (self.b / PREFERENCES).read_bytes())
 
 
 class SyncCliTests(AutosyncTestCase):
