@@ -706,11 +706,27 @@ def _handle_memory_setup(context: CommandContext) -> int:
         result = setup.remove(config_home, apply=args.confirm)
     else:
         result = setup.show(config_home)
+    if result.state == "configured" and result.vault.get("path"):
+        result.notes.insert(0, _install_vault_hooks(context, Path(result.vault["path"])))
     if getattr(args, "memory_json", False):
         print(json.dumps(setup.result_json(result), indent=2))
     else:
         print_memory_setup(result)
     return 0
+
+
+def _install_vault_hooks(context: CommandContext, vault: Path) -> str:
+    """Setup installs the vault's commit and push checks too: one step, not two."""
+    from . import memory, memory_hook
+
+    retry = "install them with: agentbot memory hook install --yes"
+    try:
+        state = memory_hook.install(vault, context.paths.root)
+    except memory.MemoryVaultError as error:
+        return f"Vault checks not installed ({error}); {retry}"
+    if state.problem or "unowned" in state.states.values():
+        return f"Vault checks not installed: {state.problem or 'a hook exists that Agentbot does not own'}; {retry}"
+    return "Installed the vault's pre-commit and pre-push checks."
 
 
 def _handle_memory_project(context: CommandContext) -> int:
@@ -832,7 +848,8 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
             match = [item for item in items if item["path"] == args.draft_path]
             if not match:
                 raise ValueError(f"no open proposal at {args.draft_path}")
-            result = {"state": "open", **match[0]}
+            # The text too: reading it is how the user decides to approve.
+            result = {"state": "open", **match[0], "body": proposals.body(root, args.draft_path)}
         else:
             result = {"state": "queue", "open": len(items), "proposals": items}
     else:

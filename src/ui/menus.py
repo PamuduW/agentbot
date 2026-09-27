@@ -104,16 +104,31 @@ MENUS: dict[str, Menu] = {
         labels=(
             "Vault status",
             "Validate vault",
+            "Review proposals",
+            "Sync conflicts",
             "Use an existing checkout",
             "Clone a vault",
             "Create a new vault",
             "Forget this machine's vault",
         ),
-        keys=("status", "validate", "setup-path", "setup-clone", "setup-new", "remove"),
+        keys=(
+            "status",
+            "validate",
+            "review",
+            "conflicts",
+            "setup-path",
+            "setup-clone",
+            "setup-new",
+            "remove",
+        ),
         descs=(
             "Show the configured vault, its schema, Git state, and validation totals.\nRead-only.",
             "Check every vault file against its schema and the secret scanner.\n"
             "Read-only; findings name paths and rules, never note text.",
+            "Read the core memory proposals agents made, then approve or reject one.\n"
+            "Approval asks you to type its short code; agents cannot approve.",
+            "Writes another machine changed first, kept for you to settle.\n"
+            "Show both versions, then keep yours or theirs.",
             "Point Agentbot at a vault checkout already on this machine.\n"
             "Previews, then asks before saving the private config.",
             "Clone your existing vault from its Git URL into a new folder.\n"

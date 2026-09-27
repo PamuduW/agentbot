@@ -409,6 +409,22 @@ test_memory_menu_previews_then_applies_only_when_confirmed() (
 	[[ "$(<"$calls")" == $'backend:memory setup --path /home/u/agent-memory\nbackend:memory setup --path /home/u/agent-memory --yes\nbackend:memory setup --path /home/u/agent-memory' ]]
 )
 
+test_memory_menu_reviews_proposals_and_settles_conflicts() (
+	local calls="$TEST_ROOT/memory-review.calls"
+	: >"$calls"
+	local -a answers=('proposals/core/lessons/p.md' 'a' 'op-1' 't' '')
+	local answer_index=0
+	read_tty_line() {
+		printf -v "$1" '%s' "${answers[$answer_index]}"
+		answer_index=$((answer_index + 1))
+	}
+	agentbot_run_backend() { printf 'backend:%s\n' "$*" >>"$calls"; }
+	agentbot_menu_memory_dispatch review >/dev/null
+	agentbot_menu_memory_dispatch conflicts >/dev/null
+	agentbot_menu_memory_dispatch review >/dev/null
+	[[ "$(<"$calls")" == $'backend:memory review\nbackend:memory review proposals/core/lessons/p.md\nbackend:memory approve proposals/core/lessons/p.md --yes\nbackend:memory conflict list\nbackend:memory conflict show op-1\nbackend:memory conflict resolve op-1 --keep theirs\nbackend:memory review' ]]
+)
+
 test_memory_menu_clone_and_new_collect_their_inputs() (
 	local calls="$TEST_ROOT/memory-clone.calls"
 	: >"$calls"
@@ -628,6 +644,7 @@ check 'the saved token can be checked against GitHub from the menu' test_saved_t
 check 'Workspaces routes list preview and confirmed apply' test_workspaces_routes_read_preview_and_apply
 check 'Memory setup previews and applies only when confirmed' test_memory_menu_previews_then_applies_only_when_confirmed
 check 'Memory clone and new collect their inputs' test_memory_menu_clone_and_new_collect_their_inputs
+check 'memory menu reviews proposals and settles conflicts' test_memory_menu_reviews_proposals_and_settles_conflicts
 check 'Memory status without a vault is not a failure' test_memory_status_without_a_vault_is_not_a_failure
 check 'declined workspace apply performs no backend write' test_declined_workspace_apply_is_non_destructive
 check 'workspace removal prompts use the shared TTY adapter' test_workspace_removal_prompt_uses_the_shared_tty_adapter

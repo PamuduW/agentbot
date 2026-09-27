@@ -52,11 +52,43 @@ agentbot_menu_memory_setup() {
 	return "$rc"
 }
 
+agentbot_menu_memory_review() {
+	local path='' action='' rc=0
+	agentbot_run_backend memory review || return $?
+	agentbot_menu_memory_ask path 'Proposal path to read (Enter to go back): ' || return 0
+	[[ -n "$path" ]] || return 0
+	agentbot_run_backend memory review "$path" || return $?
+	agentbot_menu_memory_ask action 'a approve, r reject, Enter to leave it: ' || return 0
+	case "$action" in
+	a | A) agentbot_run_backend memory approve "$path" --yes || rc=$? ;;
+	r | R) agentbot_run_backend memory reject "$path" --yes || rc=$? ;;
+	*) printf '  %sLeft for later.%s\n' "$C_DIM" "$C_RESET" ;;
+	esac
+	return "$rc"
+}
+
+agentbot_menu_memory_conflicts() {
+	local op='' keep='' rc=0
+	agentbot_run_backend memory conflict list || return $?
+	agentbot_menu_memory_ask op 'Conflict to open (Enter to go back): ' || return 0
+	[[ -n "$op" ]] || return 0
+	agentbot_run_backend memory conflict show "$op" || return $?
+	agentbot_menu_memory_ask keep 'm keep mine, t keep theirs, Enter to leave it: ' || return 0
+	case "$keep" in
+	m | M) agentbot_run_backend memory conflict resolve "$op" --keep mine || rc=$? ;;
+	t | T) agentbot_run_backend memory conflict resolve "$op" --keep theirs || rc=$? ;;
+	*) printf '  %sLeft for later.%s\n' "$C_DIM" "$C_RESET" ;;
+	esac
+	return "$rc"
+}
+
 agentbot_menu_memory_dispatch() {
 	local choice="$1" rc=0
 	case "$choice" in
 	status) agentbot_run_backend memory status || rc=$? ;;
 	validate) agentbot_run_backend memory validate || rc=$? ;;
+	review) agentbot_menu_memory_review || rc=$? ;;
+	conflicts) agentbot_menu_memory_conflicts || rc=$? ;;
 	setup-path) agentbot_menu_memory_setup path || rc=$? ;;
 	setup-clone) agentbot_menu_memory_setup clone || rc=$? ;;
 	setup-new) agentbot_menu_memory_setup new || rc=$? ;;

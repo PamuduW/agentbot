@@ -1134,7 +1134,7 @@ def print_memory_result(result, *, title: str) -> None:
     state = result.get("state", "")
     rows = [("Result", state, "preview" if state == "preview" else "info")]
     for key, value in result.items():
-        if key == "state":
+        if key in {"state", "body"}:
             continue
         if key == "proposals":
             rows += [
@@ -1147,6 +1147,10 @@ def print_memory_result(result, *, title: str) -> None:
             (key.replace("_", " ").capitalize(), text, "warn" if key == "warning" else "info")
         )
     ok, check, miss = print_table(rows, wrap_details=True)
+    if result.get("body"):
+        print()
+        for line in str(result["body"]).splitlines():
+            print(f"  {line}")
     if state == "preview":
         print()
         print_note("Preview only. Rerun with --yes to apply.")

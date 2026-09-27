@@ -257,10 +257,8 @@ class SetupResult:
     notes: list[str] = field(default_factory=list)
 
 
-NEXT_STEPS = (
-    "Install the vault's commit and push checks with: agentbot memory hook install --yes",
-    "Take a first backup with: agentbot memory backup --destination PATH --yes",
-)
+# The vault's commit and push checks are installed by the setup command itself.
+NEXT_STEPS = ("Take a first backup with: agentbot memory backup --destination PATH --yes",)
 
 
 def setup_path(path: Path, config_home: Path, *, apply: bool = False) -> SetupResult:

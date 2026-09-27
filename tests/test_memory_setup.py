@@ -239,6 +239,17 @@ class SetupCliTests(SetupTestCase):
         rc, stdout = self._cli("memory", "setup", "--json")
         self.assertEqual("shown", json.loads(stdout)["state"])
 
+    def test_cli_setup_installs_the_vault_checks_too(self) -> None:
+        """One step, not two: the hooks used to need a separate command."""
+        from src import memory_hook
+
+        rc, stdout = self._cli("memory", "setup", "--path", str(self.vault.root), "--yes")
+        self.assertEqual(0, rc, stdout)
+        self.assertIn("Installed the vault's pre-commit and pre-push checks", stdout)
+        hooks = memory_hook.hooks_directory(self.vault.root)
+        for name in memory_hook.HOOKS:
+            self.assertIn(memory_hook.MARKER, (hooks / name).read_text())
+
     def test_cli_reports_a_mismatched_vault_as_broken(self) -> None:
         self._cli("memory", "setup", "--path", str(self.vault.root), "--yes")
         subprocess.run(["rm", "-rf", str(self.vault.root)], check=True)

@@ -183,6 +183,14 @@ def _proposal(vault: Path, relative: str) -> tuple[bytes, dict[str, Any]]:
     return data, _front_matter(data.decode("utf-8"))
 
 
+def body(vault: Path, relative: str) -> str:
+    """A proposal's text below its front matter, for the user reviewing it."""
+    data, _ = _proposal(vault, relative)
+    lines = data.decode("utf-8").split("\n")
+    end = next(i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r") == "---")
+    return "\n".join(lines[end + 1 :]).strip("\n")
+
+
 def _set(text: str, values: dict[str, str]) -> str:
     lines = text.split("\n")
     end = next(i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r") == "---")
