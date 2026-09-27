@@ -42,7 +42,7 @@ class DeviceStateTests(AutosyncTestCase):
         )
         ignore = (self.a / ".gitignore").read_text()
         self.assertIn(sync.DEVICE_STATE_BLOCK, ignore)
-        self.assertIn("drafts/*", ignore)  # the existing rules stay
+        self.assertIn("exports/*", ignore)  # the existing rules stay
         self.assertEqual("", git(self.a, "status", "--porcelain"))
         self.assertIn(
             "memory(meta): set up Obsidian views and settings",

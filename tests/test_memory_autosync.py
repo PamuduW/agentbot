@@ -14,10 +14,9 @@ from src import memory_setup
 from src import memory_sync as sync
 from src.memory import MemoryVaultError
 from tests.support import run_cli_main
-from tests.test_memory import v2_vault
+from tests.test_memory import old_schema_vault, uid
 from tests.test_memory_project_writes import LESSON, WritesTestCase
 from tests.test_memory_sync import git
-from tests.test_memory_v3 import uid
 
 
 class AutosyncTestCase(WritesTestCase):
@@ -96,8 +95,8 @@ class ModeTests(AutosyncTestCase):
         with self.assertRaises(MemoryVaultError):
             autosync.set_settings(self.tmp / "unconfigured", mode="auto")
 
-    def test_older_schemas_keep_their_manual_git_workflow(self) -> None:
-        old = v2_vault(self.tmp / "v2")
+    def test_an_older_schema_is_never_synced(self) -> None:
+        old = old_schema_vault(self.tmp / "v2")
         old.commit()
         self.assertEqual("schema", autosync.after_write(old.root, self.config)["state"])
         self.assertIsNone(autosync.before_read(old.root, self.config))

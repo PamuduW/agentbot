@@ -239,7 +239,7 @@ class Diagnostics:
             root, _ = memory.find_vault(self.paths.root, config_home=self.paths.config_home)
             if root is None:
                 return []
-            schema = memory.read_marker(root)
+            memory.read_marker(root)
             report = memory.validate(root)
         except memory.MemoryVaultError as error:
             return [DoctorIssue("error", "memory", f"memory vault: {error}")]
@@ -254,8 +254,6 @@ class Diagnostics:
                     f"{errors[0].rule}; run agentbot memory validate",
                 )
             )
-        if schema != 3:
-            return issues
         if memory_sync.manual_changes(root):
             issues.append(
                 DoctorIssue(

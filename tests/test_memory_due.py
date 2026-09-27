@@ -12,9 +12,10 @@ from unittest.mock import patch
 
 from src import memory
 from tests.support import run_cli_main
-from tests.test_memory import _tree_digest, note, rules, v1_vault, v2, v2_vault
+from tests.test_memory import _tree_digest, note, old_schema_vault, rules, v3, v3_vault
 
 IDS = [f"{index:08x}-0000-4000-8000-000000000000" for index in range(1, 20)]
+DATE = "2026-09-23"
 
 
 class DueTestCase(unittest.TestCase):
@@ -22,11 +23,25 @@ class DueTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        self.vault = v2_vault(self.tmp / "v")
+        self.vault = v3_vault(self.tmp / "v")
+        self.vault.write(
+            "core/lessons/2026-09-23-new.md",
+            note(
+                v3(
+                    "lesson",
+                    "9c2e4a6b-8d0f-4e1a-b3c5-d7e9f1a3b5c7",
+                    "global",
+                    date=DATE,
+                    review_after="2026-09-24",
+                    valid_until="2026-09-25",
+                )
+            ),
+        )
 
     def write(self, name: str, record_id: str, **fields: object) -> None:
         self.vault.write(
-            f"decisions/{name}.md", note(v2("decision", record_id, "global", **fields))
+            f"core/decisions/{name}.md",
+            note(v3("decision", record_id, "global", date=DATE, **fields)),
         )
 
 
@@ -67,23 +82,37 @@ class DueQueueTests(DueTestCase):
         self.write("f", IDS[5], status="retired", review_after="2026-09-24")
         self.write("g", IDS[6], status="superseded", valid_until="2026-09-24")
         self.vault.write(
-            "drafts/h.md",
-            note(v2("decision", IDS[7], "global", status="draft", review_after="2026-09-24")),
+            "proposals/core/decisions/h.md",
+            note(
+                v3(
+                    "decision",
+                    IDS[7],
+                    "global",
+                    date=DATE,
+                    status="draft",
+                    review_after="2026-09-24",
+                )
+            ),
         )
         before = _tree_digest(self.vault.root)
         items, total, schema = memory.due_queue(self.vault.root, today=date(2026, 9, 30))
         self.assertEqual(before, _tree_digest(self.vault.root))
-        # The v2 fixture's own lesson is due from 2026-09-24 and expired after 09-25.
-        self.assertEqual((2, 4), (schema, total))
+        # The fixture's own lesson is due from 2026-09-24 and expired after 09-25.
+        self.assertEqual((3, 4), (schema, total))
         self.assertEqual(
-            ["decisions/b.md", "lessons/2026-09-23-new.md", "decisions/d.md", "decisions/a.md"],
+            [
+                "core/decisions/b.md",
+                "core/lessons/2026-09-23-new.md",
+                "core/decisions/d.md",
+                "core/decisions/a.md",
+            ],
             [item.record.path for item in items],
         )
         by_path = {item.record.path: item for item in items}
-        self.assertTrue(by_path["decisions/d.md"].expired)
-        self.assertFalse(by_path["decisions/d.md"].due)
+        self.assertTrue(by_path["core/decisions/d.md"].expired)
+        self.assertFalse(by_path["core/decisions/d.md"].due)
         # An overdue record is still accepted, on disk and to the validator.
-        self.assertIn("status: accepted", (self.vault.root / "decisions/b.md").read_text())
+        self.assertIn("status: accepted", (self.vault.root / "core/decisions/b.md").read_text())
         self.assertEqual([], memory.validate(self.vault.root).findings)
 
     def test_queue_is_bounded(self) -> None:
@@ -103,13 +132,14 @@ class DueQueueTests(DueTestCase):
         self.write("text", IDS[3], review_after="soon")
         found = rules(memory.validate(self.vault.root))
         for name in ("bad", "order", "early", "text"):
-            self.assertIn("MEMORY_DATE", found[f"decisions/{name}.md"])
+            self.assertIn("MEMORY_DATE", found[f"core/decisions/{name}.md"])
         _, total, _ = memory.due_queue(self.vault.root, today=date(2030, 1, 1))
         self.assertEqual(1, total)  # only the fixture's own expired lesson
 
-    def test_a_v1_vault_has_an_empty_queue(self) -> None:
-        vault = v1_vault(self.tmp / "old")
-        self.assertEqual(([], 0, 1), memory.due_queue(vault.root, today=date(2030, 1, 1)))
+    def test_an_older_schema_is_refused(self) -> None:
+        vault = old_schema_vault(self.tmp / "old")
+        with self.assertRaises(memory.MemoryVaultError):
+            memory.due_queue(vault.root, today=date(2030, 1, 1))
 
 
 class DueCliTests(DueTestCase):
@@ -131,9 +161,12 @@ class DueCliTests(DueTestCase):
         self.assertEqual(0, rc)
         payload = json.loads(stdout)
         self.assertEqual("2026-09-30", payload["today"])
-        # The v2 fixture's lesson is valid until 2026-09-25, so it has expired.
+        # The fixture's lesson is valid until 2026-09-25, so it has expired.
         self.assertEqual(
-            {("decisions/a.md", True, False), ("lessons/2026-09-23-new.md", True, True)},
+            {
+                ("core/decisions/a.md", True, False),
+                ("core/lessons/2026-09-23-new.md", True, True),
+            },
             {(r["path"], r["due"], r["expired"]) for r in payload["records"]},
         )
         rc, stdout = self._cli("memory", "due")

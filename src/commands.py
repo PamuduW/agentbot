@@ -312,7 +312,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "memory",
-        "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|reject|due|hook|backup|restore|migrate",
+        "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|reject|due|hook|backup|restore",
         "mutating",
         "The private memory vault: setup, sync, project memory, core proposals, and recall.",
         (
@@ -332,7 +332,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "project [ACTION]",
                 "status (default) shows how this repo resolves; add --kind K --title T, "
                 "edit PATH, context, move PATH NEW, delete PATH, retire PATH, forget --yes write this "
-                "project's memory without approval (v3 vaults; bodies via --stdin or "
+                "project's memory without approval (bodies via --stdin or "
                 "--from-file); register, attach PROJECT, link URL PROJECT --yes manage identity; "
                 "maintain reports what the project needs; promote PATH proposes it for core.",
                 "status",
@@ -377,13 +377,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "preview",
             ),
             option(
-                "migrate ACTION",
-                "plan [--write PATH], check --mapping PATH, apply --mapping PATH --snapshot "
-                "PATH [--yes], rollback --snapshot PATH [--yes]: v1 to v2 through a reviewed "
-                "mapping.",
-                "preview",
-            ),
-            option(
                 "--project SLUG",
                 "Add this project's records. Without it, only global and shared records.",
                 "none",
@@ -395,26 +388,23 @@ COMMANDS: tuple[CommandSpec, ...] = (
             ),
             option(
                 "propose",
-                "Write one Git-ignored v2 draft from --from-file PATH or --stdin; needs "
-                "--type, --title, --scope, and optional --project/--tag.",
-                "schema 2 vault",
+                "Propose one core record under proposals/core/ from --from-file PATH or "
+                "--stdin; needs --type, --title, --scope, and optional --project, --tag, "
+                "--supersedes ID.",
+                "commits and syncs",
             ),
+            option("review [PATH]", "List open proposals, or show one with its text.", "read-only"),
             option(
-                "review [PATH]", "List pending drafts, or review one without its body.", "read-only"
-            ),
-            option(
-                "reject PATH --yes",
-                "Schema 3, human-only: remove a tracked core proposal without installing it. "
-                "--yes needs a terminal and the typed short code.",
+                "approve PATH [--yes]",
+                "Preview, then with --yes move one proposal into core; a superseding proposal "
+                "marks its targets superseded. Human-only: --yes needs a terminal and the "
+                "typed short code.",
                 "preview",
             ),
             option(
-                "approve PATH [--yes]",
-                "Preview, then with --yes install one draft as an accepted record without "
-                "replacing any file, under a bounded lock. A superseding draft also marks its "
-                "targets superseded in the same transition; --allow-cross-scope permits a "
-                "reviewed cross-type or cross-scope replacement. Human-only: --yes needs a "
-                "terminal and the typed short code.",
+                "reject PATH [--yes]",
+                "Preview, then with --yes remove a proposal without installing it. Human-only, "
+                "like approve.",
                 "preview",
             ),
             option(
@@ -430,14 +420,14 @@ COMMANDS: tuple[CommandSpec, ...] = (
             option("--json", "Emit machine-readable output.", "off"),
             option(
                 "--acknowledge-warning",
-                "Accept one warning rule ID for this run; blocking rules cannot be acknowledged.",
+                "validate only: accept one warning rule ID for this run; blocking rules cannot "
+                "be acknowledged.",
                 "none",
             ),
         ),
-        "propose writes a new ignored draft; approve --yes installs one record and removes "
-        "its draft; hook --yes writes only Agentbot-marked hooks. On schema 2 nothing is "
-        "staged, committed, or pushed; on schema 3 each write is committed and synced. "
-        "backup and restore --yes write only their destination. "
+        "Every vault write (project writes, propose, approve, reject, register) is "
+        "committed and synced; hook --yes writes only Agentbot-marked hooks; backup and "
+        "restore --yes write only their destination. "
         "Exit 2 means no vault is configured.",
         ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
         ("status", "doctor"),
@@ -474,10 +464,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory hook",
             "memory backup",
             "memory restore",
-            "memory migrate plan",
-            "memory migrate check",
-            "memory migrate apply",
-            "memory migrate rollback",
         ),
     ),
     CommandSpec(

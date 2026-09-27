@@ -64,8 +64,7 @@ def _enabled() -> bool:
 
 
 def _project(vault: Path, cwd: Path, config_home: Path) -> str:
-    if read_marker(vault) != 3:
-        raise MemoryVaultError("project writes need a schema 3 vault; migrate it first")
+    read_marker(vault)
     if not _enabled():
         raise MemoryVaultError(f"project writes are turned off ({FLAG}); reads still work")
     return str(memory_projects.require_project(vault, cwd, config_home)["folder"])

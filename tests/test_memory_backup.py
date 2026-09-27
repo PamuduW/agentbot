@@ -14,7 +14,7 @@ from unittest.mock import patch
 from src import memory
 from src import memory_backup as backups
 from tests.support import run_cli_main
-from tests.test_memory import FAKE_GITHUB_TOKEN, _tree_digest, note, v1, v1_vault, v2_vault
+from tests.test_memory import FAKE_GITHUB_TOKEN, ID_A, _tree_digest, note, v3, v3_vault
 
 
 class BackupTestCase(unittest.TestCase):
@@ -22,7 +22,7 @@ class BackupTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        self.vault = v2_vault(self.tmp / "v")
+        self.vault = v3_vault(self.tmp / "v")
         self.vault.commit()
         self.dest = self.tmp / "backups" / "vault"
 
@@ -59,35 +59,35 @@ class BackupTests(BackupTestCase):
         self.assertEqual(0o700, stat.S_IMODE(os.stat(target).st_mode))
         self.assertEqual("", self.git(target, "remote"))
         self.assertEqual(manifest["head"], self.git(target, "rev-parse", "HEAD"))
-        self.assertEqual(2, memory.read_marker(target))
+        self.assertEqual(3, memory.read_marker(target))
         self.assertEqual([], memory.validate(target).findings)
-        for relative in ("preferences.md", "lessons/2026-09-23-new.md"):
+        for relative in ("core/user/preferences.md", "core/lessons/2026-09-27-core.md"):
             self.assertEqual(
                 (self.vault.root / relative).read_bytes(), (target / relative).read_bytes()
             )
         self.assertEqual(before, _tree_digest(self.vault.root))
 
     def test_a_dirty_tree_warns_and_is_not_included(self) -> None:
-        self.vault.write("lessons/uncommitted.md", note(v1("lesson")))
+        self.vault.write("core/lessons/uncommitted.md", note(v3("lesson", ID_A, "global")))
         result = backups.backup(self.vault.root, self.dest, apply=True)
         self.assertEqual("completed-with-warnings", result.state)
         self.assertEqual(1, result.changed_paths)
         self.assertIn("1 uncommitted path(s) are not included", result.notes)
         target = self.tmp / "restored"
         backups.restore(self.dest, target, apply=True)
-        self.assertFalse((target / "lessons/uncommitted.md").exists())
+        self.assertFalse((target / "core/lessons/uncommitted.md").exists())
 
     def test_refresh_replaces_the_snapshot_only_after_verification(self) -> None:
         backups.backup(self.vault.root, self.dest, apply=True)
         first = backups.read_manifest(self.dest)["head"]
-        self.vault.write("lessons/second.md", "---\n")  # committed but invalid
+        self.vault.write("core/lessons/second.md", "---\n")  # committed but invalid
         self.vault.commit()
         second = backups.backup(self.vault.root, self.dest, apply=True)
         self.assertEqual("completed-with-warnings", second.state)
         self.assertGreater(second.findings, 0)
         self.assertNotEqual(first, backups.read_manifest(self.dest)["head"])
         with patch.object(backups, "_verify", side_effect=memory.MemoryVaultError("fsck failed")):
-            self.vault.write("lessons/third.md", "x\n")
+            self.vault.write("core/lessons/third.md", "x\n")
             self.vault.commit()
             with self.assertRaises(memory.MemoryVaultError):
                 backups.backup(self.vault.root, self.dest, apply=True)
@@ -97,7 +97,8 @@ class BackupTests(BackupTestCase):
 
     def test_a_backup_of_another_vault_is_refused(self) -> None:
         backups.backup(self.vault.root, self.dest, apply=True)
-        other = v1_vault(self.tmp / "other")
+        other = v3_vault(self.tmp / "other")
+        other.write("templates/other.md", "a different repository\n")
         other.commit()
         with self.assertRaises(memory.MemoryVaultError) as raised:
             backups.backup(other.root, self.dest, apply=True)
@@ -125,7 +126,9 @@ class BackupTests(BackupTestCase):
             backups.backup(self.vault.root, self.dest, apply=True, assurance="verified")
 
     def test_committed_secrets_are_reported_by_the_trial_restore(self) -> None:
-        self.vault.write("lessons/leak.md", note(v1("lesson"), body=FAKE_GITHUB_TOKEN))
+        self.vault.write(
+            "core/lessons/leak.md", note(v3("lesson", ID_A, "global"), body=FAKE_GITHUB_TOKEN)
+        )
         self.vault.commit()
         result = backups.backup(self.vault.root, self.dest, apply=True)
         self.assertEqual("completed-with-warnings", result.state)

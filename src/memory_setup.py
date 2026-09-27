@@ -23,12 +23,13 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .atomic_io import write_text_atomic
-from .memory import MARKER, MemoryVaultError, read_marker
+from .memory import MARKER, REGISTRY, SUPPORTED_SCHEMA, MemoryVaultError, read_marker
 
 CONFIG_NAME = "memory.json"
 CONFIG_VERSION = 1
@@ -36,7 +37,13 @@ CONFIG_VERSION = 1
 VOLATILE_ROOTS: tuple[str, ...] = ("/tmp", "/var/tmp")
 WSL_DRIVE = re.compile(r"^/mnt/[a-z](/|$)")
 SCP_URL = re.compile(r"^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s]+$")
-NEW_VAULT_GITIGNORE = "drafts/*\n!drafts/README.md\nexports/*\n!exports/README.md\n"
+NEW_VAULT_GITIGNORE = "exports/*\n!exports/README.md\n"
+NEW_VAULT_READMES = {
+    ".meta/README.md": "# Vault metadata\n\nManaged by Agentbot.\n",
+    "core/README.md": "# Core\n\nUser-approved records. Agents propose; the user approves.\n",
+    "projects/README.md": "# Projects\n\nOne folder per registered project. Agents write here.\n",
+    "proposals/README.md": "# Proposals\n\nCore records waiting for the user's review.\n",
+}
 
 
 def config_path(config_home: Path) -> Path:
@@ -311,7 +318,7 @@ def setup_new(
     result = SetupResult(state="preview", mode="new", vault={"path": str(target), "remote": origin})
     if not apply:
         result.notes.append(
-            f"Will create an empty schema 2 vault at {target}"
+            f"Will create an empty schema {SUPPORTED_SCHEMA} vault at {target}"
             + (f" with origin {origin}; nothing is pushed." if origin else ".")
         )
         return result
@@ -321,9 +328,12 @@ def setup_new(
         os.chmod(target, 0o700)
         if _git("init", "--quiet", "--initial-branch=main", str(target)).returncode != 0:
             raise MemoryVaultError("git init failed")
-        (target / ".meta").mkdir()
-        write_text_atomic(target / MARKER, '{ "agentbot_memory_schema": 2 }\n')
-        write_text_atomic(target / ".meta/README.md", "# Vault metadata\n\nManaged by Agentbot.\n")
+        marker = {"agentbot_memory_schema": SUPPORTED_SCHEMA, "vault_id": str(uuid.uuid4())}
+        for relative, text in NEW_VAULT_READMES.items():
+            (target / relative).parent.mkdir(exist_ok=True)
+            write_text_atomic(target / relative, text)
+        write_text_atomic(target / MARKER, json.dumps(marker, indent=2) + "\n")
+        write_text_atomic(target / REGISTRY, '{ "projects": [] }\n')
         write_text_atomic(target / ".gitignore", NEW_VAULT_GITIGNORE)
         _initial_commit(target)
         if origin:

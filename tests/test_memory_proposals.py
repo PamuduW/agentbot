@@ -14,10 +14,9 @@ from src import memory_retrieve as retrieve
 from src import memory_sync as sync
 from src.memory import MemoryVaultError
 from tests.support import TerminalInput, run_cli_main
-from tests.test_memory import FAKE_GITHUB_TOKEN
+from tests.test_memory import FAKE_GITHUB_TOKEN, uid
 from tests.test_memory_autosync import AutosyncTestCase
 from tests.test_memory_sync import git
-from tests.test_memory_v3 import uid
 
 
 class ProposalCase(AutosyncTestCase):

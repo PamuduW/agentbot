@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from src import memory_projects
 from src.workspace_service import WorkspaceResult
 from tests.support import run_cli_main
-from tests.test_memory import v2_vault
+from tests.test_memory import old_schema_vault
 from tests.test_memory_project_writes import WritesTestCase
 from tests.test_memory_projects import repo
 from tests.test_memory_sync import git
@@ -71,7 +71,7 @@ class BootMemoryTests(WritesTestCase):
     def test_memory_is_skipped_without_failing_the_boot(self) -> None:
         plain = self.tmp / "plain"
         plain.mkdir()
-        old = v2_vault(self.tmp / "old")
+        old = old_schema_vault(self.tmp / "old")
         cases = [
             ("not a repository", plain, (), self.a, "not a Git repository"),
             ("no vault", self.beta, (), None, "no memory vault configured"),

@@ -18,7 +18,9 @@ proposal. The approval commits are pushed like every other write.
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,9 +31,11 @@ from .memory import (
     MAX_FILE_BYTES,
     Finding,
     MemoryVaultError,
+    _decode,
     _destination_v3,
     _front_matter,
     _RecordCheck,
+    _Unsafe,
     read_bounded,
     read_marker,
     record_link,
@@ -51,9 +55,32 @@ KIND_DIRS = {
 USER_FILES = {"preference": "core/user/preferences.md", "profile": "core/user/profile.md"}
 
 
+def read_body(source: Path | None, stdin: Any = None) -> str:
+    """A record or proposal body, bounded and UTF-8, from one named file or stdin."""
+    if source is not None:
+        try:
+            handle = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError as error:
+            raise MemoryVaultError(
+                "--from-file must name a readable regular file, not a symlink"
+            ) from error
+        if not stat.S_ISREG(os.fstat(handle).st_mode):
+            os.close(handle)
+            raise MemoryVaultError("--from-file must name a regular file")
+        with os.fdopen(handle, "rb") as stream:
+            data = stream.read(MAX_FILE_BYTES + 1)
+    else:
+        data = stdin.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise MemoryVaultError(f"the body is larger than {MAX_FILE_BYTES} bytes")
+    try:
+        return _decode(data)
+    except _Unsafe as error:
+        raise MemoryVaultError(f"the body {error.message}") from error
+
+
 def _require_v3(vault: Path) -> None:
-    if read_marker(vault) != 3:
-        raise MemoryVaultError("tracked proposals need a schema 3 vault")
+    read_marker(vault)
 
 
 def _slug(title: str) -> str:

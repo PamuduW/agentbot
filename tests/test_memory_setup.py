@@ -14,7 +14,7 @@ from unittest.mock import patch
 from src import memory
 from src import memory_setup as setup
 from tests.support import run_cli_main
-from tests.test_memory import v1_vault, v2_vault
+from tests.test_memory import v3_vault
 
 IDENTITY_ENV = {
     "GIT_AUTHOR_NAME": "fixture",
@@ -38,7 +38,7 @@ class SetupTestCase(unittest.TestCase):
         env = patch.dict(os.environ, IDENTITY_ENV)
         env.start()
         self.addCleanup(env.stop)
-        self.vault = v2_vault(self.tmp / "vault")
+        self.vault = v3_vault(self.tmp / "vault")
         self.vault.commit()
 
     def resolve(self) -> Path | None:
@@ -64,7 +64,8 @@ class PathSetupTests(SetupTestCase):
     def test_a_replaced_checkout_fails_closed(self) -> None:
         setup.setup_path(self.vault.root, self.config, apply=True)
         subprocess.run(["rm", "-rf", str(self.vault.root)], check=True)
-        other = v1_vault(self.vault.root)
+        other = v3_vault(self.vault.root)
+        other.write("templates/other.md", "a different repository\n")
         other.commit()
         with self.assertRaises(memory.MemoryVaultError) as raised:
             self.resolve()
@@ -81,7 +82,7 @@ class PathSetupTests(SetupTestCase):
         plain = self.tmp / "plain"
         subprocess.run(["git", "init", "-q", str(plain)], check=True)
         for bad in (
-            self.vault.root / "lessons",
+            self.vault.root / "core",
             self.tmp / "link",
             plain,
             self.tmp / "missing",
@@ -93,7 +94,7 @@ class PathSetupTests(SetupTestCase):
 
     def test_environment_overrides_still_win(self) -> None:
         setup.setup_path(self.vault.root, self.config, apply=True)
-        other = v2_vault(self.tmp / "other")
+        other = v3_vault(self.tmp / "other")
         found, _ = memory.find_vault(
             environ={"AGENTBOT_MEMORY_DIR": str(other.root)}, config_home=self.config
         )
@@ -183,7 +184,7 @@ class CloneAndNewTests(SetupTestCase):
         dest = self.tmp / "fresh"
         result = setup.setup_new(dest, self.config, remote=str(bare), apply=True)
         self.assertEqual("configured", result.state)
-        self.assertEqual(2, memory.read_marker(dest))
+        self.assertEqual(3, memory.read_marker(dest))
         self.assertEqual([], memory.validate(dest).findings)
         self.assertEqual(dest.resolve(), self.resolve())
         self.assertEqual(str(bare), result.vault["remote"])
@@ -253,7 +254,9 @@ class SetupCliTests(SetupTestCase):
     def test_cli_reports_a_mismatched_vault_as_broken(self) -> None:
         self._cli("memory", "setup", "--path", str(self.vault.root), "--yes")
         subprocess.run(["rm", "-rf", str(self.vault.root)], check=True)
-        v1_vault(self.vault.root).commit()
+        other = v3_vault(self.vault.root)
+        other.write("templates/other.md", "a different repository\n")
+        other.commit()
         for command in (("status",), ("validate",), ("search", "x"), ("brief",)):
             with self.subTest(command=command):
                 rc, stdout = self._cli("memory", *command, "--json")

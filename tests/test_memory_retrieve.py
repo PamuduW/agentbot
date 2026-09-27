@@ -14,7 +14,7 @@ from unittest.mock import patch
 from src import memory
 from src import memory_retrieve as retrieve
 from tests.support import run_cli_main
-from tests.test_memory import FAKE_GITHUB_TOKEN, VaultFixture, _tree_digest, note, v1_vault, v2
+from tests.test_memory import FAKE_GITHUB_TOKEN, VaultFixture, _tree_digest, note, v3
 
 TODAY = date(2026, 9, 30)
 HOT = "hot"
@@ -33,20 +33,32 @@ class Corpus:
     """150 records: 85% in one hot project, plus global, shared, and three small projects."""
 
     def __init__(self, root: Path) -> None:
-        self.vault = VaultFixture(root, 2)
+        self.vault = VaultFixture(root)
+        registry = []
+        for index, project in enumerate((HOT, *OTHERS), start=500):
+            registry.append(
+                {"id": uid(index), "origin": f"github.com/me/{project}", "folder": project}
+            )
+            self.vault.write(
+                f"projects/{project}/project.md",
+                note(
+                    v3("project", uid(index), "project", title=f"{project} hub", projects=[project])
+                ),
+            )
+        self.vault.write(".meta/projects.json", json.dumps({"projects": registry}))
         self.vault.write(
-            "preferences.md",
+            "core/user/preferences.md",
             note(
-                v2("preference", uid(1), "global", title="Working preferences"), body("global", 1)
+                v3("preference", uid(1), "global", title="Working preferences"), body("global", 1)
             ),
         )
         index = 10
         for n in range(128):  # 128 / 150 is about 85% of writes
             index += 1
             self.vault.write(
-                f"projects/{HOT}/r{n:03}.md",
+                f"projects/{HOT}/notes/r{n:03}.md",
                 note(
-                    v2(
+                    v3(
                         "project",
                         uid(index),
                         "project",
@@ -61,9 +73,9 @@ class Corpus:
             for n in range(4):
                 index += 1
                 self.vault.write(
-                    f"projects/{project}/r{n}.md",
+                    f"projects/{project}/notes/r{n}.md",
                     note(
-                        v2(
+                        v3(
                             "project",
                             uid(index),
                             "project",
@@ -76,26 +88,26 @@ class Corpus:
         for n in range(6):
             index += 1
             self.vault.write(
-                f"lessons/shared-{n}.md",
+                f"core/lessons/shared-{n}.md",
                 note(
-                    v2("lesson", uid(index), "shared", title=f"Shared pattern {n} about deploys"),
+                    v3("lesson", uid(index), "shared", title=f"Shared pattern {n} about deploys"),
                     body("shared", n),
                 ),
             )
         for n in range(3):
             index += 1
             self.vault.write(
-                f"decisions/global-{n}.md",
+                f"core/decisions/global-{n}.md",
                 note(
-                    v2("decision", uid(index), "global", title=f"Global decision {n}"),
+                    v3("decision", uid(index), "global", title=f"Global decision {n}"),
                     body("global", n),
                 ),
             )
         # Lifecycle exclusions.
         self.vault.write(
-            "lessons/expired.md",
+            "core/lessons/expired.md",
             note(
-                v2(
+                v3(
                     "lesson",
                     uid(900),
                     "global",
@@ -106,9 +118,9 @@ class Corpus:
             ),
         )
         self.vault.write(
-            "lessons/superseded.md",
+            "core/lessons/superseded.md",
             note(
-                v2(
+                v3(
                     "lesson",
                     uid(901),
                     "global",
@@ -119,9 +131,9 @@ class Corpus:
             ),
         )
         self.vault.write(
-            "lessons/retired.md",
+            "core/lessons/retired.md",
             note(
-                v2("lesson", uid(902), "global", title="Retired deploy advice", status="retired"),
+                v3("lesson", uid(902), "global", title="Retired deploy advice", status="retired"),
                 body("retired", 0),
             ),
         )
@@ -179,17 +191,19 @@ class ScopeAndLifecycleTests(RetrieveTestCase):
     def test_lifecycle_exclusions_and_history(self) -> None:
         normal = {hit.record.path for hit in self.search("advice", limit=50).hits}
         self.assertFalse(
-            normal & {"lessons/expired.md", "lessons/superseded.md", "lessons/retired.md"}
+            normal
+            & {"core/lessons/expired.md", "core/lessons/superseded.md", "core/lessons/retired.md"}
         )
         history = self.search("advice", history=True, limit=50)
         labels = {hit.record.path: hit.labels for hit in history.hits}
-        self.assertEqual(("expired",), labels["lessons/expired.md"])
-        self.assertEqual(("superseded",), labels["lessons/superseded.md"])
-        self.assertEqual(("retired",), labels["lessons/retired.md"])
+        self.assertEqual(("expired",), labels["core/lessons/expired.md"])
+        self.assertEqual(("superseded",), labels["core/lessons/superseded.md"])
+        self.assertEqual(("retired",), labels["core/lessons/retired.md"])
 
     def test_hot_pool_limit_makes_old_records_cold_not_gone(self) -> None:
         result = self.search("record", project=HOT, limit=100)
-        self.assertEqual(128 - retrieve.HOT_LIMITS["project"], result.excluded.get("cold"))
+        # 128 records plus the project hub.
+        self.assertEqual(129 - retrieve.HOT_LIMITS["project"], result.excluded.get("cold"))
         oldest = min(
             (r for r in memory.validate(self.root).records if HOT in r.projects),
             key=lambda r: (r.date, r.path),
@@ -233,14 +247,16 @@ class ScopeAndLifecycleTests(RetrieveTestCase):
 
 class ShowTests(RetrieveTestCase):
     def test_show_enforces_scope_and_paths(self) -> None:
-        hit, text = retrieve.show(self.root, "decisions/global-0.md", retrieve.Request())
+        hit, text = retrieve.show(self.root, "core/decisions/global-0.md", retrieve.Request())
         self.assertIn("deploy pipeline", text)
-        self.assertEqual("decisions/global-0.md", hit.record.path)
+        self.assertEqual("core/decisions/global-0.md", hit.record.path)
         with self.assertRaises(memory.MemoryVaultError):
-            retrieve.show(self.root, f"projects/{HOT}/r000.md", retrieve.Request())
+            retrieve.show(self.root, f"projects/{HOT}/notes/r000.md", retrieve.Request())
         with self.assertRaises(memory.MemoryVaultError):
-            retrieve.show(self.root, f"projects/{HOT}/r000.md", retrieve.Request(project="alpha"))
-        retrieve.show(self.root, f"projects/{HOT}/r000.md", retrieve.Request(project=HOT))
+            retrieve.show(
+                self.root, f"projects/{HOT}/notes/r000.md", retrieve.Request(project="alpha")
+            )
+        retrieve.show(self.root, f"projects/{HOT}/notes/r000.md", retrieve.Request(project=HOT))
         for bad in (
             "../x.md",
             "drafts/README.md",
@@ -253,7 +269,7 @@ class ShowTests(RetrieveTestCase):
 
     def test_show_is_bounded(self) -> None:
         _, text = retrieve.show(
-            self.root, "decisions/global-0.md", retrieve.Request(), max_bytes=10
+            self.root, "core/decisions/global-0.md", retrieve.Request(), max_bytes=10
         )
         self.assertEqual(10, len(text.encode("utf-8")))
 
@@ -288,7 +304,11 @@ class BriefTests(RetrieveTestCase):
         before = _tree_digest(self.root)
         result = retrieve.brief(self.root, retrieve.Request(), today=TODAY)
         self.assertEqual(before, _tree_digest(self.root))
-        for path in ("lessons/expired.md", "lessons/superseded.md", "lessons/retired.md"):
+        for path in (
+            "core/lessons/expired.md",
+            "core/lessons/superseded.md",
+            "core/lessons/retired.md",
+        ):
             self.assertNotIn(path, result.text)
         self.assertIn("the files are the authority", result.text)
 
@@ -296,47 +316,27 @@ class BriefTests(RetrieveTestCase):
 class UnsafeRecordTests(unittest.TestCase):
     def test_a_record_with_a_secret_or_a_bad_file_is_never_returned(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            vault = VaultFixture(Path(tmp) / "v", 2)
+            vault = VaultFixture(Path(tmp) / "v")
             vault.write(
-                "lessons/leak.md",
+                "core/lessons/leak.md",
                 note(
-                    v2("lesson", uid(1), "global", title="Deploy leak"),
+                    v3("lesson", uid(1), "global", title="Deploy leak"),
                     f"deploy {FAKE_GITHUB_TOKEN}\n",
                 ),
             )
             vault.write(
-                "lessons/ok.md",
-                note(v2("lesson", uid(2), "global", title="Deploy ok"), "deploy fine\n"),
+                "core/lessons/ok.md",
+                note(v3("lesson", uid(2), "global", title="Deploy ok"), "deploy fine\n"),
             )
-            (vault.root / "lessons" / "link.md").symlink_to(vault.root / "lessons" / "ok.md")
+            (vault.root / "core/lessons/link.md").symlink_to(vault.root / "core/lessons/ok.md")
             result = retrieve.search(vault.root, "deploy", retrieve.Request(), today=TODAY)
-            self.assertEqual(["lessons/ok.md"], [hit.record.path for hit in result.hits])
+            self.assertEqual(["core/lessons/ok.md"], [hit.record.path for hit in result.hits])
             self.assertNotIn(FAKE_GITHUB_TOKEN, json.dumps(retrieve.search_json(result)))
             with self.assertRaises(memory.MemoryVaultError):
-                retrieve.show(vault.root, "lessons/leak.md", retrieve.Request())
+                retrieve.show(vault.root, "core/lessons/leak.md", retrieve.Request())
             self.assertNotIn(
                 FAKE_GITHUB_TOKEN, retrieve.brief(vault.root, retrieve.Request(), today=TODAY).text
             )
-
-    def test_v1_records_are_retrievable_without_guessing_projects(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = v1_vault(Path(tmp) / "v")
-            paths = {
-                hit.record.path
-                for hit in retrieve.search(vault.root, "record", retrieve.Request(), limit=50).hits
-            }
-            self.assertIn("lessons/2026-09-23-a-lesson.md", paths)
-            self.assertNotIn("projects/alpha/2026-09-23-a-project.md", paths)
-            self.assertNotIn(
-                "decisions/2026-09-23-a-decision.md", paths
-            )  # v1, one project: project-only
-            scoped = {
-                hit.record.path
-                for hit in retrieve.search(
-                    vault.root, "record", retrieve.Request(project="alpha"), limit=50
-                ).hits
-            }
-            self.assertIn("projects/alpha/2026-09-23-a-project.md", scoped)
 
 
 class RetrieveCliTests(RetrieveTestCase):
@@ -367,7 +367,7 @@ class RetrieveCliTests(RetrieveTestCase):
         self.assertEqual(0, rc)
         self.assertTrue(stdout.startswith("# Memory brief"))
         self.assertLessEqual(retrieve.estimate_tokens(stdout), retrieve.BRIEF_DEFAULT_TOKENS)
-        rc, _ = self._cli("memory", "show", f"projects/{HOT}/r000.md")
+        rc, _ = self._cli("memory", "show", f"projects/{HOT}/notes/r000.md")
         self.assertEqual(1, rc)
         rc, stdout = self._cli("memory", "search", "deploy")
         self.assertEqual(0, rc)

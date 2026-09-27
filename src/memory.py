@@ -2,9 +2,11 @@
 
 The vault is a private Git checkout of plain Markdown records. Its marker,
 ``.meta/vault.json``, names the schema version, and the version selects the
-validator: schema 1 is the live baseline, schema 2 adds stable IDs, explicit
-scope, structured supersession and review/validity dates. A tree that mixes
-the two fails either validator.
+validator. Only schema 3 (ADR-0009) is supported: trust tiers by path (core,
+projects, proposals), stable IDs, explicit scope, structured supersession,
+review and validity dates, and derived Obsidian links. Schema 1 and 2 vaults,
+and the tools that migrated them, were removed on 2026-09-27; such a vault is
+reported as unsupported.
 
 Nothing here writes to the vault. Reads refuse symlinks at every component,
 are bounded, and require UTF-8. Findings carry relative paths, rule IDs and
@@ -36,9 +38,8 @@ from typing import Any, Literal
 import yaml
 
 MARKER = ".meta/vault.json"
-MIGRATION_IN_PROGRESS = ".meta/migration-in-progress"
 MARKER_KEY = "agentbot_memory_schema"
-SUPPORTED_SCHEMAS = (1, 2, 3)
+SUPPORTED_SCHEMA = 3
 
 MAX_FILE_BYTES = 262_144
 MAX_FRONT_MATTER_BYTES = 16_384
@@ -54,26 +55,13 @@ SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-README_EXEMPT = frozenset(
-    {
-        ".meta/README.md",
-        "decisions/README.md",
-        "lessons/README.md",
-        "projects/README.md",
-        "drafts/README.md",
-        "exports/README.md",
-        "templates/README.md",
-    }
-)
 # Tracked, but not records: never validated or retrieved.
 UNVALIDATED_PREFIXES = ("templates/", "exports/")
 # Application state Git carries. Never read.
 IGNORED_PREFIXES = (".obsidian/",)
-NON_MARKDOWN_ALLOWED = frozenset({".gitignore", ".gitattributes", MARKER})
 
-SINGLETON_TYPES = {"active-context.md": "context", "preferences.md": "preference"}
-DIRECTORY_TYPES = {"decisions": "decision", "lessons": "lesson", "projects": "project"}
-DRAFT_TYPES = frozenset({"decision", "lesson", "project"})
+# The record types that may supersede another record.
+SUPERSEDING_TYPES = frozenset({"decision", "lesson", "project"})
 
 # Schema 3 (ADR-0009): the trust tier comes from the path.
 REGISTRY = ".meta/projects.json"
@@ -100,9 +88,10 @@ PROPOSAL_TYPES = frozenset({"decision", "lesson", "preference", "profile"})
 CANONICAL_STATUSES = frozenset({"accepted", "superseded", "retired"})
 SCOPES = frozenset({"global", "shared", "project"})
 
-V1_FIELDS = frozenset({"schema", "type", "title", "date", "status", "projects", "tags"})
-V2_REQUIRED = V1_FIELDS | {"id", "scope"}
-V2_OPTIONAL = frozenset({"supersedes", "review_after", "valid_until"})
+REQUIRED_FIELDS = frozenset(
+    {"schema", "id", "type", "title", "date", "status", "scope", "projects", "tags"}
+)
+OPTIONAL_FIELDS = frozenset({"supersedes", "review_after", "valid_until"})
 # Schema 3 links Obsidian draws, derived by Agentbot from `projects` and
 # `supersedes`: the project hub, and the records a record replaces.
 V3_LINKS = frozenset({"up", "replaces"})
@@ -153,7 +142,7 @@ class Record:
     date: str = ""
     projects: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
-    scope: str | None = None
+    scope: str = ""
     review_after: str | None = None
     valid_until: str | None = None
 
@@ -342,16 +331,14 @@ def read_marker(root: Path) -> int:
     if not isinstance(payload, dict) or MARKER_KEY not in payload:
         raise MemoryVaultError(f'{MARKER}: must hold {{"{MARKER_KEY}": N}}')
     version = payload[MARKER_KEY]
-    if isinstance(version, bool) or version not in SUPPORTED_SCHEMAS:
-        raise MemoryVaultError(f"{MARKER}: unsupported schema version")
-    expected = {MARKER_KEY, "vault_id"} if version == 3 else {MARKER_KEY}
-    if set(payload) != expected:
+    if isinstance(version, bool) or version != SUPPORTED_SCHEMA:
         raise MemoryVaultError(
-            f"{MARKER}: schema {version} needs exactly the keys {sorted(expected)}"
+            f"{MARKER}: schema {version!r} is not supported; Agentbot reads schema 3 vaults"
         )
-    if version == 3 and not (
-        isinstance(payload["vault_id"], str) and UUID4.match(payload["vault_id"])
-    ):
+    expected = {MARKER_KEY, "vault_id"}
+    if set(payload) != expected:
+        raise MemoryVaultError(f"{MARKER}: schema 3 needs exactly the keys {sorted(expected)}")
+    if not (isinstance(payload["vault_id"], str) and UUID4.match(payload["vault_id"])):
         raise MemoryVaultError(f"{MARKER}: vault_id must be a lowercase UUID version 4")
     return int(version)
 
@@ -387,26 +374,7 @@ def _listed_paths(root: Path) -> list[str]:
     if result.returncode != 0:
         raise MemoryVaultError("git could not list the vault's files")
     paths = {item for item in result.stdout.decode("utf-8", "surrogateescape").split("\0") if item}
-    paths.update(_walk_drafts(root))
     return sorted(paths)
-
-
-def _walk_drafts(root: Path) -> Iterable[str]:
-    """Drafts are Git-ignored, so Git does not list them. Walk without following."""
-    # A symlinked drafts/ is itself listed by Git and rejected; never walk it.
-    pending = [] if os.path.islink(root / "drafts") else ["drafts"]
-    while pending:
-        current = pending.pop()
-        try:
-            entries = list(os.scandir(root / current))
-        except (FileNotFoundError, NotADirectoryError):
-            continue
-        for entry in entries:
-            relative = f"{current}/{entry.name}"
-            if entry.is_dir(follow_symlinks=False):
-                pending.append(relative)
-            elif entry.is_symlink() or entry.name.endswith(".md"):
-                yield relative
 
 
 # --- Front matter ------------------------------------------------------------
@@ -472,23 +440,7 @@ class _Destination:
     type: str | None  # None for a draft, whose type is the proposal's own
     draft: bool
     project: str | None = None
-    tier: str | None = None  # schema 3: core, project, or proposal
-
-
-def _destination(relative: str) -> _Destination | None:
-    if relative in SINGLETON_TYPES:
-        return _Destination(SINGLETON_TYPES[relative], draft=False)
-    parts = relative.split("/")
-    if len(parts) < 2:
-        return None
-    if parts[0] == "drafts":
-        return _Destination(None, draft=True)
-    kind = DIRECTORY_TYPES.get(parts[0])
-    if kind is None:
-        return None
-    if kind == "project":
-        return _Destination(kind, draft=False, project=parts[1]) if len(parts) >= 3 else None
-    return _Destination(kind, draft=False)
+    tier: str | None = None  # core, project, or proposal
 
 
 def _destination_v3(relative: str) -> _Destination | None:
@@ -578,10 +530,8 @@ class _RecordCheck:
         self.findings.append(Finding("error", rule, self.path, message))
 
     def run(self, fields: dict[str, Any]) -> Record | None:
-        required = V1_FIELDS if self.schema == 1 else V2_REQUIRED
-        allowed = required | (V2_OPTIONAL if self.schema >= 2 else frozenset())
-        if self.schema == 3:
-            allowed |= V3_LINKS
+        required = REQUIRED_FIELDS
+        allowed = required | OPTIONAL_FIELDS | V3_LINKS
         for key in sorted(set(fields) - allowed):
             self.fail("MEMORY_FIELD", f"unknown key: {key}")
         for key in sorted(required - set(fields)):
@@ -589,8 +539,8 @@ class _RecordCheck:
         if self.findings:
             return None
         kind = self._common(fields)
-        if self.schema >= 2 and kind is not None:
-            self._v2(fields, kind)
+        if kind is not None:
+            self._identity(fields, kind)
         if self.findings or kind is None:
             return None
         return Record(
@@ -604,7 +554,7 @@ class _RecordCheck:
             date=fields["date"],
             projects=tuple(fields["projects"]),
             tags=tuple(fields["tags"]),
-            scope=fields.get("scope"),
+            scope=fields["scope"],
             review_after=fields.get("review_after"),
             valid_until=fields.get("valid_until"),
         )
@@ -615,10 +565,9 @@ class _RecordCheck:
             self.fail("MEMORY_SCHEMA", f"schema must be {self.schema}, as the vault marker says")
         kind = fields["type"]
         if self.destination.draft:
-            allowed_drafts = PROPOSAL_TYPES if self.schema == 3 else DRAFT_TYPES
-            if kind not in allowed_drafts:
+            if kind not in PROPOSAL_TYPES:
                 self.fail(
-                    "MEMORY_TYPE", f"a draft must be one of {', '.join(sorted(allowed_drafts))}"
+                    "MEMORY_TYPE", f"a draft must be one of {', '.join(sorted(PROPOSAL_TYPES))}"
                 )
                 kind = None
         elif kind != self.destination.type:
@@ -653,7 +602,7 @@ class _RecordCheck:
         if problem:
             self.fail("MEMORY_TAGS", f"tags {problem}")
 
-    def _v2(self, fields: dict[str, Any], kind: str) -> None:
+    def _identity(self, fields: dict[str, Any], kind: str) -> None:
         record_id = fields["id"]
         if not isinstance(record_id, str) or not UUID4.match(record_id):
             self.fail("MEMORY_ID", "id must be a lowercase UUID version 4")
@@ -661,8 +610,7 @@ class _RecordCheck:
         if "supersedes" in fields:
             self._supersedes(fields, kind)
         self._dates(fields)
-        if self.schema == 3:
-            self._links(fields)
+        self._links(fields)
 
     def _links(self, fields: dict[str, Any]) -> None:
         if "up" in fields:
@@ -685,24 +633,7 @@ class _RecordCheck:
         if scope not in SCOPES:
             self.fail("MEMORY_SCOPE", "scope must be global, shared, or project")
             return
-        if self.schema == 3:
-            self._scope_v3(fields, kind, scope)
-            return
-        allowed = {
-            "preference": {"global"},
-            "context": {"global", "shared"},
-            "project": {"project"},
-        }.get(kind, SCOPES)
-        if scope not in allowed:
-            self.fail("MEMORY_SCOPE", f"a {kind} record cannot have scope {scope}")
-            return
-        projects = fields["projects"]
-        if not isinstance(projects, list):
-            return
-        if scope == "global" and projects:
-            self.fail("MEMORY_SCOPE", "a global record lists no projects")
-        elif scope == "project" and len(projects) != 1:
-            self.fail("MEMORY_SCOPE", "a project-scoped record lists exactly one project")
+        self._scope_v3(fields, kind, scope)
 
     def _scope_v3(self, fields: dict[str, Any], kind: str, scope: str) -> None:
         """The tier, from the path, decides which scopes a record may have."""
@@ -723,7 +654,7 @@ class _RecordCheck:
 
     def _supersedes(self, fields: dict[str, Any], kind: str) -> None:
         targets = fields["supersedes"]
-        if kind not in DRAFT_TYPES:
+        if kind not in SUPERSEDING_TYPES:
             self.fail("MEMORY_SUPERSEDES", f"a {kind} record cannot supersede")
         elif not self.destination.draft and fields["status"] != "accepted":
             self.fail("MEMORY_SUPERSEDES", "only an accepted record may supersede")
@@ -753,7 +684,7 @@ class _RecordCheck:
             self.fail("MEMORY_DATE", "review_after is later than valid_until")
 
 
-def _cross_record(records: list[Record], schema: int = 2) -> list[Finding]:
+def _cross_record(records: list[Record]) -> list[Finding]:
     """Rules that span records: ID uniqueness and supersession edges."""
     findings: list[Finding] = []
     by_id: dict[str, Record] = {}
@@ -783,7 +714,7 @@ def _cross_record(records: list[Record], schema: int = 2) -> list[Finding]:
                         "supersedes an ID with no canonical record",
                     )
                 )
-            elif schema == 3 and _tier_of(record.path) != _tier_of(target.path):
+            elif _tier_of(record.path) != _tier_of(target.path):
                 findings.append(
                     Finding(
                         "error",
@@ -922,13 +853,6 @@ def scan_secrets(relative: str, text: str) -> list[Finding]:
 
 def validate(root: Path, *, acknowledge: Iterable[str] = ()) -> ValidationReport:
     """Validate the complete vault tree against the schema its marker names."""
-    if os.path.lexists(root / MIGRATION_IN_PROGRESS):
-        # Files may be half converted; no read may trust the tree until the
-        # migration finishes or is rolled back.
-        raise MemoryVaultError(
-            "a schema migration is in progress or was interrupted; "
-            "finish it, or run agentbot memory migrate rollback"
-        )
     schema = read_marker(root)
     report = ValidationReport(
         root=root, schema=schema, acknowledged=frozenset(acknowledge) & WARNING_RULES
@@ -938,10 +862,8 @@ def validate(root: Path, *, acknowledge: Iterable[str] = ()) -> ValidationReport
         if relative.startswith(IGNORED_PREFIXES):
             continue
         report.findings.extend(_check_file(root, relative, schema, report.records))
-    if schema >= 2:
-        report.findings.extend(_cross_record(report.records, schema))
-    if schema == 3:
-        report.findings.extend(_check_projects(root, listed, report.records))
+    report.findings.extend(_cross_record(report.records))
+    report.findings.extend(_check_projects(root, listed, report.records))
     return report
 
 
@@ -1032,8 +954,8 @@ def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -
         return fail("MEMORY_SYMLINK", "symlinks are not allowed in the vault")
     if not stat.S_ISREG(mode):
         return fail("MEMORY_SPECIAL_FILE", "not a regular file")
-    allowed_other = V3_NON_MARKDOWN if schema == 3 else NON_MARKDOWN_ALLOWED
-    if schema == 3 and VIEW_FILE.fullmatch(relative):
+    allowed_other = V3_NON_MARKDOWN
+    if VIEW_FILE.fullmatch(relative):
         # An Obsidian Bases view: YAML, never memory, but still scanned.
         try:
             return scan_secrets(relative, _decode(read_bounded(root, relative, MAX_FILE_BYTES)))
@@ -1052,10 +974,10 @@ def _check_file(root: Path, relative: str, schema: int, records: list[Record]) -
     except FileNotFoundError:
         return []
     findings = [] if relative.startswith("exports/") else scan_secrets(relative, text)
-    exempt = V3_README_EXEMPT if schema == 3 else README_EXEMPT
+    exempt = V3_README_EXEMPT
     if relative in exempt or relative.startswith(UNVALIDATED_PREFIXES):
         return findings
-    destination = _destination_v3(relative) if schema == 3 else _destination(relative)
+    destination = _destination_v3(relative)
     if destination is None:
         return [*findings, *fail("MEMORY_LOCATION", "not a location a record may live in")]
     try:

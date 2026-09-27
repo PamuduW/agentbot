@@ -30,8 +30,6 @@ from .ui import (
     print_boost_status,
     print_command_help,
     print_doctor_summary,
-    print_draft_list,
-    print_draft_review,
     print_four_column_table,
     print_graphify_status,
     print_header,
@@ -41,15 +39,11 @@ from .ui import (
     print_mcp_catalog,
     print_mcp_plan,
     print_mcp_status,
-    print_memory_approval,
     print_memory_backup,
     print_memory_due,
     print_memory_hooks,
-    print_memory_migration,
-    print_memory_migration_plan,
     print_memory_project,
     print_memory_project_write,
-    print_memory_proposal,
     print_memory_record,
     print_memory_restore,
     print_memory_result,
@@ -325,56 +319,6 @@ def _print_memory_state(status, *, as_json: bool) -> int:
     return {"unconfigured": 2, "broken": 1}.get(status.state, 0)
 
 
-def _handle_memory_drafts(context: CommandContext) -> int:
-    from . import memory
-    from . import memory_drafts as drafts
-
-    args = context.args
-    as_json = bool(getattr(args, "memory_json", False))
-    root, looked = memory.find_vault(context.paths.root)
-    if root is None:
-        return _print_memory_state(
-            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
-        )
-    try:
-        if args.memory_command == "propose":
-            source = caller_path(args.from_file) if args.from_file else None
-            body = drafts.read_body(source, sys.stdin.buffer)
-            proposal = drafts.Proposal(
-                kind=args.memory_type,
-                title=args.title,
-                scope=args.scope,
-                projects=tuple(args.project or ()),
-                tags=tuple(args.tag or ()),
-            )
-            result = drafts.propose(
-                root, proposal, body, acknowledge=args.acknowledge_warning or ()
-            )
-            if as_json:
-                print(json.dumps(drafts.proposal_json(result), indent=2))
-            else:
-                print_memory_proposal(result)
-            return 0 if result.created else 1
-        if args.draft_path:
-            review = drafts.review_draft(root, args.draft_path)
-            if as_json:
-                print(json.dumps(drafts.draft_review_json(review), indent=2))
-            else:
-                print_draft_review(review)
-            return 1 if any(item.severity == "error" for item in review.findings) else 0
-        summaries, total = drafts.list_drafts(root)
-        if as_json:
-            print(json.dumps(drafts.draft_list_json(summaries, total), indent=2))
-        else:
-            print_draft_list(summaries, total)
-        return 0
-    except memory.MemoryVaultError as error:
-        return _print_memory_state(
-            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
-            as_json=as_json,
-        )
-
-
 def _confirm_by_hand(code: str, action: str, command: str) -> None:
     """A human-only action needs a person at a terminal typing its short code.
 
@@ -393,8 +337,8 @@ def _confirm_by_hand(code: str, action: str, command: str) -> None:
         raise ValueError(f"{action} cancelled: the code did not match")
 
 
-def _handle_memory_changes(context: CommandContext) -> int:
-    from . import memory, memory_approve, memory_hook
+def _handle_memory_hook(context: CommandContext) -> int:
+    from . import memory, memory_hook
 
     args = context.args
     as_json = bool(getattr(args, "memory_json", False))
@@ -404,35 +348,6 @@ def _handle_memory_changes(context: CommandContext) -> int:
             memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
         )
     try:
-        if args.memory_command == "approve":
-            if args.confirm:
-                preview = memory_approve.approve(
-                    root,
-                    args.draft_path,
-                    config_home=context.paths.config_home,
-                    apply=False,
-                    acknowledge=args.acknowledge_warning or (),
-                    allow_cross_scope=args.allow_cross_scope,
-                )
-                if preview.state == "preview" and preview.id:
-                    _confirm_by_hand(
-                        preview.id[:8],
-                        f"approve {args.draft_path}",
-                        f"agentbot memory approve {args.draft_path} --yes",
-                    )
-            result = memory_approve.approve(
-                root,
-                args.draft_path,
-                config_home=context.paths.config_home,
-                apply=args.confirm,
-                acknowledge=args.acknowledge_warning or (),
-                allow_cross_scope=args.allow_cross_scope,
-            )
-            if as_json:
-                print(json.dumps(memory_approve.approval_json(result), indent=2))
-            else:
-                print_memory_approval(result)
-            return 0 if result.state in {"preview", "applied"} else 1
         action = args.hook_action
         if action == "status" or not args.confirm:
             state = memory_hook.inspect(root, context.paths.root)
@@ -488,12 +403,7 @@ def _handle_memory_retrieve(context: CommandContext) -> int:
             memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
         )
     project, source = args.project, "explicit" if args.project else None
-    if (
-        project is None
-        and not args.cross_project
-        and not getattr(args, "no_auto_project", False)
-        and memory.read_marker(root) == 3
-    ):
+    if project is None and not args.cross_project and not getattr(args, "no_auto_project", False):
         from . import memory_projects
 
         # cwd -> Git top level -> origin -> registry. Unresolved, colliding, or
@@ -586,87 +496,6 @@ def _handle_memory_backup(context: CommandContext) -> int:
         )
 
 
-def _handle_memory_migrate(context: CommandContext) -> int:
-    from . import memory
-    from . import memory_migrate as migrate
-    from . import memory_migrate3 as migrate3
-
-    args = context.args
-    as_json = bool(getattr(args, "memory_json", False))
-    root, looked = memory.find_vault(context.paths.root)
-    if root is None:
-        return _print_memory_state(
-            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
-        )
-    action = args.migrate_action
-    try:
-        if action == "plan":
-            # The marker decides the step: v1 to v2, or v2 to v3.
-            planner = migrate3 if memory.read_marker(root) == 2 else migrate
-            mapping = planner.plan(root)
-            if args.write:
-                migrate.write_mapping(mapping, caller_path(args.write))
-            summary = planner.plan_summary(mapping)
-            if as_json:
-                print(json.dumps(summary, indent=2))
-            else:
-                print_memory_migration_plan(summary, written=args.write)
-            return 0
-        if action == "rollback":
-            snapshot = caller_path(args.snapshot)
-            recorded = migrate.read_snapshot(snapshot).get("target")
-            report = (migrate3 if recorded == 3 else migrate).rollback(
-                root,
-                snapshot,
-                config_home=context.paths.config_home,
-                confirm=args.confirm,
-            )
-        else:
-            mapping = migrate.read_mapping(caller_path(args.mapping))
-            step = migrate3 if mapping.get("target") == 3 else migrate
-            if action == "check":
-                report, _ = step.check(root, mapping)
-            else:
-                report = step.apply(
-                    root,
-                    mapping,
-                    snapshot=caller_path(args.snapshot),
-                    config_home=context.paths.config_home,
-                    confirm=args.confirm,
-                )
-    except memory.MemoryVaultError as error:
-        return _print_memory_state(
-            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
-            as_json=as_json,
-        )
-    if as_json:
-        print(json.dumps(migrate.report_json(report), indent=2))
-    else:
-        print_memory_migration(report, action=action, applied=bool(getattr(args, "confirm", False)))
-    ok = {"ready", "applied"} | ({"rolled-back"} if action == "rollback" else set())
-    return 0 if report.state in ok and not (action == "rollback" and report.problems) else 1
-
-
-def _add_migrate_parser(memory_sub: argparse._SubParsersAction) -> None:
-    migrate = memory_sub.add_parser("migrate", help="Migrate a schema 1 vault to schema 2")
-    actions = migrate.add_subparsers(dest="migrate_action", required=True)
-    plan = actions.add_parser("plan", help="Propose IDs and list the scopes to choose")
-    plan.add_argument("--write", metavar="PATH", help="Write the private mapping file")
-    plan.add_argument("--json", action="store_true", dest="memory_json")
-    check = actions.add_parser("check", help="Convert an isolated copy and validate it")
-    check.add_argument("--mapping", required=True, metavar="PATH")
-    check.add_argument("--json", action="store_true", dest="memory_json")
-    apply = actions.add_parser("apply", help="Preview, or with --yes migrate the live vault")
-    apply.add_argument("--mapping", required=True, metavar="PATH")
-    apply.add_argument("--snapshot", required=True, metavar="PATH")
-    apply.add_argument("--yes", action="store_true", dest="confirm")
-    apply.add_argument("--json", action="store_true", dest="memory_json")
-    rollback = actions.add_parser("rollback", help="Restore v1 bytes from a migration snapshot")
-    rollback.add_argument("--snapshot", required=True, metavar="PATH")
-    rollback.add_argument("--yes", action="store_true", dest="confirm")
-    rollback.add_argument("--json", action="store_true", dest="memory_json")
-
-
 def _add_retrieval_scope(parser: argparse.ArgumentParser) -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--project", metavar="SLUG", help="Include this project's records")
@@ -731,9 +560,9 @@ def _install_vault_hooks(context: CommandContext, vault: Path) -> str:
 
 def _handle_memory_project(context: CommandContext) -> int:
     from . import memory
-    from . import memory_drafts as drafts
     from . import memory_project_writes as writes
     from . import memory_projects as projects
+    from . import memory_proposals as proposals
 
     args = context.args
     as_json = bool(getattr(args, "memory_json", False))
@@ -755,7 +584,7 @@ def _handle_memory_project(context: CommandContext) -> int:
 
     def body() -> str:
         source = caller_path(args.from_file) if args.from_file else None
-        return drafts.read_body(source, sys.stdin.buffer)
+        return proposals.read_body(source, sys.stdin.buffer)
 
     result: dict = {}
     if action == "add":
@@ -812,20 +641,12 @@ def _handle_memory_project(context: CommandContext) -> int:
     return 0
 
 
-def _schema3_vault(context: CommandContext) -> Path | None:
-    from . import memory
-
-    root, _ = memory.find_vault(context.paths.root)
-    if root is None or memory.read_marker(root) != 3:
-        return None
-    return root
-
-
 def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
-    """Schema 3: tracked core proposals. Approve and reject are the user's."""
-    from . import memory_autosync
-    from . import memory_drafts as drafts
+    """Tracked core proposals. Approve and reject are the user's."""
+    from . import memory, memory_autosync
     from . import memory_proposals as proposals
+
+    memory.read_marker(root)
 
     args = context.args
     command = args.memory_command
@@ -836,7 +657,7 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
             root,
             kind=args.memory_type,
             title=args.title,
-            body=drafts.read_body(source, sys.stdin.buffer),
+            body=proposals.read_body(source, sys.stdin.buffer),
             scope=args.scope,
             projects=list(args.project or []),
             tags=list(args.tag or []),
@@ -970,27 +791,25 @@ def _dispatch_memory(context: CommandContext) -> int:
     if context.args.memory_command in {"sync", "conflict"}:
         return _handle_memory_sync(context)
     if context.args.memory_command in {"propose", "review", "approve", "reject"}:
-        root = _schema3_vault(context)
-        if root is not None:
-            return _handle_memory_proposals(context, root)
-        if context.args.memory_command == "reject":
-            raise memory.MemoryVaultError("reject is for tracked proposals on a schema 3 vault")
+        root, looked = memory.find_vault(context.paths.root)
+        if root is None:
+            return _print_memory_state(
+                memory.VaultStatus(state="unconfigured", looked_in=looked),
+                as_json=bool(getattr(context.args, "memory_json", False)),
+            )
+        return _handle_memory_proposals(context, root)
     if context.args.memory_command in READ_COMMANDS:
         _refresh_before_read(context)
     if context.args.memory_command == "project":
         return _handle_memory_project(context)
-    if context.args.memory_command in {"propose", "review"}:
-        return _handle_memory_drafts(context)
-    if context.args.memory_command in {"approve", "hook"}:
-        return _handle_memory_changes(context)
+    if context.args.memory_command == "hook":
+        return _handle_memory_hook(context)
     if context.args.memory_command == "due":
         return _handle_memory_due(context)
     if context.args.memory_command in {"search", "show", "brief"}:
         return _handle_memory_retrieve(context)
     if context.args.memory_command in {"backup", "restore"}:
         return _handle_memory_backup(context)
-    if context.args.memory_command == "migrate":
-        return _handle_memory_migrate(context)
     as_json = bool(getattr(context.args, "memory_json", False))
     if context.args.memory_command == "status":
         status = memory.status(context.paths.root)
@@ -1355,8 +1174,7 @@ def _boot_project_memory(context: CommandContext, target: Path) -> tuple[str, st
         root, _ = memory.find_vault(context.paths.root)
         if root is None:
             return (label, "no memory vault configured", "skipped")
-        if memory.read_marker(root) != 3:
-            return (label, "the vault needs schema 3 for project memory", "skipped")
+        memory.read_marker(root)
         memory_autosync.before_read(root, config_home)
         found = memory_projects.resolve(root, target, config_home)
         if found.state == "resolved" and found.entry is not None:
@@ -1639,15 +1457,17 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="RULE_ID",
         help="Accept one warning rule for this run only; blocking rules cannot be acknowledged",
     )
-    propose = memory_sub.add_parser("propose", help="Write one local draft for later review")
+    propose = memory_sub.add_parser(
+        "propose", help="Propose one core record for the user to review"
+    )
     propose.add_argument(
         "--type",
         required=True,
-        choices=("decision", "lesson", "project", "preference", "profile"),
+        choices=("decision", "lesson", "preference", "profile"),
         dest="memory_type",
     )
     propose.add_argument(
-        "--supersedes", action="append", metavar="ID", help="Schema 3: core records it replaces"
+        "--supersedes", action="append", metavar="ID", help="Core records it replaces"
     )
     propose.add_argument("--title", required=True)
     propose.add_argument("--scope", required=True, choices=("global", "shared", "project"))
@@ -1656,35 +1476,15 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     source = propose.add_mutually_exclusive_group(required=True)
     source.add_argument("--from-file", dest="from_file", metavar="PATH")
     source.add_argument("--stdin", action="store_true", help="Read the body from standard input")
-    propose.add_argument(
-        "--acknowledge-warning",
-        action="append",
-        choices=sorted(WARNING_RULES),
-        dest="acknowledge_warning",
-        metavar="RULE_ID",
-    )
     propose.add_argument("--json", action="store_true", dest="memory_json")
-    review = memory_sub.add_parser("review", help="List pending drafts, or review one")
-    review.add_argument("draft_path", nargs="?", metavar="drafts/FILE.md")
+    review = memory_sub.add_parser("review", help="List open proposals, or show one")
+    review.add_argument("draft_path", nargs="?", metavar="proposals/core/FILE.md")
     review.add_argument("--json", action="store_true", dest="memory_json")
-    approve = memory_sub.add_parser("approve", help="Preview or promote one reviewed draft")
-    approve.add_argument("draft_path", metavar="drafts/FILE.md")
+    approve = memory_sub.add_parser("approve", help="Human-only: promote one proposal into core")
+    approve.add_argument("draft_path", metavar="proposals/core/FILE.md")
     approve.add_argument("--yes", action="store_true", dest="confirm")
-    approve.add_argument(
-        "--allow-cross-scope",
-        action="store_true",
-        dest="allow_cross_scope",
-        help="Allow superseding a record of another type or scope, after human review",
-    )
-    approve.add_argument(
-        "--acknowledge-warning",
-        action="append",
-        choices=sorted(WARNING_RULES),
-        dest="acknowledge_warning",
-        metavar="RULE_ID",
-    )
     approve.add_argument("--json", action="store_true", dest="memory_json")
-    reject = memory_sub.add_parser("reject", help="Schema 3, human-only: remove a proposal")
+    reject = memory_sub.add_parser("reject", help="Human-only: remove a proposal")
     reject.add_argument("draft_path", metavar="proposals/core/FILE.md")
     reject.add_argument("--yes", action="store_true", dest="confirm")
     reject.add_argument("--json", action="store_true", dest="memory_json")
@@ -1730,7 +1530,6 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     restore.add_argument("--destination", required=True, metavar="PATH")
     restore.add_argument("--yes", action="store_true", dest="confirm")
     restore.add_argument("--json", action="store_true", dest="memory_json")
-    _add_migrate_parser(memory_sub)
     due = memory_sub.add_parser("due", help="List accepted records due for review or expired")
     due.add_argument("--limit", type=int, default=20, metavar="N")
     due.add_argument("--json", action="store_true", dest="memory_json")

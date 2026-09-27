@@ -108,7 +108,9 @@ refused; SSH keys or a Git credential helper authenticate. A configured path
 that later holds a different repository, or no vault, fails closed.
 `--clone` and `--new` refuse a destination that is not empty, is inside
 another repository, crosses a symlink, or sits on a Windows drive or in a
-temporary directory; `--new` creates an empty schema 2 vault and never pushes.
+temporary directory; `--new` creates an empty schema 3 vault (a marker with a
+new `vault_id`, an empty project registry, and the tier READMEs) and never
+pushes.
 `AGENTBOT_MEMORY_ROOT` and `AGENTBOT_MEMORY_DIR` still override the setting
 (the vault hooks use them). No vault configured is a clean state: memory
 commands say so and exit `2`, and nothing else in Agentbot depends on memory.
@@ -122,7 +124,7 @@ every machine. Forks and renames are separate projects until explicitly
 linked. A repository without a remote gets a generated `local/<id>-<name>`
 origin and must be attached on each extra machine; that binding stays in
 private `memory-bindings.json`. Two projects claiming one origin, alias, or
-folder is a collision, and project writes stop until it is fixed. On a schema 3 vault, `agentbot boot` gives the repository
+folder is a collision, and project writes stop until it is fixed. `agentbot boot` gives the repository
 project memory (a registry entry plus its `project.md`) unless `--no-memory`
 is passed, and `memory project register` does the same on its own; `attach PROJECT`
 binds a no-remote checkout on another machine, and `link URL PROJECT --yes`
@@ -136,12 +138,9 @@ scope `project` for exactly that folder), and tracked `proposals/core/`
 (drafts, never retrieved). Its marker carries a `vault_id`, and
 `.meta/projects.json` is the project registry, cross-checked against the
 project folders and each `project.md`. Supersession stays within one tier
-and one project. `agentbot memory migrate` routes by the marker: on a schema
-2 vault, `plan` proposes a v3 destination for every record, leaving the old
-global `active-context.md` (move it into a project or `retire` it; retired
-records stay in Git history) and each project's origin (a Git URL or
-`local`) for you to choose. `check`, `apply`, and `rollback` follow the same
-snapshot, guard, lock, and marker-last pattern as the v1 migration.
+and one project. Schema 3 is the only schema Agentbot reads: schema 1 and 2
+vaults, and the commands that migrated them, were removed on 2026-09-27, so
+an older vault is reported as unsupported.
 
 In Obsidian, the vault is a linked graph. Every project record carries
 `up: "[[projects/<folder>/project]]"`, so `project.md` is the project's hub and
@@ -173,7 +172,7 @@ the replaced record in the same operation, all or nothing, and only within
 the project. `AGENTBOT_MEMORY_PROJECT_WRITES=off` turns project writes off;
 reads keep working.
 
-Syncing is automatic on a schema 3 vault. After every Agentbot-owned write
+Syncing is automatic. After every Agentbot-owned write
 the vault is synced: fetched, pending operations replayed on the remote tip,
 and pushed, never forced. Reads (`status`, `search`, `show`, `brief`, `due`,
 `project`) fetch first, at most once per interval (300 seconds by default);
@@ -192,9 +191,9 @@ machines changed the same record, the losing operation is preserved:
 current version beside yours, and `conflict resolve OP --keep theirs|mine`
 accepts the current state or re-applies yours as a new operation (a lost
 supersession or move is re-applied whole). Core conflicts are for the human
-to resolve. Schema 1 and 2 vaults keep their manual Git workflow.
+to resolve.
 
-On a schema 3 vault, core memory changes only through tracked proposals.
+Core memory changes only through tracked proposals.
 `agentbot memory propose --type decision|lesson|preference|profile --title T
 --scope global|shared [--supersedes ID] --stdin` writes one validated,
 secret-scanned record under `proposals/core/`, commits it, and syncs it, so it
@@ -210,14 +209,14 @@ converge; two different approvals of one core file become a conflict for the
 human.
 
 Human-only confirmations need a person at a terminal. `approve --yes` and
-`reject --yes` (schema 2 drafts too) and `conflict resolve` for a core
+`reject --yes` and `conflict resolve` for a core
 conflict refuse unless standard input is a terminal, then ask you to type the
 short code shown (the record's or operation's first 8 characters). Agent
 shells have no terminal, so an agent that is told to approve gets the command
 to hand back instead. This deters; it is not a security boundary against an
 agent that drives a real terminal on purpose.
 
-On a schema 3 vault, `search`, `show`, and `brief` detect the project from the
+`search`, `show`, and `brief` detect the project from the
 directory you run them in (Git top level, origin, registry) when neither
 `--project` nor `--cross-project` is given; `--no-auto-project` turns that off.
 An unregistered repository, a registry collision, or a directory outside any
@@ -240,53 +239,18 @@ PATH` takes a record out of retrieval but keeps it; `project promote PATH
 [--scope global|shared]` proposes a project lesson or decision for core
 memory, leaving the source in place.
 
-The marker's `agentbot_memory_schema` (`1` or `2`) selects the validator.
-Validation covers every tracked or unignored file plus local drafts: Markdown
-only, no symlinks or special files, UTF-8 without NUL, size and front-matter
-limits, strict YAML (no duplicate keys, anchors, aliases or tags), type, path,
-status, slug and project rules, and the built-in secret scanner
-(`agentbot-memory-secrets/v1`). Schema 2 adds UUID uniqueness across records
-and drafts, scope/path consistency, date order, and supersession edges.
+The marker's `agentbot_memory_schema` must be `3`. Validation covers every
+tracked or unignored file: Markdown only, no symlinks or special files, UTF-8
+without NUL, size and front-matter limits, strict YAML (no duplicate keys,
+anchors, aliases or tags), type, path, status, slug and project rules, UUID
+uniqueness across records and proposals, scope/tier consistency, date order,
+supersession edges, the project registry, and the built-in secret scanner
+(`agentbot-memory-secrets/v1`).
 Findings name a relative path, a rule ID and a line; never a note body, a field
 value, or a matched secret. `--acknowledge-warning RULE_ID` accepts one warning
 rule for a single run; blocking rules cannot be acknowledged. `validate` exits
 `0` when valid and `1` otherwise; `status` exits `0` whenever it can report,
 including a dirty or invalid vault.
-
-`agentbot memory propose --type decision|lesson|project --title TITLE --scope
-global|shared|project [--project SLUG] [--tag TAG] --from-file PATH|--stdin`
-writes one draft under the vault's Git-ignored `drafts/`, with a fresh UUID and
-`status: draft`. The body comes only from the named file or standard input; no
-conversation is captured. It needs a schema 2 vault, and it writes nothing when
-the draft would fail validation, trips a blocking secret rule or an
-unacknowledged warning, or when `drafts/` is not ignored. Creation is
-exclusive, so an existing file is never replaced. A draft is never accepted
-memory or a retrieval result.
-
-`agentbot memory review` lists at most 100 pending drafts, newest first, with
-metadata and finding counts. `agentbot memory review drafts/FILE.md` shows one
-draft's metadata, body size, findings, same-title records, and the exact path
-approval would install it at. Neither prints a note body, and both redact
-metadata when the scanner fires on that draft.
-
-`agentbot memory approve drafts/FILE.md` previews the exact destination;
-`--yes` promotes the draft. Apply takes a bounded per-vault lock in Agentbot's
-private state (a lock held by a live process makes the approval exit as a
-conflict after a few seconds; a dead holder's lock is broken and reported).
-Inside the lock it re-reads the draft and the destination, writes the accepted
-record beside the destination, and installs it with `link()`, which cannot
-replace a file. The draft is removed only afterwards, and only if unchanged.
-Any conflict or failure leaves the draft intact and no partial record.
-Approval stages, commits, and pushes nothing.
-
-A draft with `supersedes` is approved as one transition: under the same lock,
-the new record is installed and each accepted target's `status` line becomes
-`superseded`, with every target rechecked against the bytes that were
-reviewed. A person's edit to a target during approval wins: the approval
-rolls back its own writes and reports a conflict. Retired targets, and
-replacements across type or scope, are refused; `--allow-cross-scope` accepts
-the latter after human review, and the new record never inherits the old
-scope. No record is deleted.
 
 `agentbot memory hook [status|install|remove] [--yes]` manages the vault's
 pre-commit and pre-push hooks, which run `memory validate` before Git proceeds.
@@ -300,12 +264,11 @@ at most 100): accepted records whose `review_after` date has arrived, and those
 past `valid_until`, oldest first, by UTC calendar day. A record is valid
 through its `valid_until` day. Both flags are derived; neither changes a
 record's status or file, and superseded or retired records never appear.
-`memory status` shows the due and expired counts. Schema 1 records carry no
-dates, so the queue is empty there.
+`memory status` shows the due and expired counts.
 
 `agentbot memory search QUERY`, `memory show PATH`, and `memory brief` read
 validated records straight from the files; there is no index to go stale.
-Only records with no validation or scanner finding are eligible, and drafts
+Only records with no validation or scanner finding are eligible, and proposals
 never are. Superseded, retired, and expired records, and records past each
 pool's hot limit (64 per project, 32 global, 48 shared, newest first), are
 left out unless `--history` asks for them, labelled. Scope is never guessed:
@@ -321,9 +284,7 @@ bad request (an overlong query, a path outside scope) is refused as `refused`,
 never reported as a broken vault. A record over about 400 tokens is still
 written, with advice to split it into one record per idea. `brief` prints a disposable Markdown brief of 800 tokens by default
 and at most 1,200 (four characters per token), with the project slice capped
-at 65%. Schema 1 records have no scope field: preferences are global, project
-records and single-project records are project-scoped, and the rest are
-shared.
+at 65%.
 
 `agentbot memory backup --destination PATH` previews, and with `--yes` writes,
 a private (`0700`) backup: a bare mirror of the vault's committed refs plus a
@@ -335,34 +296,8 @@ vault's backup is refused. A dirty tree is reported, not blocking.
 `agentbot memory restore --source BACKUP --destination PATH` clones into a new
 or empty directory, removes the backup `origin`, validates the result, and
 never touches the active checkout, Agentbot's configuration, or a remote.
-Git snapshots hold committed history only: uncommitted edits, ignored drafts,
-and exports are never included. Remote snapshots are not implemented.
-
-`agentbot memory migrate` moves a schema 1 vault to schema 2 through a
-reviewed mapping, in four steps:
-
-```bash
-agentbot memory migrate plan --write PATH          # IDs; scopes to choose
-agentbot memory migrate check --mapping PATH       # isolated candidate, v2-validated
-agentbot memory migrate apply --mapping PATH --snapshot DIR [--yes]
-agentbot memory migrate rollback --snapshot DIR [--yes]
-```
-
-`plan` needs a v1 tree with no findings. It proposes one UUID per record and
-draft; `preferences.md` is global and `projects/**` project-scoped by rule, and
-every other scope is left `null` for a person to choose (a suggestion sits
-beside it; an empty project list is never read as global). The mapping file is
-written `0600` and holds paths, hashes, IDs, and scopes, never note bodies.
-`check` converts an isolated copy and runs complete-tree v2 validation.
-`apply` needs a clean checkout on a branch, takes a verified `0700` byte
-snapshot outside the vault, marks `.meta/migration-in-progress` so every
-read fails closed, rewrites each file under the promotion lock only while its
-bytes match the mapping, and changes the marker last. Only front matter
-changes: `schema`, a new `id`, and a `scope` line; templates get blank `id`
-and `scope` lines. Any failure restores original bytes wherever they are
-still what the migration wrote. `rollback` does the same from the snapshot
-later and never overwrites a later edit. Nothing is staged, committed, or
-pushed.
+Git snapshots hold committed history only: uncommitted edits and exports are
+never included. Remote snapshots are not implemented.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
 are also directly addressable:

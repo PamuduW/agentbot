@@ -652,7 +652,7 @@ def print_memory_status(status) -> None:
             ),
             _memory_upstream(status),
             ("Records", records, "info"),
-            ("Drafts", f"{status.drafts} pending", "info"),
+            ("Proposals", f"{status.drafts} open", "info"),
             (
                 "Review queue",
                 f"{status.due} due, {status.expired} expired",
@@ -679,7 +679,7 @@ def print_memory_validation(report) -> None:
     rows = [
         ("Vault", str(report.root), "ok"),
         ("Schema", f"v{report.schema}", "ok"),
-        ("Records", f"{records} record(s), {drafts} draft(s)", "info"),
+        ("Records", f"{records} record(s), {drafts} proposal(s)", "info"),
     ]
     for item in report.findings:
         location = item.path if item.line is None else f"{item.path}:{item.line}"
@@ -701,106 +701,6 @@ def _finding_rows(findings) -> list[tuple[str, str, str]]:
         )
         for item in findings
     ]
-
-
-def print_memory_proposal(result) -> None:
-    """Render a created draft, or why nothing was written."""
-    print_header("Memory proposal", "Agentbot › Memory › Propose")
-    if result.created:
-        rows = [
-            ("Draft", result.path, "ok"),
-            ("ID", result.id, "info"),
-            ("Destination", result.destination or "—", "info"),
-        ]
-    else:
-        rows = [("Draft", "not written", "skipped"), *_finding_rows(result.findings)]
-    ok, check, miss = print_table(rows, wrap_details=True)
-    print()
-    print_note(
-        "Review it with agentbot memory review. A draft is never accepted memory until approved."
-        if result.created
-        else "Nothing was written. Fix the findings above and propose again."
-    )
-    print_rollup(ok=ok, check=check, miss=miss)
-
-
-def print_draft_list(summaries, total: int) -> None:
-    """Pending drafts, newest first: metadata and finding counts, never bodies."""
-    print_header("Memory drafts", "Agentbot › Memory › Review")
-    if not summaries:
-        print_table([("Drafts", "none pending", "ok")])
-        print_rollup(ok=1, check=0, miss=0)
-        return
-    rows = []
-    for item in summaries:
-        detail = " · ".join(
-            part
-            for part in (
-                item.path,
-                item.type or "no type",
-                item.title or "no title",
-                ", ".join(item.projects),
-            )
-            if part
-        )
-        counts = (
-            f" ({item.blocking} blocking, {item.warnings} warning)"
-            if item.blocking or item.warnings
-            else ""
-        )
-        result = "error" if item.blocking else "warn" if item.warnings else "ok"
-        rows.append((item.date or "no date", detail + counts, result))
-    ok, check, miss = print_table(rows, wrap_details=True)
-    if total > len(summaries):
-        print()
-        print_note(f"Showing {len(summaries)} of {total} drafts.")
-    print_rollup(ok=ok, check=check, miss=miss)
-
-
-def print_draft_review(review) -> None:
-    """One draft's metadata, destination, and findings, without its body."""
-    print_header("Memory draft review", "Agentbot › Memory › Review")
-    rows = [(key, str(value), "info") for key, value in review.fields.items()]
-    rows.append(("Body", f"{review.body_bytes} bytes, {review.body_lines} lines", "info"))
-    if review.destination is None:
-        rows.append(("Destination", "cannot be derived", "error"))
-    else:
-        rows.append(
-            (
-                "Destination",
-                review.destination + (" (already exists)" if review.destination_exists else ""),
-                "conflict" if review.destination_exists else "ok",
-            )
-        )
-    rows += [("Same title", path, "warn") for path in review.duplicate_titles]
-    rows += _finding_rows(review.findings) or [("Findings", "none", "ok")]
-    ok, check, miss = print_table(rows, wrap_details=True)
-    print_rollup(ok=ok, check=check, miss=miss)
-
-
-def print_memory_approval(result) -> None:
-    """Render an approval preview, its outcome, or why it stopped."""
-    print_header("Memory approval", "Agentbot › Memory › Approve")
-    word = {"preview": "preview", "applied": "applied", "conflict": "conflict"}.get(
-        result.state, "error"
-    )
-    rows = [
-        ("Draft", result.draft, "info"),
-        ("Destination", result.destination or "—", word),
-    ]
-    if result.id:
-        rows.append(("ID", result.id, "info"))
-    rows += [("Note", note, "check") for note in result.notes]
-    rows += _finding_rows(result.findings)
-    ok, check, miss = print_table(rows, wrap_details=True)
-    print()
-    print_note(
-        {
-            "preview": "Nothing was written. Rerun with --yes to install the record.",
-            "applied": "Installed. Nothing was staged, committed, or pushed.",
-        }.get(result.state, "Nothing was installed; the draft is intact.")
-    )
-    print_rollup(ok=ok, check=check, miss=miss)
 
 
 def print_memory_due(items, *, total: int, schema: int, today) -> None:
@@ -935,66 +835,6 @@ def print_memory_restore(result) -> None:
         print_note(note)
     if result.state == "preview":
         print_note("Preview only. Rerun with --yes to clone into the destination.")
-    print_rollup(ok=ok, check=check, miss=miss)
-
-
-def print_memory_migration_plan(summary, *, written) -> None:
-    """The scopes a human must choose, and the ones fixed by rule."""
-    print_header("Memory migration plan", "Agentbot › Memory › Migrate")
-    rows = [
-        (
-            "Mapping",
-            f"{summary['records']} record(s), {summary['drafts']} draft(s), "
-            f"{summary['templates']} template(s)",
-            "info",
-        )
-    ]
-    rows += [(item["path"], f"scope {item['scope']} (by rule)", "ok") for item in summary["fixed"]]
-    rows += [
-        (
-            item["path"],
-            f"choose a scope: {item['type']}"
-            + (f", projects {', '.join(item['projects'])}" if item["projects"] else ", no projects")
-            + f"; suggested {item['suggested']}",
-            "check",
-        )
-        for item in summary["to_choose"]
-    ]
-    rows += [
-        (f"projects/{folder}", "set its origin: a Git URL, or local", "check")
-        for folder in summary.get("projects_needing_origin", [])
-    ]
-    ok, check, miss = print_table(rows, wrap_details=True)
-    print()
-    print_note(
-        f"Mapping written to {written}. Set each null scope there, then run migrate check."
-        if written
-        else "Nothing was written. Rerun with --write PATH to save the private mapping file."
-    )
-    print_rollup(ok=ok, check=check, miss=miss)
-
-
-def print_memory_migration(report, *, action: str, applied: bool) -> None:
-    """A check, apply, or rollback outcome: paths and problems, never bodies."""
-    print_header("Memory migration", f"Agentbot › Memory › Migrate › {action}")
-    word = {"ready": "ok", "applied": "applied", "rolled-back": "applied"}.get(
-        report.state, "error"
-    )
-    rows = [("State", report.state, word)]
-    if report.snapshot:
-        rows.append(("Snapshot", str(report.snapshot), "info"))
-    rows += [(path, "scope not chosen", "check") for path in report.unresolved]
-    rows += [("Problem", problem, "error") for problem in report.problems]
-    rows += [
-        (path, "converted" if action != "rollback" else "restores v1 bytes", "info")
-        for path in report.changed
-    ]
-    ok, check, miss = print_table(rows, wrap_details=True)
-    print()
-    if action in {"apply", "rollback"} and not applied and report.state == "ready":
-        print_note("Preview only. Rerun with --yes to change the live vault.")
-    if report.state == "applied":
-        print_note("Nothing was staged, committed, or pushed. Review with git diff in the vault.")
     print_rollup(ok=ok, check=check, miss=miss)
 
 

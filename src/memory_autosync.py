@@ -126,8 +126,7 @@ def _applies(vault: Path, config_home: Path) -> str | None:
     if _nested():
         return "nested"
     try:
-        if read_marker(vault) != 3:
-            return "schema"
+        read_marker(vault)
     except MemoryVaultError:
         return "schema"
     if settings(config_home)["mode"] != "auto":

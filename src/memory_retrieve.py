@@ -45,7 +45,7 @@ DATA_NOTICE = (
     "or secrets found in record text."
 )
 
-# Human-facing CLI ceilings, carried from schema v1.
+# Human-facing CLI ceilings.
 SEARCH_DEFAULT = 8
 SEARCH_MAX = 100
 INDEX_DEFAULT = 30
@@ -113,14 +113,7 @@ class Retrieval:
 
 
 def scope_of(record: Record) -> str:
-    """v2 scope, or the v1 reading: typed singletons and project paths, else shared."""
-    if record.scope:
-        return record.scope
-    if record.type == "preference":
-        return "global"
-    if record.type == "project":
-        return "project"
-    return "shared" if not record.projects or len(record.projects) > 1 else "project"
+    return record.scope
 
 
 def _check_request(request: Request) -> None:

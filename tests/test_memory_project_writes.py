@@ -16,10 +16,9 @@ from src import memory_project_writes as writes
 from src import memory_retrieve as retrieve
 from src import memory_sync as sync
 from tests.support import run_cli_main
-from tests.test_memory import FAKE_GITHUB_TOKEN, v2_vault
+from tests.test_memory import FAKE_GITHUB_TOKEN, P_ALPHA, old_schema_vault, uid, v3_vault
 from tests.test_memory_projects import repo
 from tests.test_memory_sync import GIT, git
-from tests.test_memory_v3 import P_ALPHA, uid, v3_vault
 
 LESSON = "projects/alpha/lessons/2026-09-27-l.md"
 
@@ -195,7 +194,7 @@ class ContainmentTests(WritesTestCase):
         stranger = repo(self.tmp / "code/stranger", "https://github.com/me/stranger")
         outside = self.tmp / "plain"
         outside.mkdir()
-        old = v2_vault(self.tmp / "v2")
+        old = old_schema_vault(self.tmp / "v2")
         for root, cwd in ((self.a, stranger), (self.a, outside), (old.root, self.code)):
             with self.subTest(cwd=str(cwd)), self.assertRaises(memory.MemoryVaultError):
                 writes.add(root, cwd, self.config, kind="lesson", title="x", body="x")

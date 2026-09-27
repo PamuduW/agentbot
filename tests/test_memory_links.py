@@ -10,9 +10,9 @@ from src import memory_project_writes as writes
 from src import memory_proposals as proposals
 from src import memory_sync as sync
 from src.memory import project_hub_link, record_link
+from tests.test_memory import uid
 from tests.test_memory_autosync import AutosyncTestCase
 from tests.test_memory_project_writes import LESSON, WritesTestCase
-from tests.test_memory_v3 import uid
 
 HUB = "[[projects/alpha/project]]"
 
