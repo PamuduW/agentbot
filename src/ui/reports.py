@@ -1521,6 +1521,9 @@ def print_update_result(outcome) -> tuple[int, int, int]:
             )
         )
 
+    for surface in getattr(outcome, "platform", ()):
+        rows.append((surface.label, surface.detail, surface.result))
+
     if not rows:
         rows.append(("Update", outcome.message or outcome.status, "ok"))
     return print_table(rows, wrap_details=True)

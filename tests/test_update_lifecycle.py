@@ -1,4 +1,5 @@
 import hashlib
+import io
 import os
 import tempfile
 import unittest
@@ -237,6 +238,7 @@ class UpdateLifecycleTests(unittest.TestCase):
                 checkout_provider=checkouts,
                 reconcile_applier=reconcile,
                 planned_installer=install,
+                integration_refresher=lambda: events.append("integrations") or (),
             )
             lifecycle.resync_workspaces = apply_surfaces
 
@@ -246,7 +248,10 @@ class UpdateLifecycleTests(unittest.TestCase):
                 outcome = lifecycle.apply_update(plan)
 
             self.assertEqual("applied", outcome.status)
-            self.assertEqual(["checkout", "reconcile", "install", "surfaces"], events)
+            # Integrations last: after the Doctor gate, once per update.
+            self.assertEqual(
+                ["checkout", "reconcile", "install", "surfaces", "integrations"], events
+            )
             self.assertIn('model = "new"', codex_config.read_text())
             self.assertIn('[tui]\ntheme = "dark"', codex_config.read_text())
             self.assertIsNotNone(outcome.cli_config)
@@ -308,3 +313,40 @@ class UpdateLifecycleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IntegrationRefreshTests(unittest.TestCase):
+    """Update is the converge pass: it refreshes what install sets up beyond skills."""
+
+    def test_update_refreshes_every_integration_install_sets_up(self) -> None:
+        from src.boost import BoostStatus
+        from src.lifecycle import Lifecycle
+        from src.models import PlatformOutcome, UpdateOutcome
+        from src.ui.reports import print_update_result
+        from tests.support import agentbot_paths
+
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = agentbot_paths(Path(temporary))
+            boost = mock.Mock()
+            boost.setup_if_cli_available.return_value = mock.Mock(spec=BoostStatus, state="ready")
+            lifecycle = Lifecycle(paths, boost=boost, command_runner=mock.Mock())
+            surfaced: list[str] = []
+
+            def surface(key, label, *_args, **_kwargs):
+                surfaced.append(key)
+                return PlatformOutcome(key, label, "current", "ok")
+
+            with (
+                mock.patch("src.platform_surfaces.surface_outcome", side_effect=surface),
+                mock.patch(
+                    "src.codex_remote_control.ensure", return_value=("remote control on", "ok")
+                ),
+            ):
+                outcomes = lifecycle._refresh_integrations()
+
+        self.assertEqual(["vscode", "cursor"], surfaced)  # CLI config is merged once, earlier
+        self.assertEqual(["boost", "vscode", "cursor", "codex-remote"], [o.key for o in outcomes])
+        boost.setup_if_cli_available.assert_called_once_with()
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            print_update_result(UpdateOutcome("applied", platform=outcomes))
+        self.assertIn("Codex Remote Control", out.getvalue())

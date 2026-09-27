@@ -384,7 +384,10 @@ run_update_backend_as() {
 	github_token_child run_cli "$update_command" "$@"
 }
 
-# `full` = install then update, sharing one exit contract.
+# `full` = install then update on a machine's first run, and update alone once
+# it is installed: update is the one converge pass (skills, integrations,
+# outputs, workspaces, CLI config, Doctor), so running install first did all of
+# that twice every day. Both stages share one exit contract.
 #
 # Both stages already return 0 continue / 1 stop / 2 repository changed. The
 # only extra rule is the restart budget: a repository change may legitimately
@@ -415,6 +418,12 @@ agentbot_restart_full() {
 	AGENTBOT_FULL_RESTARTS="$1" exec bash "$REPO_ROOT/install.sh" full
 }
 
+# Installed means the skill lock and the launcher both exist; anything less is
+# a first run, and install sets both up.
+agentbot_is_installed() {
+	[[ -f "${HOME}/.agents/.skill-lock.json" && -L "${HOME}/bin/agentbot" ]]
+}
+
 run_full() {
 	# Carried across the exec below, so a second change stops the run rather
 	# than restarting forever.
@@ -430,7 +439,9 @@ run_full() {
 	# full update does with its own phases.
 	export AGENTBOT_UPDATE_SHOW_STATUS=0
 	export AGENTBOT_INSTALL_SHOW_DOCTOR=0
-	for stage in install update; do
+	local -a stages=(install update)
+	agentbot_is_installed && stages=(update)
+	for stage in "${stages[@]}"; do
 		while true; do
 			rc=0
 			stage_started="$(_agentbot_now_seconds)"
@@ -475,7 +486,7 @@ Usage: ./install.sh <command> [args]
   install [--components L]   Install Agentbot and link its launcher;
                              L narrows it to skills, graphify, boost,
                              vscode, cursor, cli-config
-  full                       Run install, then update, in one command
+  full                       Install on a first run, then update (update alone once installed)
   update [--dry-run|--yes]   Run the repository-first update flow
   status [--json]            Show current Agentbot state
   doctor                     Validate the installation

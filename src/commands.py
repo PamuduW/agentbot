@@ -74,9 +74,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "full",
         "agentbot full",
         "mutating",
-        "Run install, then update, in one command.",
+        "Install on a first run, then update; on an installed machine, update alone.",
         (),
-        "Runs both stages with one exit contract and restarts once if the checkout moves forward.",
+        "Update is the one converge pass, so an installed machine is not installed again. "
+        "Restarts once if the checkout moves forward.",
         # No parser_commands: `full` is sequenced by install.sh rather than
         # being a Python subcommand.
         ("agentbot full",),
@@ -94,7 +95,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "--yes", "Pre-approve source-owned additions, removals, and manifest edits.", "off"
             ),
         ),
-        "May fast-forward the checkout, reconcile source-owned skills, and refresh registered workspaces and global outputs.",
+        "May fast-forward the checkout, reconcile source-owned skills, refresh Graphify, MCP, "
+        "registered workspaces, global outputs, and CLI config, and, after Doctor passes, "
+        "Boost, VS Code, the Cursor statusline, and Codex Remote Control.",
         ("agentbot update --dry-run", "agentbot update --yes"),
         ("install", "status"),
         "public",

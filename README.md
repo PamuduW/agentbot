@@ -75,7 +75,7 @@ agentbot install --menu           # choose components, review the plan, install
 agentbot install --components L   # install a named subset, unattended
 agentbot update --dry-run         # preview repository and lifecycle changes
 agentbot update                   # confirm and apply an update
-agentbot full                     # install, then update
+agentbot full                     # first run: install + update; then: update
 agentbot boot /path/to/repo       # render, register, and give it project memory
 agentbot workspaces               # list registered workspaces
 agentbot resync --dry-run --all   # preview every registered workspace
