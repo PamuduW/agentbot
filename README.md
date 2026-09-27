@@ -314,7 +314,12 @@ projects need `--cross-project`. Search reserves slots before merging (the
 best global, shared, and target-project result, then one per other project),
 caps the target project at 4 and each other project at 1, skips near-duplicate
 titles, and returns 8 results by default with provenance and a bounded
-excerpt. `brief` prints a disposable Markdown brief of 800 tokens by default
+excerpt. Without a query, `search` is the index: record headers (title, type,
+tags, date, path) with no excerpt, newest first, 30 by default, under the same
+scope and quotas, so an agent can see what exists before reading anything. A
+bad request (an overlong query, a path outside scope) is refused as `refused`,
+never reported as a broken vault. A record over about 400 tokens is still
+written, with advice to split it into one record per idea. `brief` prints a disposable Markdown brief of 800 tokens by default
 and at most 1,200 (four characters per token), with the project slice capped
 at 65%. Schema 1 records have no scope field: preferences are global, project
 records and single-project records are project-scoped, and the rest are

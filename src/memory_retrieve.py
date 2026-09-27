@@ -28,6 +28,7 @@ from typing import Any
 from .memory import (
     MAX_FILE_BYTES,
     SLUG,
+    MemoryRequestError,
     MemoryVaultError,
     Record,
     _decode,
@@ -47,6 +48,7 @@ DATA_NOTICE = (
 # Human-facing CLI ceilings, carried from schema v1.
 SEARCH_DEFAULT = 8
 SEARCH_MAX = 100
+INDEX_DEFAULT = 30
 QUERY_MAX = 512
 EXCERPT_MAX = 600
 SHOW_DEFAULT_BYTES = 65_536
@@ -93,6 +95,7 @@ class Hit:
         return {
             "id": record.id,
             "path": record.path,
+            "type": record.type,
             "status": record.status,
             "date": record.date,
             "scope": scope_of(record),
@@ -122,9 +125,9 @@ def scope_of(record: Record) -> str:
 
 def _check_request(request: Request) -> None:
     if request.project is not None and not SLUG.match(request.project):
-        raise MemoryVaultError("--project must be a project slug")
+        raise MemoryRequestError("--project must be a project slug")
     if request.project and request.cross_project:
-        raise MemoryVaultError("name one project, or ask for cross-project results, not both")
+        raise MemoryRequestError("name one project, or ask for cross-project results, not both")
 
 
 def _pool(record: Record, request: Request) -> str | None:
@@ -302,9 +305,11 @@ def search(
     limit: int = SEARCH_DEFAULT,
     today: date | None = None,
 ) -> Retrieval:
-    if not query.strip() or len(query) > QUERY_MAX:
-        raise MemoryVaultError(f"the query must be 1-{QUERY_MAX} characters")
+    if len(query) > QUERY_MAX:
+        raise MemoryRequestError(f"the query must be at most {QUERY_MAX} characters")
     limit = max(1, min(limit, SEARCH_MAX))
+    if not query.strip():
+        return index(root, request, limit=limit, today=today)
     terms = _terms(query)
     eligible, summary = candidates(root, request, today=today)
     ranked: dict[str, list[Hit]] = {}
@@ -316,6 +321,26 @@ def search(
     for hits in ranked.values():
         hits.sort(key=lambda hit: (-hit.score, hit.record.path))
     summary.hits = _allocate(ranked, limit)
+    return summary
+
+
+def index(
+    root: Path, request: Request, *, limit: int = INDEX_DEFAULT, today: date | None = None
+) -> Retrieval:
+    """Record headers without a query: the table of contents for this request.
+
+    The same scope, lifecycle, and pool fairness as a search, newest first, and
+    no excerpts, so an agent can see what exists before choosing what to read.
+    """
+    _check_request(request)
+    limit = max(1, min(limit, SEARCH_MAX))
+    eligible, summary = candidates(root, request, today=today)
+    listed: dict[str, list[Hit]] = {}
+    for record, pool, labels in eligible:
+        listed.setdefault(pool, []).append(Hit(record, pool, 0.0, labels=labels))
+    for hits in listed.values():
+        hits.sort(key=lambda hit: (hit.record.date, hit.record.path), reverse=True)
+    summary.hits = _allocate(listed, limit)
     return summary
 
 
@@ -331,15 +356,15 @@ def show(
     )
     if record is None:
         if relative.startswith("proposals/"):
-            raise MemoryVaultError(
+            raise MemoryRequestError(
                 f"{relative} is a proposal, not memory; read it with: agentbot memory review {relative}"
             )
-        raise MemoryVaultError(f"{relative} is not a valid canonical record")
+        raise MemoryRequestError(f"{relative} is not a valid canonical record")
     if any(item.path == relative for item in report.findings):
-        raise MemoryVaultError(f"{relative} has validation or scanner findings; fix them first")
+        raise MemoryRequestError(f"{relative} has validation or scanner findings; fix them first")
     pool = _pool(record, request)
     if pool is None:
-        raise MemoryVaultError(
+        raise MemoryRequestError(
             f"{relative} is scoped to another project; name it with --project or ask --cross-project"
         )
     state = _lifecycle(record, utc_today())

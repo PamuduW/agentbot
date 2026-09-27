@@ -350,8 +350,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "read-only",
             ),
             option(
-                "search QUERY",
+                "search [QUERY]",
                 "Accepted records within scope, quota-balanced, with provenance and excerpts; "
+                "without QUERY, record headers only, newest first (the index; 30 by default). "
                 "--type, --tag, --limit N (8, max 100), --history.",
                 "read-only",
             ),

@@ -511,7 +511,8 @@ def _handle_memory_retrieve(context: CommandContext) -> int:
     )
     try:
         if args.memory_command == "search":
-            result = retrieve.search(root, args.query, request, limit=args.limit)
+            default = retrieve.SEARCH_DEFAULT if args.query.strip() else retrieve.INDEX_DEFAULT
+            result = retrieve.search(root, args.query, request, limit=args.limit or default)
             if as_json:
                 print(json.dumps({**retrieve.search_json(result), **scope}, indent=2))
             else:
@@ -528,6 +529,13 @@ def _handle_memory_retrieve(context: CommandContext) -> int:
                 print(json.dumps({**retrieve.brief_json(summary), **scope}, indent=2))
             else:
                 print(summary.text, end="")
+    except memory.MemoryRequestError as error:
+        # The vault is fine; this request is not. Never report it as broken.
+        if as_json:
+            print(json.dumps({"state": "refused", "problem": str(error), **scope}, indent=2))
+        else:
+            print(f"  {error}", file=sys.stderr)
+        return 1
     except memory.MemoryVaultError as error:
         return _print_memory_state(
             memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
@@ -1019,8 +1027,7 @@ def _gitlab_token_verify_only(store: ModuleType) -> int:
         return 2
     if result.write_capable:
         print(
-            f"  This token can write ({', '.join(result.scopes)}); "
-            "read_api is the contract.",
+            f"  This token can write ({', '.join(result.scopes)}); read_api is the contract.",
             file=sys.stderr,
         )
         return 3
@@ -1431,7 +1438,11 @@ def _handle_skills(context: CommandContext) -> int:
                 f"  {snapshot.source_id}: {snapshot.revision[:12]} "
                 f"({len(snapshot.installed)} skill(s))"
             )
-        print("  Restored reviewed revisions." if context.args.confirm else "  Preview only; use --yes to apply.")
+        print(
+            "  Restored reviewed revisions."
+            if context.args.confirm
+            else "  Preview only; use --yes to apply."
+        )
         return 0
     if context.args.skills_command == "prune":
         return handle_skills_prune(
@@ -1558,7 +1569,18 @@ def _add_memory_project_parser(memory_sub: argparse._SubParsersAction) -> None:
     link.add_argument("project", metavar="PROJECT")
     link.add_argument("--yes", action="store_true", dest="confirm")
     for parser in (
-        status, add, edit, context, move, delete, retire, promote, maintain, forget, attach, link
+        status,
+        add,
+        edit,
+        context,
+        move,
+        delete,
+        retire,
+        promote,
+        maintain,
+        forget,
+        attach,
+        link,
     ):
         parser.add_argument("--json", action="store_true", dest="memory_json")
 
@@ -1650,14 +1672,19 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     reject.add_argument("--yes", action="store_true", dest="confirm")
     reject.add_argument("--json", action="store_true", dest="memory_json")
     search = memory_sub.add_parser("search", help="Search accepted records within scope")
-    search.add_argument("query")
+    search.add_argument(
+        "query",
+        nargs="?",
+        default="",
+        help="Words to find; omit to list record headers (the index)",
+    )
     search.add_argument(
         "--type",
         choices=("context", "preference", "decision", "lesson", "project"),
         dest="memory_type",
     )
     search.add_argument("--tag", metavar="TAG")
-    search.add_argument("--limit", type=int, default=8, metavar="N")
+    search.add_argument("--limit", type=int, default=None, metavar="N")
     search.add_argument(
         "--history",
         action="store_true",
@@ -2279,9 +2306,7 @@ def run_agentbot_install(
         # The same verdict print_doctor_summary gives: errors fail, warnings
         # do not. Failing on any issue here exited 1 on a single warning the
         # operator had no table to see.
-        doctor_rc = (
-            1 if any(i.level.lower() == "error" for i in outcome.diagnostics.issues) else 0
-        )
+        doctor_rc = 1 if any(i.level.lower() == "error" for i in outcome.diagnostics.issues) else 0
     else:
         doctor_rc = print_doctor_summary(list(outcome.diagnostics.issues))
     # Last, after the report it describes -- the same place the sibling

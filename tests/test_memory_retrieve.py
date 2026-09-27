@@ -210,16 +210,22 @@ class ScopeAndLifecycleTests(RetrieveTestCase):
         self.assertEqual({"decision"}, {hit.record.type for hit in result.hits})
         pointer = result.hits[0].pointer()
         self.assertEqual(
-            {"id", "path", "status", "date", "scope", "projects", "tags", "labels"}, set(pointer)
+            {"id", "path", "type", "status", "date", "scope", "projects", "tags", "labels"},
+            set(pointer),
         )
         self.assertTrue(
             all(len(hit.excerpt) <= retrieve.EXCERPT_MAX for hit in self.search(limit=50).hits)
         )
 
     def test_bad_requests_fail(self) -> None:
-        for query in ("", " ", "x" * (retrieve.QUERY_MAX + 1)):
-            with self.subTest(query=query[:5]), self.assertRaises(memory.MemoryVaultError):
-                self.search(query)
+        with self.assertRaises(memory.MemoryRequestError):
+            self.search("x" * (retrieve.QUERY_MAX + 1))
+        # No query is the index: headers, newest first, nothing ranked by words.
+        for query in ("", " "):
+            with self.subTest(query=repr(query)):
+                listed = self.search(query, limit=50).hits
+                self.assertTrue(listed)
+                self.assertTrue(all(hit.excerpt == "" and hit.score == 0 for hit in listed))
         for request in ({"project": "../etc"}, {"project": HOT, "cross_project": True}):
             with self.subTest(request=request), self.assertRaises(memory.MemoryVaultError):
                 self.search(**request)

@@ -160,3 +160,15 @@ class MaintainReportTests(WritesTestCase):
         self.assertEqual(1, len(docker))
         self.assertTrue(any("merge similar" in tip for tip in report["suggestions"]))
         self.assertEqual({"warn": writes.POOL_SOFT, "stop": writes.POOL_HARD}, report["limits"])
+
+
+class RecordSizeTests(WritesTestCase):
+    def test_a_long_record_is_written_with_advice_to_split_it(self) -> None:
+        long = writes.add(
+            self.a, self.code, self.config, kind="lesson", title="Long", body="word " * 400
+        )
+        self.assertTrue(any("split it" in warning for warning in long["warnings"]))
+        short = writes.add(self.a, self.code, self.config, kind="lesson", title="Short", body="x")
+        self.assertFalse(any("split it" in warning for warning in short["warnings"]))
+        proposal = proposals.propose(self.a, kind="lesson", title="Big", body="word " * 400)
+        self.assertIn("split it", proposal["warning"])

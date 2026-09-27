@@ -149,3 +149,34 @@ class TicketTwelveFollowUpTests(DetectionTestCase):
         rc, payload = self.cli(self.code, "memory", "show", "proposals/core/lessons/p.md")
         self.assertEqual(1, rc)
         self.assertIn("agentbot memory review proposals/core/lessons/p.md", json.dumps(payload))
+
+
+class IndexTests(DetectionTestCase):
+    """Search without a query is the table of contents; a bad request is not a broken vault."""
+
+    def test_no_query_lists_headers_for_the_detected_project(self) -> None:
+        writes.add(self.a, self.code, self.config, kind="decision", title="Pick A", body="a")
+        rc, listing = self.cli(self.code, "memory", "search", "--type", "decision")
+        self.assertEqual(0, rc)
+        self.assertEqual(("alpha", "auto"), (listing["project"], listing["project_source"]))
+        titles = [item["title"] for item in listing["results"]]
+        self.assertIn("Pick A", titles)
+        self.assertTrue(all(item["type"] == "decision" for item in listing["results"]))
+        self.assertTrue(all(item["excerpt"] == "" for item in listing["results"]))
+        self.assertEqual(retrieve.DATA_NOTICE, listing["notice"])
+
+    def test_the_index_respects_scope_and_its_limit(self) -> None:
+        _rc, elsewhere = self.cli(self.tmp, "memory", "search")
+        self.assertFalse(any(i["path"].startswith("projects/") for i in elsewhere["results"]))
+        _rc, capped = self.cli(self.code, "memory", "search", "--limit", "1")
+        self.assertEqual(1, len(capped["results"]))
+
+    def test_bad_requests_are_refused_not_reported_as_a_broken_vault(self) -> None:
+        for argv in (
+            ("memory", "search", "x" * (retrieve.QUERY_MAX + 1)),
+            ("memory", "show", "proposals/core/lessons/p.md"),
+            ("memory", "search", "deploy", "--project", "Not A Slug"),
+        ):
+            with self.subTest(argv=argv[1:3]):
+                rc, payload = self.cli(self.code, *argv)
+                self.assertEqual((1, "refused"), (rc, payload["state"]))

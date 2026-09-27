@@ -40,6 +40,7 @@ from .memory import (
 )
 
 SOFT_CAP = 10
+RECORD_SOFT_TOKENS = 400  # the same advice project writes give
 HARD_CAP = 25
 KIND_DIRS = {
     "decision": "decisions",
@@ -158,6 +159,13 @@ def propose(
     }
     if waiting >= SOFT_CAP:
         result["warning"] = f"{waiting} proposals are waiting for review"
+    size = (len(body) + 3) // 4
+    if size > RECORD_SOFT_TOKENS:
+        advice = (
+            f"this proposal is about {size} tokens; split it into one per idea "
+            f"(under {RECORD_SOFT_TOKENS}) so each stays cheap to read"
+        )
+        result["warning"] = "; ".join(filter(None, [result.get("warning"), advice]))
     return result
 
 

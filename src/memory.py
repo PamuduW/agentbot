@@ -128,6 +128,10 @@ class MemoryVaultError(RuntimeError):
     """The vault exists but cannot be inspected safely."""
 
 
+class MemoryRequestError(MemoryVaultError):
+    """The vault is fine; the request is not (a bad query, path, or scope)."""
+
+
 @dataclass(frozen=True)
 class Finding:
     severity: Severity

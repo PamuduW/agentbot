@@ -52,6 +52,9 @@ FLAG = "AGENTBOT_MEMORY_PROJECT_WRITES"
 # Maintenance pressure (ADR-0009 / R7 section 5.7.4): warn, then require tidying.
 CONTEXT_SOFT_TOKENS = 800
 CONTEXT_HARD_TOKENS = 1_200
+# One idea per record keeps a whole-record read cheap once the header says it
+# is the one: past this, the write succeeds with advice to split.
+RECORD_SOFT_TOKENS = 400
 POOL_SOFT = 48
 POOL_HARD = 64
 
@@ -182,6 +185,11 @@ def _pressure(vault: Path, folder: str, relative: str, data: bytes, *, adding: b
             )
         if size > CONTEXT_SOFT_TOKENS:
             warnings.append(f"the active context is about {size} tokens; compact it soon")
+    elif not relative.endswith("/project.md") and estimate_tokens(body) > RECORD_SOFT_TOKENS:
+        warnings.append(
+            f"this record is about {estimate_tokens(body)} tokens; split it into one record "
+            f"per idea (under {RECORD_SOFT_TOKENS}) so each stays cheap to read"
+        )
     if adding:
         if len(live) >= POOL_HARD:
             raise MemoryVaultError(
