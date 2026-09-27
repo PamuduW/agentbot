@@ -144,7 +144,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "workspace",
         "agentbot workspace [--profile NAME] [--targets LIST] [--yes] PATH",
         "mutating",
-        "Preview or apply one workspace render.",
+        "Preview one workspace render; boot is the usual way to apply it with project memory.",
         (
             option("--profile NAME", "Select a workspace profile.", "active profile"),
             option(
@@ -314,7 +314,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "memory",
         "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|reject|due|hook|backup|restore|migrate",
         "mutating",
-        "Locate, validate, and review the private memory vault; propose one local draft.",
+        "The private memory vault: setup, sync, project memory, core proposals, and recall.",
         (
             option(
                 "sync",
