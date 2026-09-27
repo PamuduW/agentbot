@@ -1262,8 +1262,41 @@ def _handle_boot(context: CommandContext) -> int:
         targets=targets,
         register=True,
     )
-    print_workspace_report(result)
-    return 1 if result.status in {"conflict", "failed"} else 0
+    failed = result.status in {"conflict", "failed"}
+    rows = [] if failed or args.no_memory else [_boot_project_memory(context, target)]
+    print_workspace_report(result, extra_rows=rows)
+    return 1 if failed else 0
+
+
+def _boot_project_memory(context: CommandContext, target: Path) -> tuple[str, str, str]:
+    """Give the booted repository project memory, so one command sets it all up.
+
+    Memory is optional: no vault, an older schema, or a directory that is not a
+    repository is a skipped row, and nothing here can fail the boot.
+    """
+    from . import memory, memory_autosync, memory_projects
+
+    label = "Project memory"
+    config_home = context.paths.config_home
+    if memory_projects.repo_identity(target) is None:
+        return (label, "not a Git repository", "skipped")
+    try:
+        root, _ = memory.find_vault(context.paths.root)
+        if root is None:
+            return (label, "no memory vault configured", "skipped")
+        if memory.read_marker(root) != 3:
+            return (label, "the vault needs schema 3 for project memory", "skipped")
+        memory_autosync.before_read(root, config_home)
+        found = memory_projects.resolve(root, target, config_home)
+        if found.state == "resolved" and found.entry is not None:
+            return (label, f"{found.entry['folder']} (already registered)", "ok")
+        if found.state == "collision":
+            return (label, "; ".join(found.problems) or "registry collision", "conflict")
+        entry = memory_projects.register(root, target, config_home)
+        outcome = memory_autosync.after_write(root, config_home)
+        return (label, f"{entry['folder']} registered; sync {outcome['state']}", "applied")
+    except (memory.MemoryVaultError, OSError) as error:
+        return (label, str(error), "warn")
 
 
 def _handle_workspaces(context: CommandContext) -> int:
@@ -1771,6 +1804,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--cursor",
         action="store_true",
         help="Include generated Cursor rules (overrides the profile defaults)",
+    )
+    boot.add_argument(
+        "--no-memory",
+        action="store_true",
+        dest="no_memory",
+        help="Do not register this repository's project memory",
     )
     boot.add_argument("path", nargs="?", default=".", help="Workspace directory")
 

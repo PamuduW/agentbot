@@ -114,17 +114,24 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "boot",
-        "agentbot boot [SELECTORS] [--profile NAME] [TARGET]",
+        "agentbot boot [SELECTORS] [--profile NAME] [--no-memory] [TARGET]",
         "mutating",
-        "Create or preserve Agentbot policy outputs in one target and register it.",
+        "Create or preserve Agentbot policy outputs in one target, register it, "
+        "and give it project memory.",
         (
             option("--agents | --codex", "Include canonical AGENTS.md.", "always"),
             option("--claude", "Include generated Claude output.", "profile default"),
             option("--cursor", "Include generated Cursor rules.", "profile default"),
             option("--profile NAME", "Select a workspace profile.", "active profile"),
+            option(
+                "--no-memory",
+                "Skip project memory. Otherwise a repository gets it on a schema 3 vault.",
+                "memory on",
+            ),
             option("TARGET", "Target directory.", "current directory"),
         ),
-        "May write selected Agentbot-managed policy outputs and update the private workspace registry.",
+        "May write selected Agentbot-managed policy outputs, update the private workspace registry, "
+        "and register the repository's project memory in the vault (synced).",
         ("agentbot boot", "agentbot boot --cursor /path/to/repo"),
         ("workspace", "workspaces"),
         "public",

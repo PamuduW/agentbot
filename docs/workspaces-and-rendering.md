@@ -30,6 +30,14 @@ successful apply. `agentbot resync` refreshes registered workspaces. Both flows
 preview unless `--yes` authorizes writes. Removing a registry record never
 deletes workspace files.
 
+When a schema 3 memory vault is configured and the target is a Git
+repository, a successful `boot` also registers it for project memory, the same
+as `agentbot memory project register`, and syncs that registration. The report
+gains a `Project memory` row: `applied` for a new project, `ok` when the
+repository already has one, `skipped` without a vault, on an older schema, or
+outside a repository, and `conflict` on a registry collision. Memory never
+changes boot's exit code. `--no-memory` skips the step.
+
 Relative paths -- including `boot`'s current-directory default -- resolve
 against the directory the command was invoked from, not the Agentbot checkout.
 `boot` renders the active profile's `default_targets` unless a selector flag

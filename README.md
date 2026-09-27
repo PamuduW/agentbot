@@ -76,7 +76,7 @@ agentbot install --components L   # install a named subset, unattended
 agentbot update --dry-run         # preview repository and lifecycle changes
 agentbot update                   # confirm and apply an update
 agentbot full                     # install, then update
-agentbot boot /path/to/repo       # render and register a workspace
+agentbot boot /path/to/repo       # render, register, and give it project memory
 agentbot workspaces               # list registered workspaces
 agentbot resync --dry-run --all   # preview every registered workspace
 agentbot token                    # Token Config: the GitHub and GitLab credentials
@@ -122,8 +122,9 @@ every machine. Forks and renames are separate projects until explicitly
 linked. A repository without a remote gets a generated `local/<id>-<name>`
 origin and must be attached on each extra machine; that binding stays in
 private `memory-bindings.json`. Two projects claiming one origin, alias, or
-folder is a collision, and project writes stop until it is fixed. On a schema 3 vault, `memory project register` gives the current repository
-project memory (a registry entry plus its `project.md`), `attach PROJECT`
+folder is a collision, and project writes stop until it is fixed. On a schema 3 vault, `agentbot boot` gives the repository
+project memory (a registry entry plus its `project.md`) unless `--no-memory`
+is passed, and `memory project register` does the same on its own; `attach PROJECT`
 binds a no-remote checkout on another machine, and `link URL PROJECT --yes`
 (human-only) adds a rename or fork as an alias.
 

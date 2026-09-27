@@ -1310,7 +1310,7 @@ def print_reconciliation_report(result) -> tuple[int, int, int]:
     )
 
 
-def print_workspace_report(result) -> None:
+def print_workspace_report(result, extra_rows: list[tuple[str, str, str]] | None = None) -> None:
     from ..workspace_service import WorkspaceResult
 
     if not isinstance(result, WorkspaceResult):
@@ -1329,6 +1329,7 @@ def print_workspace_report(result) -> None:
     ]
     if not rows:
         rows.append((str(result.path), result.message, result.status))
+    rows.extend(extra_rows or [])
     ok, check, miss = print_table(rows, wrap_details=True)
     print()
     print(f"  {result.message}")
