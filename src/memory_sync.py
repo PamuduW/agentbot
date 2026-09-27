@@ -79,6 +79,9 @@ class Op:
     expected: str | None = None  # prior sha256, subtree digest, or None for "absent"
     commit: str | None = None
     client: str = "unknown"
+    # The registry ID the project folder had when the write was made. Replay
+    # refuses the write if the folder now belongs to another project.
+    project_id: str | None = None
 
     def data(self) -> bytes | None:
         return None if self.content is None else base64.b64decode(self.content)
@@ -331,6 +334,13 @@ def resolve_project(root: Path, origin_url: str) -> dict[str, Any] | None:
     return None
 
 
+def _project_id(root: Path, folder: str) -> str:
+    for entry in _registry(root)["projects"]:
+        if entry["folder"] == folder:
+            return str(entry["id"])
+    raise MemoryVaultError(f"projects/{folder} is not a registered project")
+
+
 def _registry(root: Path) -> dict[str, Any]:
     path = root / REGISTRY
     if not path.exists():
@@ -433,6 +443,7 @@ def put_project(root: Path, project: str, rel: str, data: bytes, *, client: str 
         content=base64.b64encode(data).decode(),
         expected=None if prior is None else _sha(prior),
         client=client,
+        project_id=_project_id(root, project),
     )
     return _record(root, op)
 
@@ -443,7 +454,15 @@ def delete_project(root: Path, project: str, rel: str, *, client: str = "unknown
     if prior is None:
         raise MemoryVaultError(f"{relative} does not exist")
     op = Op(
-        str(uuid.uuid4()), "delete", "project", relative, project, None, _sha(prior), client=client
+        str(uuid.uuid4()),
+        "delete",
+        "project",
+        relative,
+        project,
+        None,
+        _sha(prior),
+        client=client,
+        project_id=_project_id(root, project),
     )
     return _record(root, op)
 
@@ -455,7 +474,17 @@ def forget_project(root: Path, project: str, *, client: str = "unknown") -> Op:
     digest = _subtree_digest(root, folder)
     if digest is None:
         raise MemoryVaultError(f"{folder} has no memory to forget")
-    op = Op(str(uuid.uuid4()), "forget", "project", folder, project, None, digest, client=client)
+    op = Op(
+        str(uuid.uuid4()),
+        "forget",
+        "project",
+        folder,
+        project,
+        None,
+        digest,
+        client=client,
+        project_id=_project_id(root, project),
+    )
     return _record(root, op)
 
 
@@ -506,6 +535,15 @@ def register_origin(
 
 def _apply(root: Path, op: Op) -> str:
     """Apply one operation to the working tree. Returns applied or noop; raises SyncConflict."""
+    if op.tier == "project" and op.project_id is not None and op.project is not None:
+        # Folder names are chosen per machine; the ID is the identity. Two
+        # machines that registered different repositories under one name
+        # must not write into each other's project.
+        owner = next(
+            (e["id"] for e in _registry(root)["projects"] if e["folder"] == op.project), None
+        )
+        if owner != op.project_id:
+            raise SyncConflict(f"projects/{op.project} now belongs to another project")
     if op.kind == "register":
         return _apply_register(root, op)
     if op.kind in {"untrack", "obsidian"}:
@@ -697,6 +735,7 @@ def change_project(
         json.dumps(items),
         None,
         client=client,
+        project_id=_project_id(root, project),
     )
     return _record(root, op)
 

@@ -15,8 +15,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src import memory_autosync as autosync
 from src import memory_sync as sync
 from src.memory import MemoryVaultError, validate
+from src.memory_projects import project_md
 from tests.test_memory_sync import Fleet, at, git, record
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,6 +215,70 @@ class TimeoutTests(SafetyTestCase):
             result = sync.sync(self.a)
         self.assertEqual("offline", result.state)
         self.assertEqual(1, len(sync.pending(self.a)))
+
+
+class ProjectIdentityTests(SafetyTestCase):
+    """M-R2: a folder name is not an identity; the registry ID is."""
+
+    def register(self, root: Path, origin: str, project_id: str) -> None:
+        sync.register_origin(root, origin, "app", project_id)
+        sync.put_project(root, "app", "project.md", project_md(project_id, "app", origin))
+
+    def test_a_losing_registration_writes_nothing_into_the_winners_project(self) -> None:
+        winner, loser = (
+            "a0a0a0a0-0000-4000-8000-000000000001",
+            "b0b0b0b0-0000-4000-8000-000000000002",
+        )
+        self.register(self.a, "https://github.com/me/app", winner)
+        # B, offline, registers a different repository with the same name.
+        self.register(self.b, "https://github.com/other/app", loser)
+        note = self.put(self.b, "app", "lessons/secret-plan.md", "the other repository's note")
+        sync.sync(self.a)
+        result = sync.sync(self.b)
+        self.assertIn(note.id, [c["op"] for c in result.conflicts])
+        self.assertEqual(3, len(result.conflicts))  # the registry entry, project.md, and the note
+        self.assertFalse(self.remote_has("projects/app/lessons/secret-plan.md"))
+        hub = git(self.fleet.origin, "show", "main:projects/app/project.md")
+        self.assertIn(winner, hub)
+        self.assertEqual([], [f for f in validate(self.b).findings if f.severity == "error"])
+
+
+class ConflictScopeTests(SafetyTestCase):
+    def repo(self, origin: str) -> Path:
+        path = Path(self._tmp.name) / origin.rsplit("/", 1)[-1]
+        subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+        subprocess.run(["git", "-C", str(path), "remote", "add", "origin", origin], check=True)
+        return path
+
+    def alpha_conflict(self) -> dict:
+        self.put(self.a, "alpha", "lessons/l0.md", "A's edit")
+        sync.sync(self.a)
+        self.put(self.b, "alpha", "lessons/l0.md", "B's edit")
+        (conflict,) = sync.sync(self.b).conflicts
+        return conflict
+
+    def test_a_conflict_is_resolved_only_from_its_own_project(self) -> None:
+        conflict = self.alpha_conflict()
+        config = Path(self._tmp.name) / "config"
+        hot = self.repo("https://github.com/fixture/hot.git")
+        for keep in ("mine", "theirs"):
+            with self.subTest(keep=keep), self.assertRaises(MemoryVaultError) as raised:
+                autosync.resolve(self.b, config, conflict["op"], keep, cwd=hot)
+            self.assertIn("belongs to project alpha", str(raised.exception))
+        alpha = self.repo("https://github.com/fixture/alpha.git")
+        resolved = autosync.resolve(self.b, config, conflict["op"], "mine", cwd=alpha)
+        self.assertIsNotNone(resolved["resolution_op"])
+
+    def test_keep_mine_for_a_core_approval_uses_the_core_path(self) -> None:
+        # M-R8: approvals are core multi-operations with no project.
+        core = "core/lessons/c1.md"
+        sync.change_core(self.a, [(core, record(core, "A's approval"))], tier="core")
+        sync.sync(self.a)
+        sync.change_core(self.b, [(core, record(core, "B's approval"))], tier="core")
+        (conflict,) = sync.sync(self.b).conflicts
+        self.assertEqual("human", conflict["resolver"])
+        autosync.resolve(self.b, Path(self._tmp.name) / "config", conflict["op"], "mine")
+        self.assertEqual(record(core, "B's approval"), (self.b / core).read_bytes())
 
 
 if __name__ == "__main__":

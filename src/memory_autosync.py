@@ -231,11 +231,19 @@ def show(vault: Path, op_id: str) -> dict[str, Any]:
     }
 
 
-def resolve(vault: Path, config_home: Path, op_id: str, keep: str) -> dict[str, Any]:
-    """Keep theirs (accept the current state) or mine (re-apply the lost operation)."""
+def resolve(
+    vault: Path, config_home: Path, op_id: str, keep: str, *, cwd: Path | None = None
+) -> dict[str, Any]:
+    """Keep theirs (accept the current state) or mine (re-apply the lost operation).
+
+    With ``cwd`` (every CLI call), a project or registry conflict is resolved
+    only from the repository it belongs to, like any other project write.
+    """
     conflict = _find(vault, op_id)
     if keep not in {"mine", "theirs"}:
         raise MemoryVaultError("keep must be mine or theirs")
+    if cwd is not None:
+        _require_owner(vault, config_home, conflict, cwd)
     resolution = None
     if keep == "mine":
         resolution = _reapply(vault, conflict).id
@@ -246,6 +254,31 @@ def resolve(vault: Path, config_home: Path, op_id: str, keep: str) -> dict[str, 
         "resolution_op": resolution,
         "sync": after_write(vault, config_home),
     }
+
+
+def _require_owner(vault: Path, config_home: Path, conflict: dict[str, Any], cwd: Path) -> None:
+    from . import memory_projects
+
+    tier = conflict["tier"]
+    if tier in {"core", "proposal"} or conflict["kind"] in {"obsidian", "untrack"}:
+        return  # core is the human's (the CLI asks for the typed code)
+    elsewhere = "resolve it from the repository it belongs to"
+    if tier == "meta":
+        entry = json.loads((conflict.get("op_data") or {}).get("content") or "{}")
+        identity = memory_projects.repo_identity(cwd)
+        ours = identity is not None and (
+            entry.get("origin") == identity.canonical
+            or memory_setup.bindings(config_home).get(str(identity.toplevel)) == entry.get("id")
+        )
+        if not ours:
+            raise MemoryVaultError(f"this registry conflict is not this repository's; {elsewhere}")
+        return
+    entry = memory_projects.require_project(vault, cwd, config_home)
+    if entry["folder"] != conflict.get("project"):
+        raise MemoryVaultError(
+            f"this conflict belongs to project {conflict.get('project')}, not {entry['folder']}; "
+            f"{elsewhere}"
+        )
 
 
 def _reapply(vault: Path, conflict: dict[str, Any]) -> memory_sync.Op:
@@ -264,6 +297,10 @@ def _reapply(vault: Path, conflict: dict[str, Any]) -> memory_sync.Op:
                     changes.append((item["path"], None))
             else:
                 changes.append((item["path"], base64.b64decode(item["content"])))
+        if op.tier in {"core", "proposal"}:
+            # A core approval (and the proposal it removes) goes back
+            # through the core path, not the project one.
+            return memory_sync.change_core(vault, changes, tier=op.tier, client="human")
         return memory_sync.change_project(vault, op.project or "", changes, client="resolution")
     if op.kind == "put":
         return memory_sync.put_project(

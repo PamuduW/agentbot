@@ -766,7 +766,9 @@ def _handle_memory_sync(context: CommandContext) -> int:
                     f"resolve core conflict {args.op} keeping {args.keep}",
                     f"agentbot memory conflict resolve {args.op} --keep {args.keep}",
                 )
-            payload = memory_autosync.resolve(root, config_home, args.op, args.keep)
+            payload = memory_autosync.resolve(
+                root, config_home, args.op, args.keep, cwd=caller_path(".")
+            )
         title = f"conflict {action}"
         code = 0
     if as_json:
