@@ -52,6 +52,27 @@ class ProjectLinkTests(WritesTestCase):
         )
         self.assertEqual([], memory.validate(self.a).findings)
 
+    def test_a_block_list_written_by_obsidian_is_relinked_too(self) -> None:
+        added = writes.add(
+            self.a,
+            self.code,
+            self.config,
+            kind="lesson",
+            title="Newer",
+            body="n",
+            supersedes=self.lesson_id(),
+        )
+        path = self.a / added["path"]
+        link = record_link(LESSON)
+        block = f'replaces:\n  - "{link}"'
+        rewritten = path.read_text().replace(f'replaces: ["{link}"]', block)
+        self.assertIn(block, rewritten)
+        sync.change_project(self.a, "alpha", [(added["path"], rewritten.encode())])
+        writes.move(self.a, self.code, self.config, "lessons/2026-09-27-l.md", "lessons/moved.md")
+        self.assertEqual(
+            ["[[projects/alpha/lessons/moved]]"], fields(self.a, added["path"])["replaces"]
+        )
+
     def test_an_older_record_gains_its_link_when_next_written(self) -> None:
         self.assertNotIn("up", fields(self.a, LESSON))
         writes.edit(self.a, self.code, self.config, "lessons/2026-09-27-l.md", body="revised")

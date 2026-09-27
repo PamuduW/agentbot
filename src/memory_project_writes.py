@@ -287,10 +287,10 @@ def _relink(vault: Path, folder: str, old: str, new: str) -> list[tuple[str, byt
         head, rest = _split(text)
         if old_link not in head:
             continue
-        head = "\n".join(
-            line.replace(old_link, new_link) if line.startswith("replaces:") else line
-            for line in head.split("\n")
-        )
+        # Anywhere in the front matter, not only a one-line list: Obsidian
+        # may rewrite `replaces` as a block list. Only replaces links point at
+        # records (up points at project.md, which never moves).
+        head = head.replace(old_link, new_link)
         data = (head + "\n" + rest).encode("utf-8")
         _require_valid(record.path, data)
         changes.append((record.path, data))

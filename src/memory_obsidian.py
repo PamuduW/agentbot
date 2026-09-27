@@ -11,9 +11,12 @@ one idempotent operation that:
 - colours core, projects, and proposals in the graph, if no colour groups
   exist yet.
 
-Only those settings are touched. Everything is recomputed from the current
-tree, so the operation converges when several machines run it, and it never
-overwrites a dashboard or colour groups the user already has.
+Only those settings are touched, and only once: ``.obsidian/agentbot.json``
+records the setup version applied, so a dashboard the user deletes or a
+setting the user changes afterwards stays as the user left it. Keeping
+device state out of Git is not a preference, so that part is always checked.
+Everything is recomputed from the current tree, so the operation converges
+when several machines run it.
 """
 
 from __future__ import annotations
@@ -23,10 +26,12 @@ from pathlib import Path
 from typing import Any
 
 VIEW_PATH = "views/memory.base"
+MARKER = ".obsidian/agentbot.json"
+KIT_VERSION = 1
 CORE_PLUGINS = ".obsidian/core-plugins.json"
 APP = ".obsidian/app.json"
 GRAPH = ".obsidian/graph.json"
-KIT_PATHS = (".gitignore", VIEW_PATH, CORE_PLUGINS, APP, GRAPH)
+KIT_PATHS = (".gitignore", VIEW_PATH, CORE_PLUGINS, APP, GRAPH, MARKER)
 
 APP_SETTINGS: dict[str, Any] = {
     "newLinkFormat": "absolute",
@@ -114,10 +119,25 @@ views:
 """
 
 
-def _read_json(root: Path, relative: str) -> dict[str, Any] | None:
+def _safe(root: Path, relative: str) -> bool:
+    """No part of the path is a symlink, so a write stays inside the vault."""
+    current = root
+    for part in relative.split("/"):
+        current = current / part
+        if current.is_symlink():
+            return False
+    return True
+
+
+def _read_json(root: Path, relative: str, *, create: bool = True) -> dict[str, Any] | None:
+    """A settings file's object; {} when absent and creatable; None to leave it alone."""
     path = root / relative
-    if path.is_symlink() or not path.is_file():
-        return {} if not path.exists() else None
+    if not _safe(root, relative):
+        return None
+    if not path.exists():
+        return {} if create else None
+    if not path.is_file():
+        return None
     try:
         data = json.loads(path.read_text(encoding="utf-8") or "{}")
     except (OSError, ValueError):
@@ -135,12 +155,18 @@ def changes(root: Path) -> dict[str, bytes]:
 
     wanted: dict[str, bytes] = {}
     gitignore = gitignore_with_device_state(root)
-    if gitignore is not None:
+    if gitignore is not None and _safe(root, ".gitignore"):
         wanted[".gitignore"] = gitignore
-    if not (root / VIEW_PATH).exists() and not (root / VIEW_PATH).is_symlink():
+    marker = _read_json(root, MARKER)
+    applied = marker.get("kit") if marker is not None else None
+    if marker is None or (type(applied) is int and applied >= KIT_VERSION):
+        return wanted  # already set up once, or the marker is not ours to touch
+    if _safe(root, VIEW_PATH) and not (root / VIEW_PATH).exists():
         wanted[VIEW_PATH] = VIEW.encode("utf-8")
 
-    plugins = _read_json(root, CORE_PLUGINS)
+    # A missing core-plugins.json is left to Obsidian: a file naming only
+    # Bases could read as every other core plugin switched off.
+    plugins = _read_json(root, CORE_PLUGINS, create=False)
     if plugins is not None and plugins.get("bases") is not True:
         wanted[CORE_PLUGINS] = _dumped({**plugins, "bases": True})
 
@@ -157,6 +183,7 @@ def changes(root: Path) -> dict[str, bytes]:
     graph = _read_json(root, GRAPH)
     if graph is not None and not graph.get("colorGroups"):
         wanted[GRAPH] = _dumped({**graph, "colorGroups": COLOR_GROUPS})
+    wanted[MARKER] = _dumped({**marker, "kit": KIT_VERSION})
     return wanted
 
 

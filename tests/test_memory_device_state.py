@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from src import memory
 from src import memory_autosync as autosync
 from src import memory_obsidian as obsidian
@@ -154,6 +156,35 @@ class ObsidianKitTests(AutosyncTestCase):
         head = git(self.b, "rev-parse", "HEAD")
         self.assertIsNone(sync.setup_obsidian(self.b))
         self.assertEqual(head, git(self.b, "rev-parse", "HEAD"))
+
+    def test_it_sets_up_once_and_then_respects_the_users_choices(self) -> None:
+        autosync.run(self.a)
+        self.assertEqual({"kit": obsidian.KIT_VERSION}, self.json(obsidian.MARKER))
+        (self.a / obsidian.VIEW_PATH).unlink()
+        (self.a / ".obsidian/core-plugins.json").write_text('{"graph": true, "bases": false}\n')
+        git(self.a, "add", "-A")
+        git(self.a, "commit", "-q", "-m", "I prefer it this way")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        head = git(self.a, "rev-parse", "HEAD")
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        self.assertEqual(head, git(self.a, "rev-parse", "HEAD"))
+        self.assertFalse((self.a / obsidian.VIEW_PATH).exists())
+        self.assertFalse(self.json(".obsidian/core-plugins.json")["bases"])
+
+    def test_it_never_writes_through_a_symlink_or_invents_core_plugins(self) -> None:
+        import tempfile
+
+        outside = Path(tempfile.mkdtemp(dir=self.tmp))
+        (self.a / "views").symlink_to(outside, target_is_directory=True)
+        (self.a / ".obsidian/core-plugins.json").unlink()
+        git(self.a, "add", "-A")
+        git(self.a, "commit", "-q", "-m", "symlinked views, no core plugins")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        wanted = obsidian.changes(self.a)
+        self.assertNotIn(obsidian.VIEW_PATH, wanted)
+        self.assertNotIn(".obsidian/core-plugins.json", wanted)
+        obsidian.apply(self.a)
+        self.assertEqual([], list(outside.iterdir()))
 
     def test_the_dashboard_is_scanned_like_any_vault_file(self) -> None:
         from tests.test_memory import FAKE_GITHUB_TOKEN
