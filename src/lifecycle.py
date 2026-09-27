@@ -235,7 +235,7 @@ class Lifecycle:
 
     def _refresh_integrations(self) -> tuple[PlatformOutcome, ...]:
         """What install sets up beyond skills, refreshed by every update."""
-        from . import codex_remote_control
+        from . import codex_remote_control, memory_backup
         from .ui.reports import integration_result
 
         boost = self.boost.setup_if_cli_available()
@@ -246,6 +246,12 @@ class Lifecycle:
         remote_detail, remote_result = codex_remote_control.ensure(self.paths, self._command_runner)
         outcomes.append(
             PlatformOutcome("codex-remote", "Codex Remote Control", remote_detail, remote_result)
+        )
+        backup_detail, backup_result = memory_backup.refresh(
+            self.paths.root, self.paths.config_home
+        )
+        outcomes.append(
+            PlatformOutcome("memory-backup", "Memory backup", backup_detail, backup_result)
         )
         return tuple(outcomes)
 

@@ -48,3 +48,11 @@ overrides them.
 Global Codex and Claude policy adapters, Claude skill links, and the managed
 Claude statusline are rendered from canonical sources. Use install, update, or
 the relevant resync/setup flow to reconcile them.
+
+Cursor has no global output. Its user-level rules live only in its settings
+screen, and neither the editor nor the Cursor CLI reads a user-level rules
+file from disk; both read a repository's `.cursor/rules`, `AGENTS.md`, and
+`CLAUDE.md`. Cursor therefore gets Agentbot policy per repository, from
+`agentbot boot` (its `cursor` target). To carry the machine policy into
+repositories that are not booted, paste `global/AGENTS.md` into Cursor's
+User Rules by hand.

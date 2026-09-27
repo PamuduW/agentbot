@@ -16,8 +16,7 @@ For a skills-only update, run `./install.sh skills update` to preview source
 revisions and the review ID. Apply that exact preview with
 `./install.sh skills update --yes --plan-sha256 <review-id>`. Apply rechecks the
 manifest, lock, source revisions, and discovered source inventory before it
-installs anything. If any changed, preview again. `skills upgrade` is an
-alias. Preview clones into temporary directories and does not change installed
+installs anything. If any changed, preview again. Preview clones into temporary directories and does not change installed
 skills or the lock.
 
 ## Lock ownership

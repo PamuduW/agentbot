@@ -33,8 +33,8 @@ report on a state it had not established.
 `--menu` opens the three screens the menu's **Install Agentbot** entry drives —
 the component selector, the execution plan, then the run. It needs a controlling
 terminal. The Dotfiles bootstrap asks for it by name so its install step gets
-that sequence rather than the whole Agentbot menu; a checkout whose launcher
-predates the flag falls back to a plain `install`.
+that sequence rather than the whole Agentbot menu, and uses a plain `install`
+only when no one is watching.
 
 ### Order of the screens
 

@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from src import memory
 from src import memory_backup as backups
+from src import memory_setup as setup
 from tests.support import run_cli_main
 from tests.test_memory import FAKE_GITHUB_TOKEN, ID_A, _tree_digest, note, v3, v3_vault
 
@@ -221,6 +222,74 @@ class BackupCliTests(BackupTestCase):
             "memory", "restore", "--source", "backups/vault", "--destination", "r", "--yes"
         )
         self.assertEqual(1, rc)
+
+
+class RecordedBackupTests(BackupTestCase):
+    """The converge pass keeps the backup a person made once current."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.config = self.tmp / "config" / "agentbot"
+        for patcher in (
+            patch.object(setup, "VOLATILE_ROOTS", ()),
+            patch.dict(
+                os.environ,
+                {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")},
+                clear=True,
+            ),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        setup.setup_path(self.vault.root, self.config, apply=True)
+
+    def refresh(self) -> tuple[str, str]:
+        return backups.refresh(self.tmp / "agentbot", self.config)
+
+    def test_nothing_is_refreshed_until_a_backup_is_recorded(self) -> None:
+        self.assertEqual("skipped", self.refresh()[1])
+        self.assertFalse(self.dest.exists())
+
+    def test_a_recorded_backup_follows_new_commits_and_survives_setup_again(self) -> None:
+        setup.record_backup(self.config, self.dest, "user-attested")
+        self.assertEqual(
+            {"destination": str(self.dest), "assurance": "user-attested"},
+            setup.recorded_backup(self.config),
+        )
+        self.assertEqual(("refreshed " + str(self.dest), "ok"), self.refresh())
+        self.vault.write("core/lessons/later.md", note(v3("lesson", ID_A, "global")))
+        self.vault.commit()
+        self.assertEqual("ok", self.refresh()[1])
+        manifest = backups.read_manifest(self.dest)
+        self.assertEqual(self.git(self.vault.root, "rev-parse", "HEAD"), manifest["head"])
+        self.assertEqual("user-attested", manifest["encryption_assurance"])
+        setup.setup_path(self.vault.root, self.config, apply=True)
+        self.assertIsNotNone(setup.recorded_backup(self.config))
+
+    def test_a_backup_that_cannot_be_refreshed_is_reported_not_raised(self) -> None:
+        setup.record_backup(self.config, self.vault.root / "inside", "unknown")
+        detail, result = self.refresh()
+        self.assertEqual("check", result)
+        self.assertIn("not refreshed", detail)
+
+    def test_the_cli_records_the_destination_and_reuses_it(self) -> None:
+        env = {
+            "HOME": str(self.tmp / "home"),
+            "NO_COLOR": "1",
+            "AGENTBOT_CALLER_PWD": str(self.tmp),
+        }
+        argv = ["agentbot", "--root", str(self.tmp / "agentbot"), "memory", "backup"]
+        with patch.dict(os.environ, {**env, "XDG_CONFIG_HOME": str(self.config.parent)}):
+            rc, stdout, _ = run_cli_main([*argv, "--yes"])
+            self.assertEqual(1, rc)  # nothing recorded and no --destination
+            rc, stdout, _ = run_cli_main([*argv, "--destination", "backups/vault"])
+            self.assertEqual(0, rc, stdout)
+            self.assertIsNone(setup.recorded_backup(self.config))  # a preview records nothing
+            rc, stdout, _ = run_cli_main([*argv, "--destination", "backups/vault", "--yes"])
+            self.assertEqual(0, rc, stdout)
+            self.assertEqual(str(self.dest), setup.recorded_backup(self.config)["destination"])
+            rc, stdout, _ = run_cli_main([*argv, "--yes", "--json"])
+            self.assertEqual(0, rc, stdout)
+            self.assertEqual(str(self.dest), json.loads(stdout)["destination"])
 
 
 if __name__ == "__main__":

@@ -102,9 +102,6 @@ class CommandTableTests(unittest.TestCase):
         missing = names - set(cli.COMMAND_HANDLERS) - {"help"}
         self.assertEqual(missing, set(), f"commands without a handler: {sorted(missing)}")
 
-    def test_update_and_upgrade_share_one_handler(self):
-        self.assertIs(cli.COMMAND_HANDLERS["update"], cli.COMMAND_HANDLERS["upgrade"])
-
     def test_archived_commands_are_rejected_before_dispatch(self):
         for command in cli.ARCHIVED_COMMANDS:
             self.assertNotIn(command, cli.COMMAND_HANDLERS)

@@ -341,12 +341,20 @@ class IntegrationRefreshTests(unittest.TestCase):
                 mock.patch(
                     "src.codex_remote_control.ensure", return_value=("remote control on", "ok")
                 ),
+                mock.patch(
+                    "src.memory_backup.refresh", return_value=("refreshed /backups", "ok")
+                ) as backup,
             ):
                 outcomes = lifecycle._refresh_integrations()
 
         self.assertEqual(["vscode", "cursor"], surfaced)  # CLI config is merged once, earlier
-        self.assertEqual(["boost", "vscode", "cursor", "codex-remote"], [o.key for o in outcomes])
+        self.assertEqual(
+            ["boost", "vscode", "cursor", "codex-remote", "memory-backup"],
+            [o.key for o in outcomes],
+        )
+        backup.assert_called_once_with(lifecycle.paths.root, lifecycle.paths.config_home)
         boost.setup_if_cli_available.assert_called_once_with()
         with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
             print_update_result(UpdateOutcome("applied", platform=outcomes))
         self.assertIn("Codex Remote Control", out.getvalue())
+        self.assertIn("Memory backup", out.getvalue())

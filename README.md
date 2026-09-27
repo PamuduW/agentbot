@@ -297,7 +297,12 @@ vault's backup is refused. A dirty tree is reported, not blocking.
 or empty directory, removes the backup `origin`, validates the result, and
 never touches the active checkout, Agentbot's configuration, or a remote.
 Git snapshots hold committed history only: uncommitted edits and exports are
-never included. Remote snapshots are not implemented.
+never included. Remote snapshots are not implemented. A completed backup
+records its destination (and assurance) in this machine's `memory.json`;
+every `agentbot update`, and so `agentbot full` and `dotfiles fu`, refreshes
+it and shows a "Memory backup" row, and `memory backup --yes` without
+`--destination` refreshes it by hand. A refresh that fails is reported and
+leaves the previous snapshot in place.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
 are also directly addressable:

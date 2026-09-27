@@ -7,8 +7,12 @@ trial clone that passes the vault validator), and only then replaces the
 previous snapshot and writes the manifest atomically. A failed backup leaves
 the previous snapshot as it was.
 
-Git carries committed history only: uncommitted edits, ignored drafts, and
-ignored exports are never in a snapshot, and every report says so. Restore
+A successful backup records its destination in the machine's memory
+configuration, and every ``agentbot update`` refreshes that backup
+(``refresh``), so it stays at most one update behind without a scheduler.
+
+Git carries committed history only: uncommitted edits and ignored exports are
+never in a snapshot, and every report says so. Restore
 clones into a new or empty private directory, removes the backup ``origin``,
 validates the result, and touches nothing else: not the active checkout, not
 Agentbot's configuration, not a remote. There is no derived index to rebuild:
@@ -323,3 +327,27 @@ def restore_json(result: RestoreResult) -> dict[str, Any]:
         "validation_findings": result.findings,
         "notes": result.notes,
     }
+
+
+def refresh(agentbot_root: Path, config_home: Path) -> tuple[str, str]:
+    """Refresh the recorded backup for the converge pass: (detail, result).
+
+    Never raises: a backup that cannot be refreshed is reported for the user
+    and the previous snapshot stays as it was.
+    """
+    from . import memory, memory_setup
+
+    try:
+        recorded = memory_setup.recorded_backup(config_home)
+        if recorded is None:
+            return "no backup recorded (agentbot memory backup --destination PATH --yes)", "skipped"
+        root, _ = memory.find_vault(agentbot_root, config_home=config_home)
+        if root is None:
+            return "no memory vault configured", "skipped"
+        destination = Path(recorded["destination"])
+        result = backup(root, destination, apply=True, assurance=recorded["assurance"])
+    except (MemoryVaultError, OSError) as error:
+        return f"not refreshed: {error}", "check"
+    if result.state == "completed":
+        return f"refreshed {destination}", "ok"
+    return f"refreshed {destination} with warnings; run agentbot memory backup", "check"

@@ -92,17 +92,42 @@ def read_config(config_home: Path) -> dict[str, Any] | None:
     return data
 
 
-def _write_config(config_home: Path, vault: dict[str, Any]) -> Path:
+def _write_config(
+    config_home: Path, vault: dict[str, Any], backup: dict[str, str] | None = None
+) -> Path:
+    if backup is None:
+        # Setting up the same vault again keeps its recorded backup.
+        current = read_config(config_home)
+        if current and current["vault"].get("identity") == vault.get("identity"):
+            backup = current.get("backup")
     config_home.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(config_home, 0o700)
     path = config_path(config_home)
     if path.is_symlink():
         raise MemoryVaultError(f"{path} is a symlink; refusing to write it")
-    write_text_atomic(
-        path, json.dumps({"version": CONFIG_VERSION, "vault": vault}, indent=2) + "\n"
-    )
+    data: dict[str, Any] = {"version": CONFIG_VERSION, "vault": vault}
+    if backup:
+        data["backup"] = backup
+    write_text_atomic(path, json.dumps(data, indent=2) + "\n")
     os.chmod(path, 0o600)
     return path
+
+
+def recorded_backup(config_home: Path) -> dict[str, str] | None:
+    """The backup this machine refreshes on every update, if one was made."""
+    data = read_config(config_home)
+    backup = data.get("backup") if data else None
+    if not isinstance(backup, dict) or not isinstance(backup.get("destination"), str):
+        return None
+    return {"destination": backup["destination"], "assurance": backup.get("assurance", "unknown")}
+
+
+def record_backup(config_home: Path, destination: Path, assurance: str) -> None:
+    data = read_config(config_home)
+    if data is None:
+        return  # an environment-named vault has no machine config to record in
+    backup = {"destination": str(destination), "assurance": assurance}
+    _write_config(config_home, data["vault"], backup)
 
 
 def configured_vault(config_home: Path) -> Path | None:

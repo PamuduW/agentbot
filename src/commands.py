@@ -23,7 +23,6 @@ class CommandSpec:
     related: tuple[str, ...]
     surface: Literal["public", "bootstrap"]
     parser_commands: tuple[str, ...] = ()
-    aliases: tuple[str, ...] = ()
 
 
 def option(usage: str, description: str, default: str) -> CommandOption:
@@ -86,7 +85,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "update",
-        "agentbot update|upgrade [--dry-run] [--yes]",
+        "agentbot update [--dry-run] [--yes]",
         "mutating",
         "Run the repository-first update transaction.",
         (
@@ -97,12 +96,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
         "May fast-forward the checkout, reconcile source-owned skills, refresh Graphify, MCP, "
         "registered workspaces, global outputs, and CLI config, and, after Doctor passes, "
-        "Boost, VS Code, the Cursor statusline, and Codex Remote Control.",
+        "Boost, VS Code, the Cursor statusline, Codex Remote Control, and a recorded "
+        "memory backup.",
         ("agentbot update --dry-run", "agentbot update --yes"),
         ("install", "status"),
         "public",
-        ("update", "upgrade"),
-        ("upgrade",),
+        ("update",),
     ),
     CommandSpec(
         "token",
@@ -366,9 +365,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "800, max 1200",
             ),
             option(
-                "backup --destination",
-                "Preview, then with --yes build a verified local mirror and manifest at PATH. "
-                "Committed history only.",
+                "backup",
+                "Preview, then with --yes build a verified local mirror and manifest at "
+                "--destination PATH. "
+                "Committed history only. The destination is recorded, and every update "
+                "refreshes it; without --destination the recorded one is used.",
                 "preview",
             ),
             option(
@@ -544,7 +545,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "skills update",
-        "./install.sh skills update|upgrade [--yes --plan-sha256 REVIEW_ID]",
+        "./install.sh skills update [--yes --plan-sha256 REVIEW_ID]",
         "mutating",
         "Preview source revisions, then apply the exact reviewed plan.",
         (
@@ -555,8 +556,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("./install.sh skills update", "./install.sh skills update --yes --plan-sha256 REVIEW_ID"),
         ("update", "skills restore", "skills prune", "skills list"),
         "bootstrap",
-        ("skills update", "skills upgrade"),
-        ("skills upgrade",),
+        ("skills update",),
     ),
     CommandSpec(
         "skills restore",
@@ -668,7 +668,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
 def command_by_name(name: str) -> CommandSpec:
     normalized = " ".join(name.strip().split())
     for command in COMMANDS:
-        if normalized == command.name or normalized in command.aliases:
+        if normalized == command.name:
             return command
     raise KeyError(name)
 

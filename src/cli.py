@@ -467,12 +467,19 @@ def _handle_memory_backup(context: CommandContext) -> int:
                 return _print_memory_state(
                     memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
                 )
-            result = backups.backup(
-                root,
-                caller_path(args.destination),
-                apply=args.confirm,
-                assurance=args.assurance,
-            )
+            from . import memory_setup
+
+            recorded = memory_setup.recorded_backup(context.paths.config_home)
+            if args.destination:
+                destination = caller_path(args.destination)
+            elif recorded is not None:
+                destination = Path(recorded["destination"])
+            else:
+                raise ValueError("no backup is recorded yet; name one with --destination PATH")
+            assurance = args.assurance or (recorded or {}).get("assurance", "unknown")
+            result = backups.backup(root, destination, apply=args.confirm, assurance=assurance)
+            if result.state != "preview":
+                memory_setup.record_backup(context.paths.config_home, destination, assurance)
             if as_json:
                 print(json.dumps(backups.backup_json(result), indent=2))
             else:
@@ -1063,12 +1070,8 @@ def _handle_update(context: CommandContext) -> int:
     # The work phase opens with its own heading and legend, and is named the
     # same thing the sibling product names it. The [STEP] lines used to start
     # directly under the plan table, so the table the operator had just
-    # approved and the run that followed it read as one block.
-    #
-    # Not built from `command`: this handler also serves the `upgrade` alias,
-    # which spelled a heading "Applying upgrade" under an "Upgrade" crumb --
-    # the one word the lexicon reserves for apt. A built title is also invisible
-    # to the lexicon check, which can only read literal ones.
+    # approved and the run that followed it read as one block. A literal
+    # title, so the lexicon check can read it.
     print_header("Updating", "Agentbot › Update › Updating")
     log_legend()
     print()
@@ -1236,7 +1239,7 @@ def _handle_install(context: CommandContext) -> int:
 
 
 def _handle_skills(context: CommandContext) -> int:
-    if context.args.skills_command in {"update", "upgrade"}:
+    if context.args.skills_command == "update":
         plan = plan_skill_update(context.paths)
         previous = dict(plan.previous)
         print_header("Skills update", "Agentbot › Skills update")
@@ -1310,7 +1313,6 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "cursor": _handle_cursor,
     "vscode": _handle_vscode,
     "update": _handle_update,
-    "upgrade": _handle_update,
     "workspace": _handle_workspace,
     "boot": _handle_boot,
     "workspaces": _handle_workspaces,
@@ -1516,11 +1518,12 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     brief.add_argument("--tokens", type=int, default=800, metavar="N")
     _add_retrieval_scope(brief)
     backup = memory_sub.add_parser("backup", help="Preview or refresh a verified local mirror")
-    backup.add_argument("--destination", required=True, metavar="PATH")
+    backup.add_argument(
+        "--destination", metavar="PATH", help="Default: the backup this machine recorded"
+    )
     backup.add_argument(
         "--encryption-assurance",
         choices=("unknown", "user-attested"),
-        default="unknown",
         dest="assurance",
     )
     backup.add_argument("--yes", action="store_true", dest="confirm")
@@ -1645,27 +1648,26 @@ def build_parser() -> argparse.ArgumentParser:
     vscode_sub.add_parser("status", help="Preview VS Code changes without writing")
     vscode_sub.add_parser("seed", help="Record installed extensions into vscode.yaml")
     vscode_sub.add_parser("apply", help="Install extensions and merge owned settings")
-    for command in ("update", "upgrade"):
-        update = subparsers.add_parser(
-            command,
-            help="Refresh upstream skills and managed workspace/global outputs",
-        )
-        update.add_argument(
-            "--dry-run",
-            action="store_true",
-            help="Preview reconciliation and managed-surface changes without writing",
-        )
-        update.add_argument(
-            "--yes",
-            dest="confirm",
-            action="store_true",
-            help="Pre-approve source-owned skill and manifest changes",
-        )
-        update.add_argument(
-            "--interactive",
-            action="store_true",
-            help="Preview, confirm, and apply one update plan in this process",
-        )
+    update = subparsers.add_parser(
+        "update",
+        help="Refresh upstream skills and managed workspace/global outputs",
+    )
+    update.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview reconciliation and managed-surface changes without writing",
+    )
+    update.add_argument(
+        "--yes",
+        dest="confirm",
+        action="store_true",
+        help="Pre-approve source-owned skill and manifest changes",
+    )
+    update.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Preview, confirm, and apply one update plan in this process",
+    )
 
     workspace = subparsers.add_parser("workspace", help="Preview or render one workspace")
     workspace.add_argument("--profile", help="Workspace profile name")
@@ -1730,10 +1732,7 @@ def build_parser() -> argparse.ArgumentParser:
     skills = subparsers.add_parser("skills", help="Install and manage curated skills")
     skills_sub = skills.add_subparsers(dest="skills_command", required=True)
     skills_sub.add_parser("install", help="Install skills from skills.sources.yaml")
-    for name, help_text in (
-        ("update", "Preview or install current reviewed source revisions"),
-        ("upgrade", "Alias for previewing or applying skill updates"),
-    ):
+    for name, help_text in (("update", "Preview or install current reviewed source revisions"),):
         update_parser = skills_sub.add_parser(name, help=help_text)
         update_parser.add_argument(
             "--yes", dest="confirm", action="store_true", help="Apply the reviewed update"
@@ -2005,7 +2004,7 @@ def handle_skills_command(lifecycle: Lifecycle, skills_command: str) -> int:
         # on a table.
         print_rollup(ok=ok + refreshed[0], check=check + refreshed[1], miss=miss + refreshed[2])
         return install_rc
-    if skills_command in {"update", "upgrade"}:
+    if skills_command == "update":
         title = skills_command.capitalize()
         result = lifecycle.update_skills()
         update_report = parse_update_output(result.stdout, result.stderr)

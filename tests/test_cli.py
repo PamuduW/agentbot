@@ -35,13 +35,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual("20260913T120000Z-1234abcd", restore.operation_id)
         self.assertTrue(restore.confirm)
 
-    def test_real_launcher_help_resolves_every_metadata_topic_and_alias(self) -> None:
+    def test_real_launcher_help_resolves_every_metadata_topic(self) -> None:
         """Break caught: help accepts only one argv token, hiding nested commands."""
         from src.commands import COMMANDS, command_by_name
 
-        topics = tuple(spec.name for spec in COMMANDS) + tuple(
-            alias for spec in COMMANDS for alias in spec.aliases
-        )
+        topics = tuple(spec.name for spec in COMMANDS)
         with tempfile.TemporaryDirectory() as temporary_directory:
             env = isolated_launcher_env(Path(temporary_directory))
             for topic in topics:
@@ -457,16 +455,12 @@ class CliTests(unittest.TestCase):
         self.assertIn("--yes", spec.usage)
         self.assertIn("selected", spec.effects.lower())
 
-    def test_help_aliases_resolve_to_canonical_commands(self) -> None:
-        from src.commands import COMMANDS
+    def test_retired_upgrade_aliases_are_rejected(self) -> None:
+        from src.cli import build_parser
 
-        aliases = {alias: spec.name for spec in COMMANDS for alias in spec.aliases}
-        self.assertEqual({"upgrade": "update", "skills upgrade": "skills update"}, aliases)
-        for alias, canonical in aliases.items():
-            with self.subTest(alias=alias):
-                rc, stdout, stderr = run_cli_main(["agentbot", "help", *alias.split()])
-                self.assertEqual(0, rc, stderr)
-                self.assertIn(f"=== {canonical} ===", stdout)
+        for argv in (["upgrade"], ["skills", "upgrade"]):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit):
+                build_parser().parse_args(argv)
 
     @patch("src.cli.plan_skill_update")
     @patch("src.cli.handle_skills_prune")
@@ -767,7 +761,7 @@ class CliTests(unittest.TestCase):
 
     @patch("src.cli.default_paths")
     @patch("src.cli.Lifecycle")
-    def test_upgrade_is_update_alias_and_prints_skill_delta(
+    def test_update_prints_skill_delta(
         self, service_type, _default_paths
     ) -> None:
         from src.skill_reconcile import ReconcileResult
@@ -781,22 +775,14 @@ class CliTests(unittest.TestCase):
         )
         service_type.return_value = service
 
-        rc, stdout, _stderr = run_cli_main(["agentbot", "upgrade", "--yes"])
+        rc, stdout, _stderr = run_cli_main(["agentbot", "update", "--yes"])
 
         self.assertEqual(0, rc)
-        self.assertIn("Agentbot › Upgrade", stdout)
+        self.assertIn("Agentbot › Update", stdout)
         self.assertIn("updated-skill", stdout)
         self.assertIn("removed-skill", stdout)
         service.apply_update.assert_called_once()
         self.assertEqual((service.plan_update.return_value,), service.apply_update.call_args.args)
-
-    def test_parser_accepts_upgrade_alias(self) -> None:
-        from src.cli import build_parser
-
-        args = build_parser().parse_args(["upgrade", "--dry-run"])
-
-        self.assertEqual("upgrade", args.command)
-        self.assertTrue(args.dry_run)
 
     def test_parser_accepts_interactive_update(self) -> None:
         from src.cli import build_parser
