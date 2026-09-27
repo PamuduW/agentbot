@@ -396,64 +396,6 @@ def _record_checkout_lock(
     write_text_atomic(lock_file, json.dumps(lock, indent=2) + "\n")
 
 
-# Sources whose upstream repository was renamed. Ownership is keyed on this
-# exact string, so a lock still carrying the old name makes every skill from it
-# look unowned: `plan_prune` classifies it `orphaned` and offers it for
-# deletion, and `render.py` drops it from the managed name list. Renaming the
-# manifest without migrating the lock is therefore not a cosmetic change.
-RENAMED_SOURCE_REPOS: dict[str, str] = {
-    "PamuduW/agent_bootstrap_skills": "PamuduW/agentbot_skills",
-}
-
-
-def migrate_renamed_lock_sources(
-    lock_file: Path,
-    renames: Mapping[str, str] | None = None,
-) -> tuple[str, ...]:
-    """Rewrite lock entries pinned to a renamed source. Returns migrated names.
-
-    Idempotent, and deliberately fails closed: an unreadable or malformed lock
-    is left untouched rather than rebuilt, matching how pruning treats an
-    invalid lock. Callers that need the distinction should read the lock
-    themselves.
-    """
-    mapping = dict(RENAMED_SOURCE_REPOS if renames is None else renames)
-    if not mapping or not lock_file.is_file():
-        return ()
-    try:
-        import json
-
-        lock = json.loads(lock_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ()
-    if not isinstance(lock, dict) or not isinstance(lock.get("skills"), dict):
-        return ()
-
-    migrated: list[str] = []
-    for name, entry in lock["skills"].items():
-        if not isinstance(entry, dict):
-            continue
-        current = entry.get("source")
-        if not isinstance(current, str):
-            continue
-        replacement = mapping.get(current)
-        if replacement is None:
-            continue
-        entry["source"] = replacement
-        entry["sourceType"] = source_type(replacement)
-        url = source_clone_url(replacement)
-        if url is not None:
-            entry["sourceUrl"] = url
-        migrated.append(str(name))
-
-    if not migrated:
-        return ()
-    import json
-
-    write_text_atomic(lock_file, json.dumps(lock, indent=2) + "\n")
-    return tuple(sorted(migrated))
-
-
 def _lock_skill_names(lock_file: Path) -> set[str] | None:
     """Return names from a readable lock; None means unreadable or malformed."""
     if not lock_file.is_file():
