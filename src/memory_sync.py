@@ -85,8 +85,15 @@ class SyncResult:
 # --- Git plumbing -------------------------------------------------------------
 
 
+# Set on every Git command the engine runs, and so on any hook those commands
+# start (a vault pre-push hook runs `agentbot memory validate`). Automatic sync
+# refuses to start while it is set, so a hook can never re-enter the sync that
+# launched it.
+SYNCING_ENV = "AGENTBOT_MEMORY_SYNCING"
+
+
 def _git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", SYNCING_ENV: "1"}
     result = subprocess.run(
         ["git", "-C", str(root), *IDENTITY, *args],
         capture_output=True,

@@ -45,7 +45,8 @@ if [ ! -x {installer} ]; then
 	exit 1
 fi
 unset AGENTBOT_MEMORY_ROOT
-AGENTBOT_MEMORY_DIR="$root" exec {installer} memory validate
+# A hook runs inside a commit or push: it must never start a memory sync.
+AGENTBOT_MEMORY_NO_SYNC=1 AGENTBOT_MEMORY_DIR="$root" exec {installer} memory validate
 """
 
 

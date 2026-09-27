@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -33,6 +34,9 @@ from .atomic_io import write_text_atomic
 from .memory import MemoryVaultError, read_marker
 
 MODES = ("auto", "manual")
+# Explicitly off for this process (the vault hooks set it), or already inside
+# one of the engine's own Git commands.
+NO_SYNC_ENV = "AGENTBOT_MEMORY_NO_SYNC"
 DEFAULT_INTERVAL = 300
 SHOW_LIMIT = 65_536
 
@@ -92,6 +96,8 @@ def last_sync(vault: Path) -> dict[str, Any]:
 
 def run(vault: Path) -> dict[str, Any]:
     """Sync now, whatever the mode. Never raises for offline or manual edits."""
+    if _nested():
+        return {"state": "nested", "pending": len(memory_sync.pending(vault))}
     try:
         result = memory_sync.sync(vault)
     except MemoryVaultError as error:
@@ -110,8 +116,14 @@ def run(vault: Path) -> dict[str, Any]:
     return outcome
 
 
+def _nested() -> bool:
+    return bool(os.environ.get(memory_sync.SYNCING_ENV) or os.environ.get(NO_SYNC_ENV))
+
+
 def _applies(vault: Path, config_home: Path) -> str | None:
     """Why automation does not apply here, or None when it does."""
+    if _nested():
+        return "nested"
     try:
         if read_marker(vault) != 3:
             return "schema"

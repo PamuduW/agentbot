@@ -169,6 +169,59 @@ class ConflictTests(AutosyncTestCase):
                 autosync.resolve(self.b, self.config_b, op, "mine")
 
 
+class HookReentryTests(AutosyncTestCase):
+    """Regression: a vault pre-push hook runs `memory validate`; that must never re-sync.
+
+    Before the guard, sync pushed, the hook ran validate, validate synced and
+    pushed again, and the chain never ended (found on the live vault, 2026-09-27).
+    """
+
+    def test_a_sync_through_real_hooks_finishes(self) -> None:
+        import subprocess
+        import sys
+
+        from src import memory_hook
+
+        home = self.tmp / "agentbot-home"
+        home.mkdir()
+        repo_root = Path(__file__).resolve().parents[1]
+        (home / "install.sh").write_text(
+            f'#!/bin/sh\ncd {repo_root} && exec {sys.executable} -m src.cli --root "$PWD" "$@"\n'
+        )
+        (home / "install.sh").chmod(0o755)
+        memory_hook.install(self.a, home)
+        writes.add(
+            self.a, self.code, self.config, kind="lesson", title="Through the hook", body="x"
+        )
+        script = (
+            "import sys; from pathlib import Path; from src import memory_autosync as a; "
+            "print(a.run(Path(sys.argv[1]))['state'])"
+        )
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")}
+        done = subprocess.run(
+            [sys.executable, "-c", script, str(self.a)],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            env=env,
+        )
+        self.assertEqual("synced", done.stdout.strip().splitlines()[-1], done.stderr[-2000:])
+        self.assertEqual(0, len(sync.pending(self.a)))
+
+    def test_nothing_syncs_inside_the_engine_or_a_hook(self) -> None:
+        for name in (sync.SYNCING_ENV, autosync.NO_SYNC_ENV):
+            with self.subTest(env=name), patch.dict(os.environ, {name: "1"}):
+                self.assertEqual("nested", autosync.run(self.a)["state"])
+                self.assertEqual("nested", autosync.after_write(self.a, self.config)["state"])
+                self.assertIsNone(autosync.before_read(self.a, self.config))
+
+    def test_the_hook_script_disables_sync(self) -> None:
+        from src import memory_hook
+
+        self.assertIn("AGENTBOT_MEMORY_NO_SYNC=1", memory_hook.render_hook(self.tmp))
+
+
 class ReapplyKindsTests(AutosyncTestCase):
     def lose(self, make_a, make_b) -> dict:
         make_a()

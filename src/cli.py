@@ -814,7 +814,8 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
     return 0
 
 
-READ_COMMANDS = frozenset({"status", "validate", "search", "show", "brief", "due", "project"})
+# Retrieval refreshes first. Not validate: hooks run it mid-commit and mid-push.
+READ_COMMANDS = frozenset({"status", "search", "show", "brief", "due", "project"})
 
 
 def _refresh_before_read(context: CommandContext) -> None:
