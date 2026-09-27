@@ -350,6 +350,11 @@ class ShippedDesiredStateTests(unittest.TestCase):
         states = {"on", "name-only", "user-invocable-only", "off"}
         self.assertEqual({}, {k: v for k, v in overrides.items() if v not in states})
         self.assertNotIn("agent-memory", overrides)
+        # Measured with /context on Claude Code 2.1.283: `plugin:skill` keys do
+        # not reach plugins synced from claude.ai; only `anthropic-skills:` does.
+        self.assertEqual(
+            [], [k for k in overrides if ":" in k and not k.startswith("anthropic-skills:")]
+        )
 
 
 if __name__ == "__main__":

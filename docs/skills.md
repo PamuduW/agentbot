@@ -68,8 +68,13 @@ Every listed skill's description is sent in every Claude session. The
 `skillOverrides` key in `cli/claude.settings.json` (merged by
 `cli-config apply`, `install` and `update`) sets each skill to `name-only`,
 `user-invocable-only` or `off` without editing the skill. Building blocks that
-other skills call are `name-only`, so they stay callable. Codex and Cursor
-have no equivalent setting, so duplicates are removed at the source instead.
+other skills call are `name-only`, so they stay callable. The overrides also
+cover Claude Code's built-in skills and the skills synced from the claude.ai
+account (measured with `/context` on Claude Code 2.1.283). They do not reach
+plugins synced from the account (for example the `knowledge-work-plugins`
+ones), and neither does `enabledPlugins`; switch those off in the Claude
+account. Codex and Cursor have no equivalent setting, so duplicates are
+removed at the source instead.
 
 ## Graphify
 
