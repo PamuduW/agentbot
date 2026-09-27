@@ -232,6 +232,9 @@ def _handle_cli_config(context: CommandContext) -> int:
             rows.append((name, plan.skipped, "skipped"))
         elif plan.is_noop:
             rows.append((name, "current", "ok"))
+        elif report.applied:
+            summary = f"{len(plan.additions)} added, {len(plan.changes)} changed"
+            rows.append((name, f"{summary} in {plan.path}", "applied"))
         else:
             summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
             rows.append((name, f"{summary} in {plan.path}", "check"))

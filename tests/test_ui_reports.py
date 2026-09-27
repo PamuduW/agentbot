@@ -799,3 +799,35 @@ class CommandHelpTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TerminalWidthTests(unittest.TestCase):
+    """Break caught: under `dotfiles fu` every Agentbot table was 80 columns wide."""
+
+    def test_a_captured_stdout_still_uses_the_terminal_width(self) -> None:
+        from src.ui import table
+
+        def size(fd: int) -> os.terminal_size:
+            if fd == 0:
+                return os.terminal_size((180, 40))
+            raise OSError("not a terminal")
+
+        env = {k: v for k, v in os.environ.items() if k not in {"COLUMNS", "AGENTBOT_MENU_COLS"}}
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((0, 0))),
+            mock.patch("os.get_terminal_size", side_effect=size),
+        ):
+            self.assertEqual(180, table.terminal_columns())
+
+    def test_no_terminal_anywhere_falls_back_to_80(self) -> None:
+        from src.ui import table
+
+        env = {k: v for k, v in os.environ.items() if k not in {"COLUMNS", "AGENTBOT_MENU_COLS"}}
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((0, 0))),
+            mock.patch("os.get_terminal_size", side_effect=OSError("none")),
+            mock.patch("os.open", side_effect=OSError("no tty")),
+        ):
+            self.assertEqual(80, table.terminal_columns())

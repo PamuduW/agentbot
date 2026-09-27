@@ -313,9 +313,29 @@ class CliConfigTests(unittest.TestCase):
             [row[0] for row in rows], ["claude config", "codex config", "cursor config"]
         )
 
+    def test_install_reports_a_merge_it_just_made_as_applied(self) -> None:
+        """Break caught: install printed "1 to merge; run cli-config apply" after merging it."""
+        from unittest.mock import patch
 
-if __name__ == "__main__":
-    unittest.main()
+        from src import platform_surfaces
+
+        self._write_config("codex", 'model = "old"\n')
+        self._declare("codex", 'model = "new"\n')
+        with (
+            patch("src.codex_remote_control.ensure", return_value=("on", "ok")),
+            patch("src.codex_remote_control.inspect", return_value=("on", "ok")),
+        ):
+            self.assertEqual(
+                ("1 to merge; run `agentbot cli-config apply`", "check"),
+                platform_surfaces._cli_config(self.paths, None, apply=False),
+            )
+            self.assertEqual(
+                ("1 merged", "applied"), platform_surfaces._cli_config(self.paths, None, apply=True)
+            )
+            self.assertEqual(
+                ("1 CLI(s) current", "ok"),
+                platform_surfaces._cli_config(self.paths, None, apply=True),
+            )
 
 
 class ShippedDesiredStateTests(unittest.TestCase):
@@ -330,3 +350,7 @@ class ShippedDesiredStateTests(unittest.TestCase):
         states = {"on", "name-only", "user-invocable-only", "off"}
         self.assertEqual({}, {k: v for k, v in overrides.items() if v not in states})
         self.assertNotIn("agent-memory", overrides)
+
+
+if __name__ == "__main__":
+    unittest.main()

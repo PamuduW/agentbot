@@ -724,7 +724,7 @@ def install_skills(
             # Prefixed like everything else this run prints. It was the one
             # unmarked line in a column of [STEP] and [OK], which read as
             # output that had escaped rather than as a step's result.
-            _print_install_progress(f"[OK] Excluded by manifest, removed: {name}")
+            _print_install_progress(f"[OK] Excluded or disabled in the manifest, removed: {name}")
     return results
 
 
