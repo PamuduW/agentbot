@@ -38,7 +38,7 @@ MIRROR = "local.git"
 MANIFEST = "manifest.json"
 ASSURANCES = ("unknown", "user-attested")
 LIMITATIONS = (
-    "uncommitted edits, ignored drafts, and ignored exports are not in a Git snapshot",
+    "uncommitted edits, ignored exports, and per-device Obsidian files are not in a Git snapshot",
     "remote snapshots are not implemented; only the local checkout's refs are captured",
 )
 
