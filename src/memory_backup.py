@@ -160,8 +160,13 @@ def backup(
     _check_destination(vault, destination)
     identity = source_identity(vault)
     if destination.exists() and any(destination.iterdir()):
-        previous = read_manifest(destination)
-        if previous.get("source") != identity:
+        previous = read_manifest(destination).get("source")
+        # The vault is its history, not its folder: a clone moved to a new path
+        # (the workspace copy to ~/agent-memory) keeps refreshing the same backup.
+        if (
+            not isinstance(previous, dict)
+            or previous.get("root_commits") != identity["root_commits"]
+        ):
             raise MemoryVaultError(
                 "this backup belongs to a different source vault; choose a new destination"
             )

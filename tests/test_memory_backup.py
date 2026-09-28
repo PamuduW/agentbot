@@ -105,6 +105,14 @@ class BackupTests(BackupTestCase):
             backups.backup(other.root, self.dest, apply=True)
         self.assertIn("different source", str(raised.exception))
 
+    def test_the_same_vault_moved_to_a_new_path_keeps_its_backup(self) -> None:
+        backups.backup(self.vault.root, self.dest, apply=True)
+        moved = self.tmp / "moved"
+        subprocess.run(["git", "clone", "--quiet", str(self.vault.root), str(moved)], check=True)
+        result = backups.backup(moved, self.dest, apply=True)
+        self.assertEqual("completed", result.state)
+        self.assertEqual(str(moved.resolve()), backups.read_manifest(self.dest)["source"]["path"])
+
     def test_unsafe_destinations_are_refused(self) -> None:
         link = self.tmp / "link"
         link.symlink_to(self.tmp / "elsewhere")
