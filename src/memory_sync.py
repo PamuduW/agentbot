@@ -236,9 +236,18 @@ def _log(root: Path, op_id: str, outcome: str, detail: str = "") -> None:
     _save(root, "log.json", entries)
 
 
-# Obsidian rewrites these on every open, per device. They are never memory, so
-# they neither block automatic work nor belong in Git.
-DEVICE_STATE_PATHS = (".obsidian/workspace.json", ".obsidian/workspace-mobile.json")
+# Obsidian rewrites these on every open, per device: its layout, its settings
+# (it reformats them on open and saves the graph zoom as you zoom), and the
+# marker recording that Agentbot's settings were applied on this machine. They
+# are never memory, so they neither block automatic work nor belong in Git.
+DEVICE_STATE_PATHS = (
+    ".obsidian/workspace.json",
+    ".obsidian/workspace-mobile.json",
+    ".obsidian/app.json",
+    ".obsidian/core-plugins.json",
+    ".obsidian/graph.json",
+    ".obsidian/agentbot-device.json",
+)
 DEVICE_STATE_DIRS = (".trash/",)
 DEVICE_STATE_BLOCK = "# Obsidian per-device state, managed by Agentbot"
 
@@ -752,6 +761,8 @@ def setup_obsidian(root: Path, *, client: str = "agentbot") -> Op | None:
     """Queue the vault's Obsidian setup when a vault used with Obsidian needs it."""
     from . import memory_obsidian
 
+    # This machine's own settings: written here, never committed.
+    memory_obsidian.apply_device(root)
     tracked = _tracked_device_state(root)
     if not tracked and not (
         memory_obsidian.opened_in_obsidian(root) and memory_obsidian.changes(root)

@@ -147,6 +147,32 @@ class ObsidianKitTests(AutosyncTestCase):
         autosync.run(self.b)
         self.assertTrue((self.b / obsidian.VIEW_PATH).is_file())
 
+    def test_obsidians_settings_are_per_machine_and_never_pause_sync(self) -> None:
+        # Obsidian reformats its settings on open and saves the graph zoom as
+        # you zoom; in Git each of those read as a hand edit and paused sync.
+        import json
+
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        settings = [".obsidian/app.json", ".obsidian/core-plugins.json", ".obsidian/graph.json"]
+        tracked = git(self.a, "ls-files", "--", *settings, obsidian.DEVICE_MARKER).split()
+        self.assertEqual([], tracked)
+        self.assertTrue((self.a / obsidian.DEVICE_MARKER).is_file())
+        graph = self.json(".obsidian/graph.json")
+        (self.a / ".obsidian/graph.json").write_text(json.dumps({**graph, "scale": 3}, indent=2))
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        self.assertEqual(3, self.json(".obsidian/graph.json")["scale"])  # kept here, not pushed
+        # The other machine opens the vault: it gets the settings on its own
+        # disk, and nothing is committed for them.
+        autosync.run(self.b)
+        (self.b / ".obsidian").mkdir(exist_ok=True)
+        (self.b / ".obsidian/app.json").write_text("{}")
+        head = git(self.b, "rev-parse", "HEAD")
+        self.assertEqual("synced", autosync.run(self.b)["state"])
+        self.assertEqual(head, git(self.b, "rev-parse", "HEAD"))
+        self.assertEqual(
+            "absolute", json.loads((self.b / ".obsidian/app.json").read_text())["newLinkFormat"]
+        )
+
     def test_the_users_dashboard_and_colour_groups_are_never_overwritten(self) -> None:
         (self.a / "views").mkdir()
         (self.a / obsidian.VIEW_PATH).write_text("views: []\n")
@@ -196,7 +222,7 @@ class ObsidianKitTests(AutosyncTestCase):
         git(self.a, "push", "-q", "origin", "HEAD:main")
         wanted = obsidian.changes(self.a)
         self.assertNotIn(obsidian.VIEW_PATH, wanted)
-        self.assertNotIn(".obsidian/core-plugins.json", wanted)
+        self.assertNotIn(".obsidian/core-plugins.json", obsidian.device_changes(self.a))
         obsidian.apply(self.a)
         self.assertEqual([], list(outside.iterdir()))
 

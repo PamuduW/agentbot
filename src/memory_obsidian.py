@@ -1,22 +1,23 @@
 """The vault's Obsidian setup, delivered by the sync engine.
 
-A vault that has been opened in Obsidian (it has an ``.obsidian/`` folder) gets
-one idempotent operation that:
+A vault that has been opened in Obsidian (it has an ``.obsidian/`` folder) gets:
 
-- ignores and stops tracking Obsidian's per-device files;
-- adds ``views/memory.base``, a Bases dashboard, unless one exists;
-- enables the Bases core plugin, makes new links absolute vault paths (the
-  form Agentbot writes), updates links on rename without asking, and excludes
-  ``templates/`` and ``exports/`` from search and the graph;
-- colours core, projects, and proposals in the graph, if no colour groups
-  exist yet.
+- shared, once per vault, through one idempotent sync operation: Obsidian's
+  per-device files ignored and no longer tracked, and ``views/memory.base``,
+  a Bases dashboard, unless one exists;
+- per machine, never committed: the Bases core plugin on, new links as
+  absolute vault paths (the form Agentbot writes), links updated on rename
+  without asking, ``templates/`` and ``exports/`` excluded from search and
+  the graph, and core, projects, and proposals coloured in the graph if no
+  colour groups exist yet.
 
-Only those settings are touched, and only once: ``.obsidian/agentbot.json``
-records the setup version applied, so a dashboard the user deletes or a
-setting the user changes afterwards stays as the user left it. Keeping
-device state out of Git is not a preference, so that part is always checked.
-Everything is recomputed from the current tree, so the operation converges
-when several machines run it.
+Obsidian's settings files are per machine because Obsidian rewrites them
+itself (on open, and as you zoom the graph); in Git each rewrite read as a
+hand edit and paused sync. ``.obsidian/agentbot.json`` (tracked) records the
+shared setup and ``.obsidian/agentbot-device.json`` (ignored) this machine's,
+so a dashboard the user deletes, or a setting the user changes afterwards,
+stays as the user left it. Everything is recomputed from the current tree, so
+the operation converges when several machines run it.
 """
 
 from __future__ import annotations
@@ -27,11 +28,13 @@ from typing import Any
 
 VIEW_PATH = "views/memory.base"
 MARKER = ".obsidian/agentbot.json"
+DEVICE_MARKER = ".obsidian/agentbot-device.json"
 KIT_VERSION = 1
 CORE_PLUGINS = ".obsidian/core-plugins.json"
 APP = ".obsidian/app.json"
 GRAPH = ".obsidian/graph.json"
-KIT_PATHS = (".gitignore", VIEW_PATH, CORE_PLUGINS, APP, GRAPH, MARKER)
+# What the shared operation commits. The settings files are per machine.
+KIT_PATHS = (".gitignore", VIEW_PATH, MARKER)
 
 APP_SETTINGS: dict[str, Any] = {
     "newLinkFormat": "absolute",
@@ -146,11 +149,13 @@ def _read_json(root: Path, relative: str, *, create: bool = True) -> dict[str, A
 
 
 def _dumped(data: dict[str, Any]) -> bytes:
-    return (json.dumps(data, indent=2) + "\n").encode("utf-8")
+    # Obsidian's own format (two-space indent, no final newline), so its next
+    # save changes nothing.
+    return json.dumps(data, indent=2).encode("utf-8")
 
 
 def changes(root: Path) -> dict[str, bytes]:
-    """The kit files whose content should change, and their new bytes."""
+    """The shared kit files whose content should change, and their new bytes."""
     from .memory_sync import gitignore_with_device_state
 
     wanted: dict[str, bytes] = {}
@@ -163,7 +168,19 @@ def changes(root: Path) -> dict[str, bytes]:
         return wanted  # already set up once, or the marker is not ours to touch
     if _safe(root, VIEW_PATH) and not (root / VIEW_PATH).exists():
         wanted[VIEW_PATH] = VIEW.encode("utf-8")
+    wanted[MARKER] = _dumped({**marker, "kit": KIT_VERSION})
+    return wanted
 
+
+def device_changes(root: Path) -> dict[str, bytes]:
+    """This machine's settings files to write, once, and never commit."""
+    if not opened_in_obsidian(root):
+        return {}
+    marker = _read_json(root, DEVICE_MARKER)
+    applied = marker.get("kit") if marker is not None else None
+    if marker is None or (type(applied) is int and applied >= KIT_VERSION):
+        return {}
+    wanted: dict[str, bytes] = {}
     # A missing core-plugins.json is left to Obsidian: a file naming only
     # Bases could read as every other core plugin switched off.
     plugins = _read_json(root, CORE_PLUGINS, create=False)
@@ -183,7 +200,7 @@ def changes(root: Path) -> dict[str, bytes]:
     graph = _read_json(root, GRAPH)
     if graph is not None and not graph.get("colorGroups"):
         wanted[GRAPH] = _dumped({**graph, "colorGroups": COLOR_GROUPS})
-    wanted[MARKER] = _dumped({**marker, "kit": KIT_VERSION})
+    wanted[DEVICE_MARKER] = _dumped({**marker, "kit": KIT_VERSION})
     return wanted
 
 
@@ -191,11 +208,19 @@ def opened_in_obsidian(root: Path) -> bool:
     return (root / ".obsidian").is_dir() and not (root / ".obsidian").is_symlink()
 
 
-def apply(root: Path) -> bool:
-    """Write the kit files. True when anything was written."""
-    wanted = changes(root)
+def _write(root: Path, wanted: dict[str, bytes]) -> bool:
     for relative, data in wanted.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     return bool(wanted)
+
+
+def apply(root: Path) -> bool:
+    """Write the shared kit files. True when anything was written."""
+    return _write(root, changes(root))
+
+
+def apply_device(root: Path) -> bool:
+    """Write this machine's settings once. True when anything was written."""
+    return _write(root, device_changes(root))

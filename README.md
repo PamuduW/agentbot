@@ -151,11 +151,13 @@ stay canonical, and `project move` keeps them pointing at the right file. The
 first sync of a vault that has been opened in Obsidian also adds
 `views/memory.base`, a Bases dashboard (project memory by project, core
 memory, proposals waiting for approval, records due for review, and superseded
-or retired records), enables the Bases core plugin, makes new links absolute
-vault paths that update on rename, excludes `templates/` and `exports/` from
-search and the graph, and colours core, projects and proposals in the graph
-when no colour groups exist yet. It never overwrites a dashboard or colour
-groups you already have.
+or retired records). On each machine where the vault is open in Obsidian, the
+sync also sets Obsidian up once: it enables the Bases core plugin, makes new
+links absolute vault paths that update on rename, excludes `templates/` and
+`exports/` from search and the graph, and colours core, projects and
+proposals in the graph when no colour groups exist yet. Those settings stay
+on that machine. It never overwrites a dashboard or colour groups you
+already have.
 
 Project memory is written without approval, always for the repository you
 are in: `agentbot memory project add --kind decision|lesson|note --title T
@@ -194,8 +196,9 @@ read); `validate` does not, because hooks run it mid-commit. Offline (or a
 Git network command that times out), writes stay committed locally and
 pending until the next sync; uncommitted manual edits pause automation until
 they are committed or reverted; neither fails the command. Obsidian's per-device files (`.obsidian/workspace.json`,
-`workspace-mobile.json`, and `.trash/`) are not manual edits: they never pause
-sync, and the first sync adds them to a managed block in the vault's
+`workspace-mobile.json`, its settings `app.json`, `core-plugins.json` and
+`graph.json`, which it rewrites on open and as you zoom the graph, and
+`.trash/`) are not manual edits: they never pause sync, and the first sync adds them to a managed block in the vault's
 `.gitignore` and stops tracking them, keeping each machine's copy. `agentbot memory sync` syncs now;
 `--status` shows the mode, pending operations, open conflicts, and last sync;
 `--mode manual` stops automatic pushing and fetching (writes are still
