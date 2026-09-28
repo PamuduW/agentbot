@@ -299,6 +299,13 @@ def _require_global_lock(global_lock_file: Path | None) -> Path:
     return global_lock_file
 
 
+def _same_skill_file(source_file: Path, installed_file: Path) -> bool:
+    try:
+        return installed_file.is_file() and installed_file.read_bytes() == source_file.read_bytes()
+    except OSError:
+        return False
+
+
 def _record_checkout_lock(
     source: SkillSourceEntry,
     checkout: Path,
@@ -343,6 +350,10 @@ def _record_checkout_lock(
     )
 
     checkout_skills: dict[str, Path] = {}
+    # Excluded skills `skills add` installed anyway (it has no exclusion flag).
+    # Pinned so the clean-up that follows can prove Agentbot put them there and
+    # remove them; a same-name skill whose SKILL.md differs is someone else's.
+    excluded_copies: dict[str, Path] = {}
     for skill_file in sorted(
         checkout.rglob("SKILL.md"),
         key=lambda path: (
@@ -351,8 +362,11 @@ def _record_checkout_lock(
         ),
     ):
         name = skill_name_from_file(skill_file)
-        if (wanted is None or name in wanted) and name in installed_names and not source.excludes(name):
-            checkout_skills.setdefault(name, skill_file)
+        if (wanted is None or name in wanted) and name in installed_names:
+            if not source.excludes(name):
+                checkout_skills.setdefault(name, skill_file)
+            elif _same_skill_file(skill_file, installed_skills_home / name / "SKILL.md"):
+                excluded_copies.setdefault(name, skill_file)
 
     # A wildcard checkout can contain SKILL.md fixtures that npx deliberately
     # ignores. Only pin names that the successful command actually installed.
@@ -362,11 +376,12 @@ def _record_checkout_lock(
             isinstance(entry, dict)
             and entry.get("source") == source.repo
             and name not in checkout_skills
+            and name not in excluded_copies
         ):
             del skills[name]
 
     now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    for name, skill_file in checkout_skills.items():
+    for name, skill_file in {**checkout_skills, **excluded_copies}.items():
         relative_path = skill_file.relative_to(checkout).as_posix()
         existing = skills.get(name)
         skills[name] = {
