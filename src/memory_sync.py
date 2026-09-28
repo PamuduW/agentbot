@@ -236,25 +236,19 @@ def _log(root: Path, op_id: str, outcome: str, detail: str = "") -> None:
     _save(root, "log.json", entries)
 
 
-# Obsidian rewrites these on every open, per device: its layout, its settings
-# (it reformats them on open and saves the graph zoom as you zoom), and the
-# marker recording that Agentbot's settings were applied on this machine. They
-# are never memory, so they neither block automatic work nor belong in Git.
-DEVICE_STATE_PATHS = (
-    ".obsidian/workspace.json",
-    ".obsidian/workspace-mobile.json",
-    ".obsidian/app.json",
-    ".obsidian/core-plugins.json",
-    ".obsidian/graph.json",
-    ".obsidian/agentbot-device.json",
-)
-DEVICE_STATE_DIRS = (".trash/",)
+# Obsidian's own folders, kept per device: its settings and layout, which it
+# rewrites itself (on open, as you zoom the graph, as you resize a table), the
+# Bases views it saves the same way, and its trash. They are never memory, so
+# they neither block automatic work nor belong in Git.
+DEVICE_STATE_DIRS = (".obsidian/", "views/", ".trash/")
+# Entries an older version of the managed .gitignore block listed.
+LEGACY_DEVICE_LINES = (".obsidian/workspace.json", ".obsidian/workspace-mobile.json")
 DEVICE_STATE_BLOCK = "# Obsidian per-device state, managed by Agentbot"
 
 
 def _device_state(path: str) -> bool:
     path = path.strip().strip('"')
-    return path in DEVICE_STATE_PATHS or path.startswith(DEVICE_STATE_DIRS)
+    return path.startswith(DEVICE_STATE_DIRS) or f"{path}/" in DEVICE_STATE_DIRS
 
 
 def _require_clean(root: Path) -> None:
@@ -725,7 +719,7 @@ def _apply_multi(root: Path, op: Op) -> str:
 
 
 def _tracked_device_state(root: Path) -> list[str]:
-    tracked = _git(root, "ls-files", "--", *DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS).stdout
+    tracked = _git(root, "ls-files", "--", *DEVICE_STATE_DIRS).stdout
     return [line for line in tracked.splitlines() if line.strip()]
 
 
@@ -733,12 +727,14 @@ def gitignore_with_device_state(root: Path) -> bytes | None:
     """The .gitignore with the managed block, or None when it already has it."""
     current = (_current(root, ".gitignore") or b"").decode("utf-8")
     lines = current.splitlines()
-    if DEVICE_STATE_BLOCK in lines and all(
-        entry in lines for entry in (*DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS)
+    if (
+        DEVICE_STATE_BLOCK in lines
+        and all(entry in lines for entry in DEVICE_STATE_DIRS)
+        and not any(entry in lines for entry in LEGACY_DEVICE_LINES)
     ):
         return None
-    block = [DEVICE_STATE_BLOCK, *DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS]
-    kept = [line for line in lines if line not in block]
+    block = [DEVICE_STATE_BLOCK, *DEVICE_STATE_DIRS]
+    kept = [line for line in lines if line not in (*block, *LEGACY_DEVICE_LINES)]
     while kept and not kept[-1].strip():
         kept.pop()
     return ("\n".join([*kept, "", *block] if kept else block) + "\n").encode("utf-8")
@@ -937,7 +933,7 @@ def _stage(root: Path, op: Op) -> Path:
         _git(root, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", op.path, index=index)
     elif op.kind in {"untrack", "obsidian"}:
         # Per-device files leave Git; this machine's copies stay on disk.
-        untrack = [*DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS]
+        untrack = list(DEVICE_STATE_DIRS)
         _git(root, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", *untrack, index=index)
         for path in _paths(op):
             # One at a time: git refuses a whole batch if one path is ignored.
@@ -952,7 +948,7 @@ def _refresh_index(root: Path, op: Op) -> None:
     """Bring the user's index in line with HEAD for this operation's paths only."""
     paths = _paths(op)
     if op.kind in {"untrack", "obsidian"}:
-        paths += [*DEVICE_STATE_PATHS, *DEVICE_STATE_DIRS]
+        paths += list(DEVICE_STATE_DIRS)
     for path in paths:
         # One at a time: a path in neither HEAD nor the index fails on its own.
         _git(root, "reset", "-q", "--", path, check=False)
@@ -1091,10 +1087,10 @@ DEVICE_BYTES_LIMIT = 16 * 1024 * 1024
 
 
 def _device_files(root: Path) -> dict[str, bytes]:
-    """This machine's per-device files, bounded: layout files and Obsidian's trash."""
+    """This machine's per-device files, bounded: Obsidian's folders, its views, and its trash."""
     found: dict[str, bytes] = {}
     total = 0
-    candidates = [root / path for path in DEVICE_STATE_PATHS]
+    candidates: list[Path] = []
     for folder in DEVICE_STATE_DIRS:
         base = root / folder
         if base.is_dir() and not base.is_symlink():

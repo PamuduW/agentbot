@@ -1,23 +1,25 @@
 """The vault's Obsidian setup, delivered by the sync engine.
 
-A vault that has been opened in Obsidian (it has an ``.obsidian/`` folder) gets:
+Obsidian keeps its settings in ``.obsidian/`` and its Bases views in
+``views/``, and rewrites both itself: on open, as you zoom the graph, as you
+resize a table. In Git every such rewrite read as a hand edit and paused
+sync, so both folders are per machine: ignored, and no longer tracked.
 
-- shared, once per vault, through one idempotent sync operation: Obsidian's
-  per-device files ignored and no longer tracked, and ``views/memory.base``,
-  a Bases dashboard, unless one exists;
-- per machine, never committed: the Bases core plugin on, new links as
-  absolute vault paths (the form Agentbot writes), links updated on rename
-  without asking, ``templates/`` and ``exports/`` excluded from search and
-  the graph, and core, projects, and proposals coloured in the graph if no
-  colour groups exist yet.
+A vault that has been opened in Obsidian gets:
 
-Obsidian's settings files are per machine because Obsidian rewrites them
-itself (on open, and as you zoom the graph); in Git each rewrite read as a
-hand edit and paused sync. ``.obsidian/agentbot.json`` (tracked) records the
-shared setup and ``.obsidian/agentbot-device.json`` (ignored) this machine's,
-so a dashboard the user deletes, or a setting the user changes afterwards,
-stays as the user left it. Everything is recomputed from the current tree, so
-the operation converges when several machines run it.
+- shared, through one idempotent sync operation: those folders and the trash
+  in a managed ``.gitignore`` block, and anything in them untracked (each
+  machine keeps its own copy);
+- per machine, never committed, once: ``views/memory.base``, a Bases
+  dashboard, unless one exists; the Bases core plugin on; new links as
+  absolute vault paths (the form Agentbot writes), updated on rename without
+  asking; ``templates/`` and ``exports/`` excluded from search and the graph;
+  and core, projects, and proposals coloured in the graph if no colour
+  groups exist yet.
+
+``.obsidian/agentbot-device.json`` records that the per-machine setup ran, so
+a dashboard the user deletes, or a setting the user changes, stays as the
+user left it on that machine.
 """
 
 from __future__ import annotations
@@ -27,14 +29,13 @@ from pathlib import Path
 from typing import Any
 
 VIEW_PATH = "views/memory.base"
-MARKER = ".obsidian/agentbot.json"
 DEVICE_MARKER = ".obsidian/agentbot-device.json"
 KIT_VERSION = 1
 CORE_PLUGINS = ".obsidian/core-plugins.json"
 APP = ".obsidian/app.json"
 GRAPH = ".obsidian/graph.json"
-# What the shared operation commits. The settings files are per machine.
-KIT_PATHS = (".gitignore", VIEW_PATH, MARKER)
+# What the shared operation commits. Everything else here is per machine.
+KIT_PATHS = (".gitignore",)
 
 APP_SETTINGS: dict[str, Any] = {
     "newLinkFormat": "absolute",
@@ -48,8 +49,8 @@ COLOR_GROUPS = [
     {"query": "path:proposals", "color": {"a": 1, "rgb": 15105570}},
 ]
 
+# The dashboard in the form Obsidian saves it, so opening it changes nothing.
 VIEW = """\
-# Memory dashboard, added by Agentbot. Edit freely: Agentbot never overwrites it.
 filters:
   and:
     - file.ext == "md"
@@ -73,9 +74,9 @@ views:
       direction: ASC
     order:
       - file.name
-      - note.type
-      - note.date
-      - note.tags
+      - type
+      - date
+      - tags
   - type: table
     name: Core memory
     filters:
@@ -84,17 +85,17 @@ views:
         - status == "accepted"
     order:
       - file.name
-      - note.type
-      - note.scope
-      - note.date
+      - type
+      - scope
+      - date
   - type: table
     name: Waiting for your approval
     filters: file.inFolder("proposals")
     order:
       - file.name
-      - note.type
-      - note.scope
-      - note.date
+      - type
+      - scope
+      - date
   - type: table
     name: Due for review
     filters:
@@ -107,8 +108,8 @@ views:
             - date(valid_until) < today()
     order:
       - file.name
-      - note.review_after
-      - note.valid_until
+      - review_after
+      - valid_until
   - type: table
     name: Superseded and retired
     filters:
@@ -117,8 +118,8 @@ views:
         - status != "draft"
     order:
       - file.name
-      - note.status
-      - note.date
+      - status
+      - date
 """
 
 
@@ -155,21 +156,13 @@ def _dumped(data: dict[str, Any]) -> bytes:
 
 
 def changes(root: Path) -> dict[str, bytes]:
-    """The shared kit files whose content should change, and their new bytes."""
+    """The shared kit files whose content should change: the .gitignore block."""
     from .memory_sync import gitignore_with_device_state
 
-    wanted: dict[str, bytes] = {}
     gitignore = gitignore_with_device_state(root)
-    if gitignore is not None and _safe(root, ".gitignore"):
-        wanted[".gitignore"] = gitignore
-    marker = _read_json(root, MARKER)
-    applied = marker.get("kit") if marker is not None else None
-    if marker is None or (type(applied) is int and applied >= KIT_VERSION):
-        return wanted  # already set up once, or the marker is not ours to touch
-    if _safe(root, VIEW_PATH) and not (root / VIEW_PATH).exists():
-        wanted[VIEW_PATH] = VIEW.encode("utf-8")
-    wanted[MARKER] = _dumped({**marker, "kit": KIT_VERSION})
-    return wanted
+    if gitignore is None or not _safe(root, ".gitignore"):
+        return {}
+    return {".gitignore": gitignore}
 
 
 def device_changes(root: Path) -> dict[str, bytes]:
@@ -181,6 +174,8 @@ def device_changes(root: Path) -> dict[str, bytes]:
     if marker is None or (type(applied) is int and applied >= KIT_VERSION):
         return {}
     wanted: dict[str, bytes] = {}
+    if _safe(root, VIEW_PATH) and not (root / VIEW_PATH).exists():
+        wanted[VIEW_PATH] = VIEW.encode("utf-8")
     # A missing core-plugins.json is left to Obsidian: a file naming only
     # Bases could read as every other core plugin switched off.
     plugins = _read_json(root, CORE_PLUGINS, create=False)
@@ -217,7 +212,7 @@ def _write(root: Path, wanted: dict[str, bytes]) -> bool:
 
 
 def apply(root: Path) -> bool:
-    """Write the shared kit files. True when anything was written."""
+    """Write the shared kit file. True when anything was written."""
     return _write(root, changes(root))
 
 

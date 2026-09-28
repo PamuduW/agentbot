@@ -140,12 +140,22 @@ class ObsidianKitTests(AutosyncTestCase):
         self.assertEqual((1.5, 3), (graph["scale"], len(graph["colorGroups"])))
         self.assertEqual("", git(self.a, "status", "--porcelain"))
         self.assertEqual([], memory.validate(self.a).findings)
-        # Once only; the other machine receives it.
+        # Once only. The dashboard is this machine's: Obsidian saves column
+        # widths and sorting into it, so it is not tracked, and a tweak made
+        # in Obsidian never pauses sync.
         head = git(self.a, "rev-parse", "HEAD")
         autosync.run(self.a)
         self.assertEqual(head, git(self.a, "rev-parse", "HEAD"))
+        self.assertEqual([], git(self.a, "ls-files", "--", "views", ".obsidian").split())
+        with (self.a / obsidian.VIEW_PATH).open("a") as view:
+            view.write("    columnSize:\n      file.name: 240\n")
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        # The other machine gets its own dashboard when it opens the vault.
         autosync.run(self.b)
-        self.assertTrue((self.b / obsidian.VIEW_PATH).is_file())
+        self.assertFalse((self.b / obsidian.VIEW_PATH).exists())
+        (self.b / ".obsidian").mkdir()
+        self.assertEqual("synced", autosync.run(self.b)["state"])
+        self.assertEqual(obsidian.VIEW, (self.b / obsidian.VIEW_PATH).read_text())
 
     def test_obsidians_settings_are_per_machine_and_never_pause_sync(self) -> None:
         # Obsidian reformats its settings on open and saves the graph zoom as
@@ -199,12 +209,9 @@ class ObsidianKitTests(AutosyncTestCase):
 
     def test_it_sets_up_once_and_then_respects_the_users_choices(self) -> None:
         autosync.run(self.a)
-        self.assertEqual({"kit": obsidian.KIT_VERSION}, self.json(obsidian.MARKER))
+        self.assertEqual({"kit": obsidian.KIT_VERSION}, self.json(obsidian.DEVICE_MARKER))
         (self.a / obsidian.VIEW_PATH).unlink()
         (self.a / ".obsidian/core-plugins.json").write_text('{"graph": true, "bases": false}\n')
-        git(self.a, "add", "-A")
-        git(self.a, "commit", "-q", "-m", "I prefer it this way")
-        git(self.a, "push", "-q", "origin", "HEAD:main")
         head = git(self.a, "rev-parse", "HEAD")
         self.assertEqual("synced", autosync.run(self.a)["state"])
         self.assertEqual(head, git(self.a, "rev-parse", "HEAD"))
