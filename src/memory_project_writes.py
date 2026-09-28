@@ -286,19 +286,22 @@ def _with_up(head: str, folder: str, relative: str) -> str:
 
 def _relink(vault: Path, folder: str, old: str, new: str) -> list[tuple[str, bytes | None]]:
     """Rewrite replaces links in this project that point at a moved record."""
-    old_link, new_link = json.dumps(record_link(old)), json.dumps(record_link(new))
+    # Either YAML quoting: Obsidian may write a link single-quoted.
+    target, new_link = record_link(old), json.dumps(record_link(new))
+    forms = (json.dumps(target), f"'{target}'")
     changes: list[tuple[str, bytes | None]] = []
     for record in validate(vault).records:
         if not record.path.startswith(f"projects/{folder}/") or record.path == old:
             continue
         text = read_bounded(vault, record.path, MAX_FILE_BYTES).decode("utf-8")
         head, rest = _split(text)
-        if old_link not in head:
+        if not any(form in head for form in forms):
             continue
         # Anywhere in the front matter, not only a one-line list: Obsidian
         # may rewrite `replaces` as a block list. Only replaces links point at
         # records (up points at project.md, which never moves).
-        head = head.replace(old_link, new_link)
+        for form in forms:
+            head = head.replace(form, new_link)
         data = (head + "\n" + rest).encode("utf-8")
         _require_valid(record.path, data)
         changes.append((record.path, data))

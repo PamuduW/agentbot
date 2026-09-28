@@ -63,15 +63,24 @@ class ProjectLinkTests(WritesTestCase):
             supersedes=self.lesson_id(),
         )
         path = self.a / added["path"]
-        link = record_link(LESSON)
-        block = f'replaces:\n  - "{link}"'
-        rewritten = path.read_text().replace(f'replaces: ["{link}"]', block)
-        self.assertIn(block, rewritten)
-        sync.change_project(self.a, "alpha", [(added["path"], rewritten.encode())])
-        writes.move(self.a, self.code, self.config, "lessons/2026-09-27-l.md", "lessons/moved.md")
-        self.assertEqual(
-            ["[[projects/alpha/lessons/moved]]"], fields(self.a, added["path"])["replaces"]
-        )
+        lesson_id = self.lesson_id()
+        original = path.read_text()
+        for quote in ('"', "'"):
+            with self.subTest(quote=quote):
+                # Review 1: a single-quoted link was left pointing at the old path.
+                source = next(r.path for r in memory.validate(self.a).records if r.id == lesson_id)
+                link = record_link(source)
+                block = f"replaces:\n  - {quote}{link}{quote}"
+                rewritten = original.replace(f'replaces: ["{record_link(LESSON)}"]', block)
+                sync.change_project(self.a, "alpha", [(added["path"], rewritten.encode())])
+                moved = f"lessons/moved-{ord(quote)}.md"
+                writes.move(
+                    self.a, self.code, self.config, source.removeprefix("projects/alpha/"), moved
+                )
+                self.assertEqual(
+                    [record_link(f"projects/alpha/{moved}")],
+                    fields(self.a, added["path"])["replaces"],
+                )
 
     def test_an_older_record_gains_its_link_when_next_written(self) -> None:
         self.assertNotIn("up", fields(self.a, LESSON))
