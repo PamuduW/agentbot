@@ -7,7 +7,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from src import cli_config
 from src.cli_config import (
     apply,
     desired_source,
@@ -194,6 +196,50 @@ class CliConfigTests(unittest.TestCase):
                 if "[tui]" in original:
                     self.assertEqual({"t": 1}, parsed["tui"])
                     self.assertTrue(parsed["features"]["apps"])
+
+    def test_lines_inside_a_multiline_string_are_never_edited(self) -> None:
+        """Review 1, M-R7: a string can hold lines that look like TOML."""
+        original = 'notes = """\n[features]\nmemories = true\n"""\n\n[features]\nmemories = true\n'
+        merged = merge_toml_text(original, {"features": {"memories": False}})
+        parsed = tomllib.loads(merged)
+        self.assertFalse(parsed["features"]["memories"])
+        self.assertEqual(tomllib.loads(original)["notes"], parsed["notes"])
+
+    def test_a_table_written_inline_or_dotted_is_refused_untouched(self) -> None:
+        for original in (
+            "features = { memories = true }\n",
+            "features.memories = true\n",
+        ):
+            with self.subTest(original=original), self.assertRaises(ValueError) as raised:
+                merge_toml_text(original, {"features": {"memories": False}})
+            self.assertIn("set it by hand", str(raised.exception))
+
+    def test_arrays_of_tables_and_other_settings_survive(self) -> None:
+        original = (
+            'model = "x"\n\n[[profiles]]\nname = "a"\n\n[[profiles]]\nname = "b"\n'
+            "\n[features]  # the operator's note\nother = 1\n"
+        )
+        merged = merge_toml_text(original, {"features": {"memories": False}})
+        parsed = tomllib.loads(merged)
+        self.assertEqual(["a", "b"], [p["name"] for p in parsed["profiles"]])
+        self.assertEqual({"other": 1, "memories": False}, parsed["features"])
+        self.assertIn("[features]  # the operator's note", merged)
+
+    def test_a_target_replaced_before_a_later_failure_is_rolled_back(self) -> None:
+        """Review 1, M-R7: the write can replace the file and then fail."""
+        self._write_config("claude", '{"model": "old"}')
+        self._declare("claude", '{"model": "new"}')
+        real = cli_config.write_text_atomic
+
+        def replace_then_fail(path, text, **kwargs):
+            real(path, text, **kwargs)
+            if path == self.clis["claude"].config_path and '"new"' in text:
+                raise OSError("directory sync failed")
+
+        with patch.object(cli_config, "write_text_atomic", side_effect=replace_then_fail):
+            report = apply(self.paths)
+        self.assertFalse(report.applied)
+        self.assertEqual("old", self._read_config("claude")["model"])
 
     def test_credential_shaped_values_are_refused(self) -> None:
         """The desired-state files are committed, so a literal here would be a
