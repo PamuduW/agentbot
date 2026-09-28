@@ -56,10 +56,12 @@ names and never treats an empty selection as permission to remove everything.
 Agentbot-protected Graphify output is not a manual-removal candidate.
 
 Every install and update also applies two of those decisions without a
-separate prune: a skill a source `exclude`s is removed (including an unpinned
-copy on disk with that name), and so is a skill the lock pins to a manifest
-source set to `enabled: false`. A skill pinned to a repository the manifest
-never names is left alone, because the user installed it.
+separate prune: a skill a source `exclude`s is removed when the lock pins it to
+that source, and so is a skill the lock pins to a manifest source set to
+`enabled: false`. A skill pinned to a repository the manifest never names is
+left alone, because the user installed it, and so is an unpinned directory that
+only shares an excluded name: nothing shows Agentbot installed it, so it is a
+`manual` candidate, removed only by name.
 
 ## Claude listing states
 

@@ -145,24 +145,20 @@ def plan_prune(paths: AgentbotPaths, config: SkillsSourcesConfig) -> PruneReport
             excluder = next(
                 (source for source in config.active_sources() if source.excludes(name)), None
             )
-            if excluder is not None:
-                # An unpinned copy of a skill the manifest excludes by name is
-                # still that skill: `exclude:` means never present.
-                candidates.append(
-                    PruneCandidate(
-                        name=name,
-                        reason="excluded",
-                        detail=f"{excluder.id} excludes it; an unpinned copy is on disk",
-                        directory=directory,
-                        locked=False,
-                    )
-                )
-                continue
+            # With no lock entry, nothing shows Agentbot installed it, so a
+            # matching name is not enough to delete it: it may be the user's
+            # own skill. It is removed only when named, like any manual skill.
+            detail = (
+                f"on disk, not in the lock; {excluder.id} excludes this name, so remove it "
+                "by name if it is not yours"
+                if excluder is not None
+                else "on disk, not in the lock; user-placed"
+            )
             candidates.append(
                 PruneCandidate(
                     name=name,
                     reason="manual",
-                    detail="on disk, not in the lock; user-placed",
+                    detail=detail,
                     directory=directory,
                     locked=False,
                 )

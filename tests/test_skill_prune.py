@@ -514,8 +514,12 @@ class EnforceExclusionsTests(PruneTests):
         self.assertFalse(claude_link.is_symlink() or codex_link.is_symlink())
         self.assertTrue((self.store / "foreign").is_dir())
 
-    def test_an_unpinned_copy_of_an_excluded_skill_is_removed(self):
-        """Break caught: four excluded Akindu skills sat on disk with no lock entry."""
+    def test_an_unpinned_skill_with_an_excluded_name_is_kept(self):
+        """Review 1, M-R6: a name match is not proof Agentbot installed it.
+
+        A skill the user made that happens to share an excluded name must
+        survive every install and update; it goes only when named.
+        """
         from src.skill_prune import enforce_exclusions
 
         self._skill("alpha")
@@ -524,10 +528,13 @@ class EnforceExclusionsTests(PruneTests):
         config = self._manifest(self.BASE + "    exclude:\n      - alpha\n")
 
         report = plan_prune(self.paths, config)
-        self.assertEqual([("alpha", "excluded")], [(i.name, i.reason) for i in report.removable])
-        self.assertEqual(["mine"], [item.name for item in report.manual])
-        self.assertEqual(("alpha",), enforce_exclusions(self.paths, config))
-        self.assertFalse((self.store / "alpha").exists())
+        self.assertEqual([], [i.name for i in report.removable])
+        self.assertEqual(["alpha", "mine"], [item.name for item in report.manual])
+        self.assertIn(
+            "excludes this name", next(i for i in report.manual if i.name == "alpha").detail
+        )
+        self.assertEqual((), enforce_exclusions(self.paths, config))
+        self.assertTrue((self.store / "alpha").is_dir())
         self.assertTrue((self.store / "mine").is_dir())
 
     def test_enforcement_is_a_no_op_when_nothing_is_excluded(self):
