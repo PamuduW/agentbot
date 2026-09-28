@@ -171,7 +171,8 @@ Git ignore rules automatically.
 
 Batch resync processes enabled records independently, reports every result, and
 does not delete missing records or silently convert a recorded Git workspace
-into a directory record. Dirty Git state is reported but does not by itself
+into a directory record. A missing folder is skipped rather than failing every
+later update (changed 2026-09-28). Dirty Git state is reported but does not by itself
 block an explicit apply.
 
 ### Phase 2 verification

@@ -34,7 +34,7 @@ class WorkspaceIdentity:
 @dataclass(frozen=True)
 class WorkspaceResult:
     path: Path
-    status: Literal["preview", "applied", "conflict", "failed"]
+    status: Literal["preview", "applied", "conflict", "failed", "skipped"]
     actions: tuple[RenderAction, ...]
     message: str
 
@@ -281,7 +281,14 @@ class WorkspaceService:
     def _resync_record(self, record: WorkspaceRecord, *, apply: bool) -> WorkspaceResult:
         path = Path(record.path)
         if not path.is_dir():
-            return WorkspaceResult(path, "failed", (), "recorded workspace path is missing")
+            # A missing folder is skipped, never a failure: a deleted temporary
+            # repository used to fail every update until it was removed by hand.
+            return WorkspaceResult(
+                path,
+                "skipped",
+                (),
+                f"folder not found; skipped. To forget it: agentbot workspaces --remove {path}",
+            )
 
         if record.kind == "git":
             identity = resolve_workspace_identity(path, runner=self._command_runner)

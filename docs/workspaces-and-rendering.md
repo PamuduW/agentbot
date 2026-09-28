@@ -26,7 +26,10 @@ refer to the canonical `AGENTS.md`; Agentbot does not create a separate Codex
 policy file. Cursor receives a pointer rule instead of a duplicate policy copy.
 
 `agentbot boot PATH` previews or applies one workspace render and registers a
-successful apply. `agentbot resync` refreshes registered workspaces. Both flows
+successful apply. `agentbot resync` refreshes registered workspaces; so does every update. A
+registered folder that no longer exists is skipped, never a failure, and stays
+registered until you remove it (`agentbot workspaces --remove PATH`, or the
+Workspaces menu). Both flows
 preview unless `--yes` authorizes writes. Removing a registry record never
 deletes workspace files.
 

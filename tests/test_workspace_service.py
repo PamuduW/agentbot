@@ -235,6 +235,31 @@ class WorkspaceServiceTests(unittest.TestCase):
         self.assertEqual((), self.workspace_service.store.load())
         self.assertFalse(missing.exists())
 
+    def _registered(self, path: Path) -> WorkspaceRecord:
+        record = WorkspaceRecord(
+            path=str(path),
+            kind="directory",
+            policy_mode="managed",
+            profile="safe-default",
+            targets=("agents",),
+            enabled=True,
+            last_commit=None,
+            last_rendered_at=None,
+        )
+        self.workspace_service.store.replace((record,))
+        return record
+
+    def test_a_missing_workspace_is_skipped_and_kept(self) -> None:
+        # A deleted temporary repository used to fail every update until it
+        # was removed by hand.
+        record = self._registered(self.root.resolve() / "deleted-temp-repo")
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                report = self.workspace_service.resync(apply=apply)
+                self.assertEqual(["skipped"], [r.status for r in report.results])
+                self.assertIn("workspaces --remove", report.results[0].message)
+                self.assertEqual((record,), self.workspace_service.store.load())
+
     def test_remove_unregistered_workspace_does_not_rewrite_registry(self) -> None:
         registered = self.root / "registered"
         record = WorkspaceRecord(
