@@ -376,12 +376,12 @@ def _record(root: Path, op: Op) -> Op:
     """Apply to the local tree, check the whole vault, queue, then commit."""
     with _locked(root):
         _require_clean(root)
-        before = _errors(root)
+        before = _snapshot(root)
         index: Path | None = None
         try:
             _apply(root, op)
             index = _stage(root, op)
-            problems = _new_errors(root, before, index)
+            problems = _new_errors(root, before, index, op)
             if problems:
                 raise MemoryVaultError(
                     f"{op.path} was not written: it would make the vault invalid ("
@@ -417,17 +417,83 @@ def _record(root: Path, op: Op) -> Op:
         return op
 
 
-def _errors(root: Path, index: Path | None = None) -> set[tuple[str, str]]:
-    return {
-        (item.path, item.rule)
-        for item in validate(root, index=index).findings
-        if item.severity == "error"
-    }
+@dataclass
+class _Snapshot:
+    """What the checks compare: validation errors and the size of each pool."""
+
+    errors: set[tuple[str, str]]
+    live: dict[str, int]  # project folder -> accepted records
+    proposals: int
+    records: list[Any]
+    texts: dict[tuple[str, str], int]  # (project folder, body) -> accepted records with it
 
 
-def _new_errors(root: Path, before: set[tuple[str, str]], index: Path) -> list[str]:
-    """Validation errors the staged change would add. Ones already there do not block it."""
-    return [f"{path}: {rule}" for path, rule in sorted(_errors(root, index) - before)]
+def _snapshot(root: Path, index: Path | None = None) -> _Snapshot:
+    report = validate(root, index=index)
+    live: dict[str, int] = {}
+    texts: dict[tuple[str, str], int] = {}
+    for record in report.records:
+        if record.path.startswith("projects/") and not record.draft and record.status == "accepted":
+            folder = record.path.split("/")[1]
+            live[folder] = live.get(folder, 0) + 1
+            if not record.path.endswith("/project.md"):
+                key = (folder, _body(root / record.path))
+                texts[key] = texts.get(key, 0) + 1
+    return _Snapshot(
+        errors={(f.path, f.rule) for f in report.findings if f.severity == "error"},
+        live=live,
+        proposals=sum(1 for r in report.records if r.draft and r.path.startswith("proposals/")),
+        records=report.records,
+        texts=texts,
+    )
+
+
+def _new_errors(root: Path, before: _Snapshot, index: Path, op: Op) -> list[str]:
+    """What the staged change would break. Problems already there do not block it.
+
+    The vault must stay valid, and the maintenance limits hold here too, so a
+    replay, a keep-mine, or a lower-level write cannot pass them either: no
+    more live records or proposals past the hard limits, no active context
+    over its hard size, and no second record in a project with the same text.
+    """
+    from .memory_project_writes import CONTEXT_HARD_TOKENS, POOL_HARD
+    from .memory_proposals import HARD_CAP
+    from .memory_retrieve import estimate_tokens
+
+    after = _snapshot(root, index)
+    problems = [f"{path}: {rule}" for path, rule in sorted(after.errors - before.errors)]
+    for folder, count in sorted(after.live.items()):
+        if count > POOL_HARD and count > before.live.get(folder, 0):
+            problems.append(
+                f"projects/{folder} would have {count} live records (limit {POOL_HARD})"
+            )
+    if after.proposals > HARD_CAP and after.proposals > before.proposals:
+        problems.append(f"{after.proposals} proposals would be open (limit {HARD_CAP})")
+    changed = set(_paths(op))
+    for record in after.records:
+        if record.path not in changed or not record.path.startswith("projects/"):
+            continue
+        body = _body(root / record.path)
+        if record.path.endswith("/active-context.md"):
+            if estimate_tokens(body) > CONTEXT_HARD_TOKENS:
+                problems.append(f"{record.path} is over {CONTEXT_HARD_TOKENS} tokens")
+            continue
+        if record.path.endswith("/project.md") or record.status != "accepted" or not body:
+            continue
+        # Only a write that adds a copy counts: moving a record, or editing
+        # one that already shared its text, makes nothing worse.
+        key = (record.path.split("/")[1], body)
+        if after.texts.get(key, 0) > max(1, before.texts.get(key, 0)):
+            problems.append(f"{record.path} repeats the text of another record in its project")
+    return problems
+
+
+def _body(path: Path) -> str:
+    """A record's text below its front matter."""
+    text = path.read_text(encoding="utf-8")
+    lines = text.split("\n")
+    end = next((i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r") == "---"), 0)
+    return "\n".join(lines[end + 1 :]).strip()
 
 
 def put_project(root: Path, project: str, rel: str, data: bytes, *, client: str = "unknown") -> Op:
@@ -927,7 +993,7 @@ def _replay_and_push(
             tip = _git(root, "rev-parse", upstream).stdout.strip()
             reset_to.append(tip)
             _git(root, "reset", "-q", "--hard", tip)
-        before = _errors(root)
+        before = _snapshot(root)
         remaining: list[dict[str, Any]] = []
         for item in pending:
             op = Op(**item)
@@ -945,7 +1011,7 @@ def _replay_and_push(
             if outcome == "applied":
                 index = _stage(root, op)
                 try:
-                    problems = _new_errors(root, before, index)
+                    problems = _new_errors(root, before, index, op)
                     if problems:
                         _restore(root, op)
                         reason = "it would make the vault invalid (" + "; ".join(problems) + ")"

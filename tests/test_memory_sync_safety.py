@@ -281,5 +281,51 @@ class ConflictScopeTests(SafetyTestCase):
         self.assertEqual(record(core, "B's approval"), (self.b / core).read_bytes())
 
 
+class LimitTests(SafetyTestCase):
+    """M-R9: the maintenance limits hold for replay and lower-level writes too."""
+
+    def fill(self, project: str, live: int) -> None:
+        """Bring a project to `live` accepted records, pushed like any other change."""
+        count = len(
+            [r for r in validate(self.a).records if r.path.startswith(f"projects/{project}/")]
+        )
+        for n in range(live - count):
+            rel = f"lessons/fill-{n:02}.md"
+            (self.a / at(project, rel)).write_bytes(record(at(project, rel), f"fill {n}"))
+        git(self.a, "add", "-A")
+        git(self.a, "commit", "-qm", "fill")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        sync.sync(self.b)
+
+    def test_a_write_past_the_pool_limit_is_refused_at_any_level(self) -> None:
+        self.fill("beta", 64)
+        with self.assertRaises(MemoryVaultError) as raised:
+            self.put(self.a, "beta", "lessons/one-more.md", "one more")
+        self.assertIn("65 live records", str(raised.exception))
+
+    def test_two_machines_cannot_together_pass_the_pool_limit(self) -> None:
+        self.fill("beta", 63)
+        self.put(self.a, "beta", "lessons/from-a.md", "from A")
+        second = self.put(self.b, "beta", "lessons/from-b.md", "from B")
+        sync.sync(self.a)
+        result = sync.sync(self.b)
+        self.assertEqual([second.id], [c["op"] for c in result.conflicts])
+        self.assertIn("64", result.conflicts[0]["reason"])
+        self.assertFalse(self.remote_has("projects/beta/lessons/from-b.md"))
+
+    def test_the_same_text_from_two_machines_is_kept_once(self) -> None:
+        text = "Deploys need the staging flag."
+        sync.put_project(
+            self.a, "hot", "lessons/a.md", record(at("hot", "lessons/a.md"), "A", text)
+        )
+        second = sync.put_project(
+            self.b, "hot", "lessons/b.md", record(at("hot", "lessons/b.md"), "B", text)
+        )
+        sync.sync(self.a)
+        result = sync.sync(self.b)
+        self.assertEqual([second.id], [c["op"] for c in result.conflicts])
+        self.assertIn("repeats the text", result.conflicts[0]["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

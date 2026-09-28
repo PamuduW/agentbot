@@ -156,7 +156,15 @@ def _live(vault: Path, folder: str) -> list[Any]:
     ]
 
 
-def _pressure(vault: Path, folder: str, relative: str, data: bytes, *, adding: bool) -> list[str]:
+def _pressure(
+    vault: Path,
+    folder: str,
+    relative: str,
+    data: bytes,
+    *,
+    adding: bool,
+    moving_from: str | None = None,
+) -> list[str]:
     """Deterministic maintenance checks. Raises for a hard limit; returns warnings."""
     from .memory_retrieve import _similar, estimate_tokens
 
@@ -165,10 +173,11 @@ def _pressure(vault: Path, folder: str, relative: str, data: bytes, *, adding: b
     body = _body_of(data)
     title = _front_matter(data.decode("utf-8"))["title"]
     for record in live:
-        if record.path == relative:
+        if record.path in {relative, moving_from}:
             continue
         other = read_bounded(vault, record.path, MAX_FILE_BYTES)
-        if body and _body_of(other) == body:
+        # A move takes the text along; only new text can repeat another record.
+        if body and moving_from is None and _body_of(other) == body:
             raise MemoryVaultError(f"the same text is already recorded in {record.path}")
         probe = type(record)(
             path=relative, type=record.type, status="accepted", draft=False, title=title
@@ -358,7 +367,8 @@ def set_context(
         created=existing.date if existing else None,
     )
     _require_valid(relative, data)
-    warnings = _pressure(vault, folder, relative, data, adding=False)
+    # A new active context is a new live record, so it counts against the pool.
+    warnings = _pressure(vault, folder, relative, data, adding=existing is None)
     op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
     return _result(op, path=relative, warnings=warnings)
 
@@ -380,9 +390,11 @@ def move(
     head, rest = _split(data.decode("utf-8"))
     data = (_with_up(head, folder, target) + "\n" + rest).encode("utf-8")
     _require_valid(target, data)
+    # The record itself is leaving `source`, so its own text is no duplicate.
+    warnings = _pressure(vault, folder, target, data, adding=False, moving_from=source)
     changes = [(target, data), (source, None), *_relink(vault, folder, source, target)]
     op = memory_sync.change_project(vault, folder, changes, client=client)
-    return _result(op, path=target, moved_from=source)
+    return _result(op, path=target, moved_from=source, warnings=warnings)
 
 
 def delete(

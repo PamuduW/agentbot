@@ -44,12 +44,14 @@ KINDS = {"lessons": "lesson", "decisions": "decision", "notes": "project"}
 VAULT_ID = "f1f1f1f1-0000-4000-8000-000000000000"
 
 
-def record(where: str, title: str, body: str = "Synthetic body.") -> bytes:
+def record(where: str, title: str, body: str | None = None) -> bytes:
     """A valid schema 3 record for the vault path it is written to.
 
     The ID comes from the path and content, so writing the same record twice
-    gives the same bytes, as a real replay would.
+    gives the same bytes, as a real replay would. The default body is unique
+    to the record: two records with the same text in one project are refused.
     """
+    body = body if body is not None else f"Synthetic notes for {where}: {title}."
     parts = [*where.split("/"), "", ""]
     if parts[0] == "projects":
         # Unknown folders fall back to a lesson: path tests hand in bad paths
