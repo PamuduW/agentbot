@@ -53,6 +53,16 @@ class AutoModeTests(AutosyncTestCase):
         autosync.set_settings(self.config_b, fetch_interval=0)
         self.assertIsNotNone(autosync.before_read(self.b, self.config_b))
 
+    def test_an_offline_read_is_not_retried_on_every_command(self) -> None:
+        # Review 1, M-R11: only successes were stamped, so each read paid for
+        # another failed fetch.
+        git(self.b, "remote", "set-url", "origin", str(self.tmp / "gone.git"))
+        with patch.object(sync, "sync", wraps=sync.sync) as spy:
+            self.assertEqual("offline", autosync.before_read(self.b, self.config_b)["state"])
+            self.assertIsNone(autosync.before_read(self.b, self.config_b))
+            self.assertEqual(1, spy.call_count)
+        self.assertNotIn("at", autosync.last_sync(self.b))  # never synced successfully
+
     def test_offline_writes_stay_pending_until_the_remote_returns(self) -> None:
         url = git(self.a, "remote", "get-url", "origin").strip()
         git(self.a, "remote", "set-url", "origin", str(self.tmp / "gone.git"))

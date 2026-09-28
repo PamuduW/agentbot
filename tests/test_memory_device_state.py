@@ -29,6 +29,20 @@ class DeviceStateTests(AutosyncTestCase):
     def tracked(self, root) -> list[str]:
         return git(root, "ls-files", "--", LAYOUT, ".trash").split()
 
+    def test_trash_that_old_history_tracks_keeps_this_machines_copy(self) -> None:
+        # Review 1, M-R12: the reset to the remote tip wrote the remote's copy.
+        git(self.a, "pull", "-q", "--ff-only", "origin", "main")
+        (self.a / ".trash").mkdir()
+        (self.a / ".trash/old.md").write_text("committed trash\n")
+        git(self.a, "add", "-f", ".trash/old.md")
+        git(self.a, "commit", "-q", "-m", "Trash committed by hand")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        # B has that history too, then Obsidian changes its trash before B syncs.
+        git(self.b, "pull", "-q", "--ff-only", "origin", "main")
+        (self.b / ".trash/old.md").write_text("this machine's trash\n")
+        self.assertEqual("synced", autosync.run(self.b)["state"])
+        self.assertEqual("this machine's trash\n", (self.b / ".trash/old.md").read_text())
+
     def test_obsidian_rewriting_its_layout_does_not_pause_sync(self) -> None:
         (self.a / LAYOUT).write_text('{"layout": "open notes on this machine"}\n')
         (self.a / ".trash").mkdir()

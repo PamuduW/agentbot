@@ -951,12 +951,9 @@ def _sync(root: Path, remote: str) -> SyncResult:
     result = SyncResult(state="synced")
     _require_clean(root)
     # The reset below would put back the remote's copy of a tracked layout
-    # file; each machine keeps its own.
-    device_state = {
-        path: (root / path).read_bytes()
-        for path in DEVICE_STATE_PATHS
-        if (root / path).is_file() and not (root / path).is_symlink()
-    }
+    # file, or of trash that older history still tracks; each machine keeps
+    # its own.
+    device_state = _device_files(root)
     branch = _branch(root)
     upstream = f"{remote}/{branch}"
     reset_to: list[str] = []
@@ -1039,6 +1036,29 @@ def _replay_and_push(
         result.noops.clear()
         _save(root, "pending.json", remaining)
     result.state = "retry-exhausted"
+
+
+DEVICE_FILE_LIMIT = 500
+DEVICE_BYTES_LIMIT = 16 * 1024 * 1024
+
+
+def _device_files(root: Path) -> dict[str, bytes]:
+    """This machine's per-device files, bounded: layout files and Obsidian's trash."""
+    found: dict[str, bytes] = {}
+    total = 0
+    candidates = [root / path for path in DEVICE_STATE_PATHS]
+    for folder in DEVICE_STATE_DIRS:
+        base = root / folder
+        if base.is_dir() and not base.is_symlink():
+            candidates += sorted(p for p in base.rglob("*") if not p.is_symlink())
+    for path in candidates[:DEVICE_FILE_LIMIT]:
+        if path.is_file() and not path.is_symlink():
+            data = path.read_bytes()
+            total += len(data)
+            if total > DEVICE_BYTES_LIMIT:
+                break
+            found[path.relative_to(root).as_posix()] = data
+    return found
 
 
 def _keep_device_state(root: Path, saved: dict[str, bytes], revs: list[str]) -> None:

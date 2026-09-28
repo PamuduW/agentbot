@@ -112,8 +112,12 @@ def run(vault: Path) -> dict[str, Any]:
         "pending": len(memory_sync.pending(vault)),
         "seconds": round(result.seconds, 3),
     }
+    # Every attempt is stamped, so an offline machine does not retry on every
+    # read; "at" stays the last successful sync.
+    stamp = {**last_sync(vault), "attempted_at": time.time(), "attempt": result.state}
     if result.state == "synced":
-        write_text_atomic(_stamp(vault), json.dumps({"at": time.time(), **outcome}) + "\n")
+        stamp.update(at=stamp["attempted_at"], **outcome)
+    write_text_atomic(_stamp(vault), json.dumps(stamp) + "\n")
     return outcome
 
 
@@ -151,7 +155,8 @@ def before_read(
     if _applies(vault, config_home) is not None:
         return None
     interval = settings(config_home)["fetch_interval"]
-    last = last_sync(vault).get("at", 0)
+    stamp = last_sync(vault)
+    last = max(stamp.get("at", 0), stamp.get("attempted_at", 0))
     if (now if now is not None else time.time()) - last < interval:
         return None
     return run(vault)
