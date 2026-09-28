@@ -218,8 +218,12 @@ def _paths(conflict: dict[str, Any]) -> list[str]:
 
 
 def show(vault: Path, op_id: str) -> dict[str, Any]:
+    from .memory_retrieve import DATA_NOTICE
+
     conflict = _find(vault, op_id)
     return {
+        # Both versions are record text, read by whoever runs this.
+        "notice": DATA_NOTICE,
         "op": op_id,
         "kind": conflict["kind"],
         "tier": conflict["tier"],

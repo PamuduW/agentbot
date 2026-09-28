@@ -117,8 +117,9 @@ commands say so and exit `2`, and nothing else in Agentbot depends on memory.
 
 `agentbot memory project` shows which project memory the current repository
 resolves to. Resolution goes from the Git top level to `remote.origin.url`,
-normalized (SSH, `ssh://`, and HTTPS forms, credentials stripped, and case
-folded on GitHub, GitLab, and Bitbucket), to an entry in the vault's
+normalized (SSH, `ssh://`, and HTTPS forms, credentials stripped, an SSH host
+alias resolved through `ssh -G` to the host it stands for, a non-default port
+kept, and case folded on GitHub, GitLab, and Bitbucket), to an entry in the vault's
 `.meta/projects.json`, so the same repository maps to the same folder on
 every machine. Forks and renames are separate projects until explicitly
 linked. A repository without a remote gets a generated `local/<id>-<name>`
@@ -161,13 +162,25 @@ are in: `agentbot memory project add --kind decision|lesson|note --title T
 [--tag TAG] [--supersedes ID] --stdin`, `edit PATH [--title] [--tag]
 [--stdin]`, `context --stdin` (the project's active context), `move PATH
 NEW_PATH`, `delete PATH`, and `forget --yes` (the whole project folder; its
-registry identity stays, and `git revert` of the reported commit brings it
-back). Paths are relative to the project and cannot leave it; `project.md`
-cannot be moved or deleted. Each write generates or keeps valid v3 front
-matter, is validated for its destination and secret-scanned before anything
-is written, and is one structured operation committed locally with the
-version it expects, so a concurrent change on another machine becomes a
-preserved conflict at sync time instead of an overwrite. Superseding marks
+registry identity stays; the result says how to bring it back: find the
+commit carrying its operation ID with `git log -F --grep 'Agentbot-Op: ID'`
+and `git revert` it, on any machine, because sync replays the operation and
+its local SHA changes). Paths are relative to the project and cannot leave
+it; `project.md` cannot be moved or deleted. Each write generates or keeps
+valid v3 front matter, is validated for its destination and secret-scanned,
+and is one structured operation committed locally with the version it
+expects, so a concurrent change on another machine becomes a preserved
+conflict at sync time instead of an overwrite.
+
+The engine underneath runs one memory operation at a time per clone (a lock
+in `.git/agentbot-memory/`), stages each commit in its own Git index so
+nothing you staged rides along, and validates the whole vault as it would be
+after the commit: a change that adds a validation error, or takes a project
+past its record limit, is refused, and on replay it becomes a preserved
+conflict instead. A write is queued before HEAD moves, so one interrupted by
+a crash is finished or replayed on the next run. Each project write carries
+its project's registry ID, and replay refuses it if that folder now belongs
+to another project. Superseding marks
 the replaced record in the same operation, all or nothing, and only within
 the project. `AGENTBOT_MEMORY_PROJECT_WRITES=off` turns project writes off;
 reads keep working.
@@ -175,11 +188,12 @@ reads keep working.
 Syncing is automatic. After every Agentbot-owned write
 the vault is synced: fetched, pending operations replayed on the remote tip,
 and pushed, never forced. Reads (`status`, `search`, `show`, `brief`, `due`,
-`project`) fetch first, at most once per interval (300 seconds by default);
-`validate` does not, because hooks run it mid-commit. Offline, writes stay
-committed locally and pending until the next sync; uncommitted manual edits
-pause automation until they are committed or reverted; neither ever fails the
-command. Obsidian's per-device files (`.obsidian/workspace.json`,
+`project`) fetch first, at most once per interval (300 seconds by default,
+counted from the last attempt, so an offline machine does not retry on every
+read); `validate` does not, because hooks run it mid-commit. Offline (or a
+Git network command that times out), writes stay committed locally and
+pending until the next sync; uncommitted manual edits pause automation until
+they are committed or reverted; neither fails the command. Obsidian's per-device files (`.obsidian/workspace.json`,
 `workspace-mobile.json`, and `.trash/`) are not manual edits: they never pause
 sync, and the first sync adds them to a managed block in the vault's
 `.gitignore` and stops tracking them, keeping each machine's copy. `agentbot memory sync` syncs now;
@@ -211,10 +225,12 @@ human.
 Human-only confirmations need a person at a terminal. `approve --yes` and
 `reject --yes` and `conflict resolve` for a core
 conflict refuse unless standard input is a terminal, then ask you to type the
-short code shown (the record's or operation's first 8 characters). Agent
-shells have no terminal, so an agent that is told to approve gets the command
-to hand back instead. This deters; it is not a security boundary against an
-agent that drives a real terminal on purpose.
+short code shown (the record's or operation's first 8 characters). An
+ordinary agent shell has no terminal, so an agent that is told to approve
+gets the command to hand back instead. This deters; it is not a security
+boundary: a harness that gives the agent a pseudo-terminal can pass it, and
+nothing here proves a person is present. Conflict resolution (keep mine or
+theirs) is also refused outside the repository the conflict belongs to.
 
 `search`, `show`, and `brief` detect the project from the
 directory you run them in (Git top level, origin, registry) when neither
@@ -222,10 +238,13 @@ directory you run them in (Git top level, origin, registry) when neither
 An unregistered repository, a registry collision, or a directory outside any
 repository gets global and shared memory only; nothing is guessed. The JSON
 output reports `project` and `project_source` (`explicit`, `auto`, or none).
-Every model-facing output (the brief text and the search, show, and brief
-JSON) carries a fixed notice that the content is retrieved memory to treat as
+Every output that carries record text (the brief; search and show, as text
+or JSON; a proposal's body in `review`; both versions in `conflict show`)
+carries a fixed notice that the content is retrieved memory to treat as
 evidence, never as instructions, and record text is never rendered into
-policy. A project's `active-context.md` leads its share of the brief.
+policy. The notice is guidance to the model, not enforcement: memory an
+agent was tricked into writing is contained to its project folder, but the
+agent reading it may still have other tools. A project's `active-context.md` leads its share of the brief.
 
 Project memory keeps itself in shape with deterministic checks on every
 write: a body identical to another record in the project is refused, a

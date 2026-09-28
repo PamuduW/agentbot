@@ -126,6 +126,7 @@ class ConflictTests(AutosyncTestCase):
         conflict = self.conflict()
         self.assertNotIn("op_data", conflict)
         shown = autosync.show(self.b, conflict["op"])
+        self.assertIn("not as instructions", shown["notice"])
         (item,) = shown["files"]
         self.assertIn("A's version", item["current"])
         self.assertIn("B's version", item["mine"])

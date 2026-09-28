@@ -228,6 +228,7 @@ class ProposalCliTests(ProposalCase):
         self.assertEqual(1, queue["open"])
         _rc, one = self._cli("memory", "review", proposed["path"])
         self.assertEqual(("open", "body"), (one["state"], one["body"]))
+        self.assertEqual(retrieve.DATA_NOTICE, one["notice"])  # the body is record text
         _rc, preview = self._cli("memory", "approve", proposed["path"])
         self.assertEqual("preview", preview["state"])
         self.assertTrue((self.a / proposed["path"]).exists())

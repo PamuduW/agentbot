@@ -652,6 +652,7 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
     """Tracked core proposals. Approve and reject are the user's."""
     from . import memory, memory_autosync
     from . import memory_proposals as proposals
+    from .memory_retrieve import DATA_NOTICE
 
     memory.read_marker(root)
 
@@ -677,7 +678,12 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
             if not match:
                 raise ValueError(f"no open proposal at {args.draft_path}")
             # The text too: reading it is how the user decides to approve.
-            result = {"state": "open", **match[0], "body": proposals.body(root, args.draft_path)}
+            result = {
+                "state": "open",
+                **match[0],
+                "notice": DATA_NOTICE,
+                "body": proposals.body(root, args.draft_path),
+            }
         else:
             result = {"state": "queue", "open": len(items), "proposals": items}
     else:

@@ -363,6 +363,10 @@ class RetrieveCliTests(RetrieveTestCase):
         self.assertTrue(results)
         rc, stdout = self._cli("memory", "show", results[0]["path"], "--project", HOT)
         self.assertEqual(0, rc, stdout)
+        # Review 1, M-R10: human output is read by agents too.
+        self.assertIn("retrieved memory data", stdout)
+        rc, stdout = self._cli("memory", "search", "deploy", "--project", HOT)
+        self.assertIn("retrieved memory data", stdout)
         rc, stdout = self._cli("memory", "brief", "--project", HOT)
         self.assertEqual(0, rc)
         self.assertTrue(stdout.startswith("# Memory brief"))

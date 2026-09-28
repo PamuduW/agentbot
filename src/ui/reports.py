@@ -12,6 +12,7 @@ from typing import Literal
 
 from ..commands import CommandSpec, commands_for_surface
 from ..mcp_models import McpCatalog, McpPlan, McpStatusReport
+from ..memory_retrieve import DATA_NOTICE
 from ..models import Table, TableSection
 from .table import (
     DIM,
@@ -748,6 +749,9 @@ def print_memory_search(result) -> None:
         print_table([("Results", "no accepted record matched within scope", "info")])
         print_rollup(ok=1, check=0, miss=0)
         return
+    # Agents read this screen too: excerpts are record text.
+    print_note(DATA_NOTICE)
+    print()
     rows = []
     for hit in result.hits:
         excerpt = f" — line {hit.line}: {hit.excerpt}" if hit.excerpt else ""
@@ -779,6 +783,8 @@ def print_memory_record(hit, body: str) -> None:
         ],
         wrap_details=True,
     )
+    print()
+    print_note(DATA_NOTICE)
     print()
     print(body.rstrip("\n"))
 
@@ -974,7 +980,7 @@ def print_memory_result(result, *, title: str) -> None:
     state = result.get("state", "")
     rows = [("Result", state, "preview" if state == "preview" else "info")]
     for key, value in result.items():
-        if key in {"state", "body"}:
+        if key in {"state", "body", "notice"}:
             continue
         if key == "proposals":
             rows += [
@@ -988,6 +994,8 @@ def print_memory_result(result, *, title: str) -> None:
         )
     ok, check, miss = print_table(rows, wrap_details=True)
     if result.get("body"):
+        print()
+        print_note(DATA_NOTICE)
         print()
         for line in str(result["body"]).splitlines():
             print(f"  {line}")

@@ -217,12 +217,18 @@ class ForgetAndConcurrencyTests(WritesTestCase):
         self.assertFalse((self.a / "projects/alpha").exists())
         self.assertIn(P_ALPHA, (self.a / ".meta/projects.json").read_text())
         self.valid(self.a)
+        # Recovery as the result describes it, from the other machine, where
+        # the local SHA does not exist: by the operation's ID.
+        self.assertIn(result["op"], result["recover"])
+        sync.sync(self.a)
+        sync.sync(self.b)
+        commit = git(self.b, "log", "-F", "--format=%H", f"--grep=Agentbot-Op: {result['op']}")
         subprocess.run(
-            [*GIT, "-C", str(self.a), "revert", "--no-edit", result["commit"]],
+            [*GIT, "-C", str(self.b), "revert", "--no-edit", commit.strip()],
             check=True,
             capture_output=True,
         )
-        self.assertEqual(before, git(self.a, "ls-tree", "-r", "HEAD", "projects/alpha"))
+        self.assertEqual(before, git(self.b, "ls-tree", "-r", "HEAD", "projects/alpha"))
 
     def test_concurrent_edits_to_one_record_conflict_instead_of_overwriting(self) -> None:
         writes.edit(self.a, self.code, self.config, "lessons/2026-09-27-l.md", body="A's version")

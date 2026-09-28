@@ -412,7 +412,13 @@ def forget(vault: Path, cwd: Path, config_home: Path, *, client: str = "agent") 
     """Remove the current project's memory folder. Its registry identity stays."""
     folder = _project(vault, cwd, config_home)
     op = memory_sync.forget_project(vault, folder, client=client)
-    return _result(op, path=f"projects/{folder}", recover=f"git revert {op.commit}")
+    # The local SHA changes when sync replays the operation onto the remote
+    # tip, so recovery names the operation, which every copy carries.
+    recover = (
+        f"find the commit with `git log -F --grep 'Agentbot-Op: {op.id}'` in the vault, "
+        "then `git revert` it"
+    )
+    return _result(op, path=f"projects/{folder}", recover=recover)
 
 
 def retire(
