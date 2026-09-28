@@ -165,6 +165,25 @@ class IndexTests(DetectionTestCase):
         self.assertTrue(all(item["excerpt"] == "" for item in listing["results"]))
         self.assertEqual(retrieve.DATA_NOTICE, listing["notice"])
 
+    def test_the_index_lists_every_record_even_with_alike_titles(self) -> None:
+        # Cursor's Ticket 12 run: three decisions with near-identical titles
+        # were listed as one. More than the old per-project quota of 4, too.
+        for n in range(6):
+            writes.add(
+                self.a,
+                self.code,
+                self.config,
+                kind="decision",
+                title=f"Project memory is written only through the CLI, check {n}",
+                body=f"check {n}",
+            )
+        _rc, listing = self.cli(self.code, "memory", "search", "--type", "decision")
+        titles = [i["title"] for i in listing["results"] if "written only" in i["title"]]
+        self.assertEqual(6, len(titles))
+        _rc, capped = self.cli(self.code, "memory", "search", "--type", "decision", "--limit", "2")
+        self.assertEqual(2, len(capped["results"]))
+        self.assertGreaterEqual(capped["excluded"]["over-limit"], 4)
+
     def test_the_index_respects_scope_and_its_limit(self) -> None:
         _rc, elsewhere = self.cli(self.tmp, "memory", "search")
         self.assertFalse(any(i["path"].startswith("projects/") for i in elsewhere["results"]))

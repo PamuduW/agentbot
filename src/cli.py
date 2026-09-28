@@ -787,15 +787,39 @@ def _handle_memory_sync(context: CommandContext) -> int:
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
+    as_json = bool(getattr(context.args, "memory_json", False))
     try:
         return _dispatch_memory(context)
     except memory.MemoryVaultError as error:
+        if _vault_usable(context):
+            # A sound vault refused this one request (not a registered project,
+            # a write that would break the vault, ...): say so as this command,
+            # not as a broken-vault status screen.
+            result = {"state": "refused", "detail": str(error)}
+            if as_json:
+                print(json.dumps(result, indent=2))
+            else:
+                print_memory_result(result, title=context.args.memory_command)
+            return 1
         # One place for a configured vault that is missing or not the one
         # recorded: every memory command reports it the same way.
         return _print_memory_state(
             memory.VaultStatus(state="broken", looked_in=(), problem=str(error)),
-            as_json=bool(getattr(context.args, "memory_json", False)),
+            as_json=as_json,
         )
+
+
+def _vault_usable(context: CommandContext) -> bool:
+    from . import memory
+
+    try:
+        root, _ = memory.find_vault(context.paths.root)
+        if root is None:
+            return False
+        memory.read_marker(root)
+    except memory.MemoryVaultError:
+        return False
+    return True
 
 
 def _dispatch_memory(context: CommandContext) -> int:

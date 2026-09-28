@@ -276,6 +276,19 @@ class ProjectWriteCliTests(WritesTestCase):
             rc, stdout, _ = run_cli_main(["agentbot", "--root", str(self.tmp / "agentbot"), *argv])
         return rc, stdout
 
+    def test_a_refused_request_is_not_reported_as_a_broken_vault(self) -> None:
+        # Run from a folder with no project memory (the vault itself, in the
+        # Ticket 12 cleanup), forget printed a status screen: "Vault None: ok".
+        outside = self.tmp / "plain"
+        outside.mkdir()
+        rc, stdout = self._cli(outside, "memory", "project", "forget", "--yes", "--json")
+        payload = json.loads(stdout)
+        self.assertEqual((1, "refused"), (rc, payload["state"]))
+        self.assertIn("not inside a Git repository", payload["detail"])
+        rc, stdout = self._cli(outside, "memory", "project", "forget", "--yes")
+        self.assertIn("Memory › Project", stdout)
+        self.assertNotIn("Vault", stdout)
+
     def test_cli_add_register_and_forget_preview(self) -> None:
         rc, stdout = self._cli(
             self.code,

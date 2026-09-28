@@ -299,8 +299,10 @@ best global, shared, and target-project result, then one per other project),
 caps the target project at 4 and each other project at 1, skips near-duplicate
 titles, and returns 8 results by default with provenance and a bounded
 excerpt. Without a query, `search` is the index: record headers (title, type,
-tags, date, path) with no excerpt, newest first, 30 by default, under the same
-scope and quotas, so an agent can see what exists before reading anything. A
+tags, date, path) with no excerpt, newest first, 30 by default and at most
+100, within the same scope. It lists every record in that scope, without the
+search's near-duplicate skip or per-project quota, and reports any past the
+limit as `over-limit`, so an agent can see what exists before reading anything. A
 bad request (an overlong query, a path outside scope) is refused as `refused`,
 never reported as a broken vault. A record over about 400 tokens is still
 written, with advice to split it into one record per idea. `brief` prints a disposable Markdown brief of 800 tokens by default

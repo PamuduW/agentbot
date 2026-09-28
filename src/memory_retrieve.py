@@ -322,18 +322,20 @@ def index(
 ) -> Retrieval:
     """Record headers without a query: the table of contents for this request.
 
-    The same scope, lifecycle, and pool fairness as a search, newest first, and
-    no excerpts, so an agent can see what exists before choosing what to read.
+    Every record in scope that the lifecycle allows, newest first, up to the
+    limit, with no excerpts, so an agent can see what exists before choosing
+    what to read. Unlike a search it skips no near-duplicate title and applies
+    no per-project quota: a listing that did hid two of three decisions whose
+    titles were alike. Records past the limit are counted as `over-limit`.
     """
     _check_request(request)
     limit = max(1, min(limit, SEARCH_MAX))
     eligible, summary = candidates(root, request, today=today)
-    listed: dict[str, list[Hit]] = {}
-    for record, pool, labels in eligible:
-        listed.setdefault(pool, []).append(Hit(record, pool, 0.0, labels=labels))
-    for hits in listed.values():
-        hits.sort(key=lambda hit: (hit.record.date, hit.record.path), reverse=True)
-    summary.hits = _allocate(listed, limit)
+    listed = [Hit(record, pool, 0.0, labels=labels) for record, pool, labels in eligible]
+    listed.sort(key=lambda hit: (hit.record.date, hit.record.path), reverse=True)
+    summary.hits = listed[:limit]
+    if len(listed) > limit:
+        summary.excluded["over-limit"] = len(listed) - limit
     return summary
 
 
