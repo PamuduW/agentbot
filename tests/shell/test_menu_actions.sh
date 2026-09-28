@@ -412,17 +412,44 @@ test_memory_menu_previews_then_applies_only_when_confirmed() (
 test_memory_menu_reviews_proposals_and_settles_conflicts() (
 	local calls="$TEST_ROOT/memory-review.calls"
 	: >"$calls"
-	local -a answers=('proposals/core/lessons/p.md' 'a' 'op-1' 't' '')
+	# Two proposals: approve the first, skip the second; then one conflict.
+	local -a answers=('a' 's' 'op-1' 't' 'q')
 	local answer_index=0
 	read_tty_line() {
 		printf -v "$1" '%s' "${answers[$answer_index]}"
 		answer_index=$((answer_index + 1))
 	}
-	agentbot_run_backend() { printf 'backend:%s\n' "$*" >>"$calls"; }
+	agentbot_run_backend() {
+		printf 'backend:%s\n' "$*" >>"$calls"
+		if [[ "$*" == 'memory review --json' ]]; then
+			printf '%s\n' '{"state": "queue", "open": 2, "proposals": [{"path": "proposals/core/lessons/p.md"}, {"path": "proposals/core/lessons/q.md"}]}'
+		fi
+	}
 	agentbot_menu_memory_dispatch review >/dev/null
 	agentbot_menu_memory_dispatch conflicts >/dev/null
+	# A third visit, stopped at the first proposal.
 	agentbot_menu_memory_dispatch review >/dev/null
-	[[ "$(<"$calls")" == $'backend:memory review\nbackend:memory review proposals/core/lessons/p.md\nbackend:memory approve proposals/core/lessons/p.md --yes\nbackend:memory conflict list\nbackend:memory conflict show op-1\nbackend:memory conflict resolve op-1 --keep theirs\nbackend:memory review' ]]
+	[[ "$(<"$calls")" == $'backend:memory review --json\nbackend:memory review proposals/core/lessons/p.md\nbackend:memory approve proposals/core/lessons/p.md --yes\nbackend:memory review proposals/core/lessons/q.md\nbackend:memory conflict list\nbackend:memory conflict show op-1\nbackend:memory conflict resolve op-1 --keep theirs\nbackend:memory review --json\nbackend:memory review proposals/core/lessons/p.md' ]]
+)
+
+test_memory_menu_review_with_nothing_waiting_or_no_vault() (
+	local calls="$TEST_ROOT/memory-review-empty.calls" output
+	: >"$calls"
+	agentbot_run_backend() {
+		printf 'backend:%s\n' "$*" >>"$calls"
+		[[ "$*" == 'memory review --json' ]] && printf '%s\n' '{"state": "queue", "open": 0, "proposals": []}'
+		return 0
+	}
+	output="$(agentbot_menu_memory_dispatch review)" || return 1
+	[[ "$output" == *'No proposals are waiting'* ]] || return 1
+	: >"$calls"
+	agentbot_run_backend() {
+		printf 'backend:%s\n' "$*" >>"$calls"
+		[[ "$*" == 'memory review --json' ]] && return 2
+		return 0
+	}
+	agentbot_menu_memory_dispatch review >/dev/null || return 1
+	[[ "$(<"$calls")" == $'backend:memory review --json\nbackend:memory review' ]]
 )
 
 test_memory_menu_clone_and_new_collect_their_inputs() (
@@ -645,6 +672,7 @@ check 'Workspaces routes list preview and confirmed apply' test_workspaces_route
 check 'Memory setup previews and applies only when confirmed' test_memory_menu_previews_then_applies_only_when_confirmed
 check 'Memory clone and new collect their inputs' test_memory_menu_clone_and_new_collect_their_inputs
 check 'memory menu reviews proposals and settles conflicts' test_memory_menu_reviews_proposals_and_settles_conflicts
+check 'memory review with nothing waiting, or no vault' test_memory_menu_review_with_nothing_waiting_or_no_vault
 check 'Memory status without a vault is not a failure' test_memory_status_without_a_vault_is_not_a_failure
 check 'declined workspace apply performs no backend write' test_declined_workspace_apply_is_non_destructive
 check 'workspace removal prompts use the shared TTY adapter' test_workspace_removal_prompt_uses_the_shared_tty_adapter

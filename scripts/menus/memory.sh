@@ -52,18 +52,41 @@ agentbot_menu_memory_setup() {
 	return "$rc"
 }
 
+# Every open proposal, one at a time: its text, then approve, reject, skip,
+# or stop. No path to type. Approve and reject still ask for the proposal's
+# short code, the guard that keeps them a person's action.
 agentbot_menu_memory_review() {
-	local path='' action='' rc=0
-	agentbot_run_backend memory review || return $?
-	agentbot_menu_memory_ask path 'Proposal path to read (Enter to go back): ' || return 0
-	[[ -n "$path" ]] || return 0
-	agentbot_run_backend memory review "$path" || return $?
-	agentbot_menu_memory_ask action 'a approve, r reject, Enter to leave it: ' || return 0
-	case "$action" in
-	a | A) agentbot_run_backend memory approve "$path" --yes || rc=$? ;;
-	r | R) agentbot_run_backend memory reject "$path" --yes || rc=$? ;;
-	*) printf '  %sLeft for later.%s\n' "$C_DIM" "$C_RESET" ;;
-	esac
+	local json='' path='' action='' rc=0 index=0
+	local -a paths=()
+	if ! json="$(agentbot_run_backend memory review --json)"; then
+		# No vault, or a broken one: the ordinary screen says which.
+		agentbot_run_backend memory review
+		return 0
+	fi
+	mapfile -t paths < <("${AGENTBOT_PYTHON:-python3}" -c '
+import json, sys
+for item in json.loads(sys.argv[1]).get("proposals", []):
+    print(item["path"])
+' "$json")
+	if ((${#paths[@]} == 0)); then
+		printf '  No proposals are waiting for your review.\n'
+		return 0
+	fi
+	for path in "${paths[@]}"; do
+		index=$((index + 1))
+		printf '\n  %sProposal %d of %d%s\n' "$C_BOLD" "$index" "${#paths[@]}" "$C_RESET"
+		agentbot_run_backend memory review "$path" || rc=$?
+		agentbot_menu_memory_ask action 'a approve, r reject, s skip, q stop: ' || return "$rc"
+		case "$action" in
+		a | A) agentbot_run_backend memory approve "$path" --yes || rc=$? ;;
+		r | R) agentbot_run_backend memory reject "$path" --yes || rc=$? ;;
+		q | Q)
+			printf '  %sStopped; the rest are left for later.%s\n' "$C_DIM" "$C_RESET"
+			return "$rc"
+			;;
+		*) printf '  %sLeft for later.%s\n' "$C_DIM" "$C_RESET" ;;
+		esac
+	done
 	return "$rc"
 }
 

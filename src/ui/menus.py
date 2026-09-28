@@ -125,8 +125,8 @@ MENUS: dict[str, Menu] = {
             "Show the configured vault, its schema, Git state, and validation totals.\nRead-only.",
             "Check every vault file against its schema and the secret scanner.\n"
             "Read-only; findings name paths and rules, never note text.",
-            "Read the core memory proposals agents made, then approve or reject one.\n"
-            "Approval asks you to type its short code; agents cannot approve.",
+            "Go through the core memory proposals agents made, one at a time:\n"
+            "approve, reject, or skip each; approving asks for its short code.",
             "Writes another machine changed first, kept for you to settle.\n"
             "Show both versions, then keep yours or theirs.",
             "Point Agentbot at a vault checkout already on this machine.\n"
