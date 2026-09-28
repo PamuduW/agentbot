@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -272,10 +273,26 @@ def _describe(vault: Path) -> dict[str, Any]:
 
 
 def _redact(url: str) -> str:
+    """An existing checkout's remote, safe to store and show.
+
+    One that sanitize_url would refuse is rebuilt without user info, query,
+    or fragment, where a token can sit; one that cannot be parsed is hidden.
+    """
     try:
         return sanitize_url(url)
     except MemoryVaultError:
-        return re.sub(r"//[^/@]*@", "//***@", url)
+        pass
+    hidden = "(hidden: the remote could not be shown without a possible credential)"
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+        host = parts.hostname or ""
+        if parts.port is not None:
+            host += f":{parts.port}"
+    except ValueError:
+        return hidden
+    if not parts.scheme or not host:
+        return hidden
+    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
 # --- Setup flows --------------------------------------------------------------

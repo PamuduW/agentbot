@@ -322,7 +322,12 @@ def _reapply(vault: Path, conflict: dict[str, Any]) -> memory_sync.Op:
     if op.kind == "register":
         entry = json.loads(op.content or "{}")
         origin = entry["origin"]
-        url = origin if origin.startswith("local/") else f"https://{origin}"
+        # Already canonical: host (with any port) and path. Rebuilt as an
+        # HTTPS URL with the port stated, so it normalizes back to itself.
+        host, _, path = origin.partition("/")
+        if ":" not in host:
+            host += ":443"
+        url = origin if origin.startswith("local/") else f"https://{host}/{path}"
         return memory_sync.register_origin(
             vault, url, entry["folder"], entry["id"], client="resolution"
         )

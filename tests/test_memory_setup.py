@@ -47,6 +47,19 @@ class SetupTestCase(unittest.TestCase):
 
 
 class PathSetupTests(SetupTestCase):
+    def test_a_remote_with_a_token_is_stored_and_shown_without_it(self) -> None:
+        # Review 1, M-R5: an existing checkout's remote is not ours to refuse,
+        # but a token in its user info, query, or fragment must not be kept.
+        token = "ghp_" + "Q7r6S5t4" * 5
+        remote = f"https://me:{token}@github.com/o/vault.git?access_token={token}#{token}"
+        subprocess.run(
+            ["git", "-C", str(self.vault.root), "remote", "add", "origin", remote], check=True
+        )
+        result = setup.setup_path(self.vault.root, self.config, apply=True)
+        self.assertEqual("https://github.com/o/vault.git", result.vault["remote"])
+        self.assertNotIn(token, setup.config_path(self.config).read_text())
+        self.assertNotIn(token, json.dumps(result.vault))
+
     def test_preview_then_apply_writes_a_private_config(self) -> None:
         preview = setup.setup_path(self.vault.root, self.config)
         self.assertEqual("preview", preview.state)

@@ -63,6 +63,36 @@ class NormalizationTests(unittest.TestCase):
             sync.normalize_origin("https://git.example.org/team/repo"),
         )
 
+    def test_a_port_that_is_not_the_default_is_part_of_the_identity(self) -> None:
+        # Review 1, M-R13: two services on one host are two repositories.
+        self.assertEqual(
+            "git.example.org:2222/team/repo",
+            sync.normalize_origin("ssh://git@git.example.org:2222/team/repo.git"),
+        )
+        self.assertNotEqual(
+            sync.normalize_origin("https://git.example.org:8443/team/repo"),
+            sync.normalize_origin("https://git.example.org:9443/team/repo"),
+        )
+        self.assertEqual(
+            "git.example.org/team/repo",
+            sync.normalize_origin("https://git.example.org:443/team/repo"),
+        )
+
+    def test_an_ssh_host_alias_resolves_to_its_real_host(self) -> None:
+        def ssh_config(host: str) -> tuple[str, int | None]:
+            return ("github.com", 22) if host == "github-work" else (host, None)
+
+        with patch.object(sync, "_ssh_endpoint", side_effect=ssh_config):
+            self.assertEqual(
+                sync.normalize_origin("git@github.com:Me/Repo.git"),
+                sync.normalize_origin("git@github-work:me/repo.git"),
+            )
+
+    def test_an_alias_that_looks_like_an_option_is_never_passed_to_ssh(self) -> None:
+        with patch.object(sync.subprocess, "run") as run:
+            self.assertEqual(("-oProxyCommand=x", None), sync._ssh_endpoint("-oProxyCommand=x"))
+        run.assert_not_called()
+
     def test_credentials_never_survive(self) -> None:
         self.assertEqual(
             "gitlab.com/o/r", sync.normalize_origin("https://user:secret@gitlab.com/o/r.git?x=1")

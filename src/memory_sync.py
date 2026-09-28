@@ -304,18 +304,55 @@ def _project_path(project: str, rel: str) -> str:
     return f"projects/{project}/{_safe_rel(rel)}"
 
 
+DEFAULT_PORTS = {"ssh": 22, "git+ssh": 22, "ssh+git": 22, "git": 9418, "http": 80, "https": 443}
+SSH_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _ssh_endpoint(host: str) -> tuple[str, int | None]:
+    """The real host and port behind an SSH host alias, as the SSH config maps it.
+
+    `ssh -G` only reads configuration; it never connects. Without ssh, or for
+    an unusual name, the host stays as written.
+    """
+    if not SSH_HOST.match(host):
+        return host, None
+    try:
+        shown = subprocess.run(
+            ["ssh", "-G", host], capture_output=True, text=True, check=False, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError):
+        return host, None
+    values = dict(line.split(" ", 1) for line in shown.stdout.splitlines() if " " in line)
+    port = values.get("port", "").strip()
+    return values.get("hostname", host).strip() or host, int(port) if port.isdigit() else None
+
+
 def normalize_origin(url: str) -> str:
-    """host/namespace/repo for SSH, scp-style, and HTTP(S) remotes, credentials removed."""
+    """host[:port]/namespace/repo for SSH, scp-style, and HTTP(S) remotes, credentials removed.
+
+    An SSH host alias resolves to the host it stands for, so `github-work:o/r`
+    and `github.com:o/r` are one project. A port stays when it is not the
+    scheme's default: two services on one host are two repositories.
+    """
     value = url.strip()
     scp = re.match(r"^(?:[^@/]+@)?([^:/]+):(?!//)(.+)$", value)
+    port: int | None = None
     if scp and "://" not in value:
-        host, path = scp.group(1), scp.group(2)
+        scheme, host, path = "ssh", scp.group(1), scp.group(2)
     else:
-        match = re.match(r"^[a-z+]+://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+)$", value, re.IGNORECASE)
+        match = re.match(
+            r"^([a-z+]+)://(?:[^@/]+@)?([^/:]+)(?::(\d+))?/(.+)$", value, re.IGNORECASE
+        )
         if not match:
             raise MemoryVaultError("the remote URL is not a recognizable Git origin")
-        host, path = match.group(1), match.group(2)
+        scheme, host, path = match.group(1).lower(), match.group(2), match.group(4)
+        port = int(match.group(3)) if match.group(3) else None
+    if DEFAULT_PORTS.get(scheme) == 22:
+        host, configured = _ssh_endpoint(host)
+        port = port or configured
     host = host.lower()
+    if port is not None and port != DEFAULT_PORTS.get(scheme):
+        host = f"{host}:{port}"
     path = re.sub(r"[?#].*$", "", path).strip("/")
     path = re.sub(r"/+", "/", path)
     if path.endswith(".git"):
