@@ -42,10 +42,6 @@ ORANGE = _render.ORANGE
 # renderer floors here too.
 MINIMUM_COLUMNS = 32
 
-LABEL_W = 22
-DETAIL_W = 40
-RESULT_W = 10
-
 ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 MANUAL_SKILL_NAME = re.compile(r"(?<=Manual skill ')[^']+(?=')")
 
@@ -265,11 +261,6 @@ def print_section(label: str) -> None:
 # copies were reconciled; `unchanged`, `ready` and `stale` came from here.
 _RESULT_COLORS = {"ok": GREEN, "missing": RED, "skipped": DIM, "check": YELLOW, "info": CYAN}
 
-RESULT_GREEN = _render._GREEN
-RESULT_RED = _render._RED
-RESULT_YELLOW = _render._YELLOW
-RESULT_CYAN = _render._CYAN
-
 #: Re-exported: tests/lib/result_sweep.py and test_ui_reports.py read it here.
 result_class = _render.result_class
 
@@ -430,10 +421,6 @@ def print_four_column_table(
 #: What will happen, as opposed to what something is. `current` is green here
 #: and yellow in the result vocabulary, which is why the two are separate. The
 #: vocabulary itself is shared, for the same reason the result one is.
-ACTION_GREEN = _render._ACTION_GREEN
-ACTION_YELLOW = _render._ACTION_YELLOW
-ACTION_CYAN = _render._ACTION_CYAN
-
 _ACTION_COLORS = {"ok": GREEN, "skipped": DIM, "info": CYAN, "check": YELLOW, "missing": RED}
 
 

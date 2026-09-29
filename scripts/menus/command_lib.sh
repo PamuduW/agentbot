@@ -10,7 +10,7 @@
 _agentbot_command_lib_detail() {
 	local command="$1"
 	(cd "$AGENTBOT_HOME" && AGENTBOT_MENU_COLS="$(tui_cols)" AGENTBOT_TUI=1 \
-		"${AGENTBOT_PYTHON:-python3}" -m src.cli --root "$AGENTBOT_HOME" help "$command" --format tui)
+		"${AGENTBOT_PYTHON:-python3}" -m src.cli --root "$AGENTBOT_HOME" help "$command")
 }
 
 _agentbot_command_lib_browse() {

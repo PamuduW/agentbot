@@ -609,14 +609,5 @@ class Lifecycle:
             return self.boost.status()
         return status
 
-    def sync_graphify_if_cli_available(self, *, refresh_outputs: bool = True) -> GraphifyStatus:
-        current = self.graphify.status()
-        if current.cli_path is None:
-            return current
-        status = self.graphify.setup()
-        if refresh_outputs and status.skill_path.is_file() and status.state != "broken":
-            self.refresh_outputs()
-        return status
-
     def list_skills(self) -> list[str]:
         return list_installed_skills(self.paths)

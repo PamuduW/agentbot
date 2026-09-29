@@ -85,6 +85,13 @@ global outputs. Apply verifies that planned inputs have not changed, confirms
 source-owned deltas once, and uses the shared rollback boundary for managed
 surfaces.
 
+Inside that transaction the update reconciles skills, refreshes Graphify, MCP,
+registered workspaces and CLI configuration, then runs Doctor as a silent
+gate: an error rolls the whole update back. Only after that gate does it
+refresh the editor and shell integrations (Boost, VS Code, the Cursor
+statusline, Codex Remote Control) and the recorded memory backup; each reports
+its own row and none of them can fail the update.
+
 The update prints a four-column report — component, installed, available,
 action — confirms, applies, and then prints the same four columns with a
 result. Timing comes last.

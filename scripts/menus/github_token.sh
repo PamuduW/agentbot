@@ -37,8 +37,3 @@ agentbot_token_config_menu() {
 	local GITHUB_TOKEN_TTY_COLS="${AGENTBOT_TOKEN_TTY_COLS:-}"
 	github_token_menu
 }
-
-agentbot_menu_token() {
-	tui_menu_declare_owns_pause
-	agentbot_token_config_menu
-}

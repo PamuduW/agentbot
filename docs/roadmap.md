@@ -1,11 +1,11 @@
 # Agentbot roadmap
 
-**Status:** Phases 0, 1, 2, 3, and 5 are complete. Phase 3 admitted all five
-MCP candidates on 2026-09-15 and made MCP an install component. Phase 4 memory remains
-deferred. Slice 4M is complete, but Slice 4.0A
-must not start until the planned cross-agent memory comparison is resolved. The
-current core has one Python lifecycle backend, one diagnostics snapshot, one
-command model, and focused shell adapters and tests.
+**Status:** Phases 0–5 are complete. Phase 3 admitted all five MCP candidates
+on 2026-09-15 and made MCP an install component. Phase 4 delivered durable
+memory as the workspace's file-first, two-tier design (ADR-0009): a private Git
+vault read at schema 3 only, with automatic sync, tracked core proposals, and
+backup. The core has one Python lifecycle backend, one diagnostics snapshot,
+one command model, and focused shell adapters and tests.
 
 This is a living roadmap. The runtime source and operational documentation are
 the authority; this file records the delivered contracts and the future
@@ -32,7 +32,7 @@ must use Agentbot and agentbot.
 | Curated skills | skills.sources.yaml and install.sh skills ... | Live |
 | Dotfiles integration | sibling dotfiles Agentbot bridge | Live |
 | Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Live; all five candidates admitted, MCP is an install component |
-| Durable memory | workspace `docs/designs/memory/` design | Pending cross-agent memory comparison |
+| Durable memory | src/memory*.py, `agentbot memory` | Live: two-tier vault, schema 3 (workspace ADR-0009) |
 | Graphify CLI and assistant integration | sibling dotfiles component plus Agentbot integration | Live (Phase 5) |
 
 Agentbot is the product, the public command, the Git repository, and the
@@ -55,7 +55,7 @@ Phase 2: profiles + managed workspace render + local resync ✅
     |
     +----> Phase 3: provider-neutral MCP management ✅
     |
-    +----> Phase 4: durable memory (pending cross-agent comparison)
+    +----> Phase 4: durable memory ✅
 ```
 
 ## Phase 0 — slim bootstrap ✅
@@ -228,35 +228,25 @@ correct read-only surface — read-only authority constrains mutation, not
 disclosure — and the facade now redacts credential-named values at its single
 response chokepoint.
 
-The historical files under `archive/catalog/` and `archive/mcp/` are research
-inputs only. Phase 3 must extend the Phase 2 renderer; it must not restore the
-retired catalog control plane or create a second configuration system.
+Phase 3 extends the Phase 2 renderer; it must not restore the retired catalog
+control plane or create a second configuration system.
 
-## Phase 4 — durable memory (pending cross-agent comparison)
+## Phase 4 — durable memory ✅
 
-**Goal:** Add human-approved durable project knowledge only when the current
-Markdown policy surface is no longer sufficient.
+Delivered through the workspace's architecture reset rather than the earlier
+Slice 4.0A plan, after the cross-agent memory comparison (research R1–R7)
+chose a file-first design:
 
-Current gate status:
+- a private Git vault of Markdown records, read at schema 3 only, with a core
+  tier the user approves and a project tier agents write through the CLI;
+- automatic sync with a per-clone lock, a journal, candidate validation of the
+  exact staged bytes, and preserved conflicts instead of overwrites;
+- tracked core proposals reviewed at a terminal (`memory review`), human-only
+  approval, and a verified local backup refreshed by every update;
+- Obsidian as the human view, with its settings kept per machine.
 
-- [x] remove the public `archive/memory-vault/` prototype from the current
-  branch;
-- [x] remove the retired public-memory prose and keep the active private design
-  in the parent workspace;
-- [x] keep the private-memory design and implementation contracts in workspace
-  workspace `docs/designs/memory/`;
-- [x] review and merge the migration gate before implementation slices begin.
-
-Later planned work:
-
-- implement selected private-memory workflows with user approval before writes;
-- keep memory local, reviewable, and separate from generated repository policy;
-- keep obsidian-memory disabled until its source layout and provenance are
-  explicitly designed.
-
-Before implementation, compare the current design with viable cross-agent
-memory systems identified by the workspace roadmap. Do not start with a vector
-database or an always-on laptop service merely because a candidate bundles one.
+The workspace's ADR-0009 and the `agentbot memory` section of the README are
+the authority.
 
 ## Phase 5 — optional Graphify integration ✅
 
@@ -325,9 +315,7 @@ CLI ownership, assistant integration, or Agentbot's canonical policy ownership.
   installed and versioned by the official Graphify CLI, not by an unrelated
   Git skill source.
 
-Phase 5 was independent of the package-catalog and MCP work. Its completion did
-not implement Phase 4; Slice 4M is complete, while the next implementation
-slice waits for the parent workspace's cross-agent memory decision.
+Phase 5 was independent of the package-catalog and MCP work.
 
 ## Known costs, measured
 
@@ -401,3 +389,5 @@ removed control-plane code directly into the live lifecycle.
 | 2026-09-12 | Decided the apply keeps re-cloning to verify the plan; workspace roadmap item 4 is closed |
 | 2026-09-13 | Replaced the retired package-catalog direction with the active provider-neutral MCP ownership design |
 | 2026-09-13 | Delivered Phase 3 Gate 5.1A with an empty default-off catalog, native renderers, private ownership, atomic reconciliation, CLI, menu, and Doctor integration |
+| 2026-09-15 | Phase 3 admitted all five MCP candidates and made MCP an install component |
+| 2026-09-29 | Phase 4 delivered as the two-tier memory vault (schema 3, ADR-0009); roadmap reconciled before the merge to `main` |

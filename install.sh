@@ -513,16 +513,6 @@ main() {
 	export AGENTBOT_CALLER_PWD
 	cd "$REPO_ROOT"
 
-	# This must happen in main: `set --` inside a helper only changes that
-	# helper's positional parameters, which broke the advertised legacy flags.
-	case "${1:-}" in
-	--status) set -- status "${@:2}" ;;
-	--global) set -- global "${@:2}" ;;
-	--workspace | --all)
-		die "workspace/all render is archived — see archive/docs/README.md"
-		;;
-	esac
-
 	local cmd="${1:-}"
 
 	case "$cmd" in
@@ -577,9 +567,6 @@ main() {
 	cli-config | cursor | vscode)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
-		;;
-	all | interactive | import-local | remove-managed | delete-local)
-		die "${cmd} is archived — see archive/docs/README.md"
 		;;
 	-h | --help | help)
 		usage

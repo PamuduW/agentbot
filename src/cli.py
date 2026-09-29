@@ -137,10 +137,7 @@ def _run() -> int:
     command = args.command or "install"
     if command == "help":
         help_topic = " ".join(getattr(args, "help_topic", ())) or None
-        return print_help_command(
-            help_topic,
-            output_format=getattr(args, "help_format", "plain"),
-        )
+        return print_help_command(help_topic)
 
     paths = default_paths(Path(args.root))
     diagnostics = Diagnostics(paths)
@@ -1656,16 +1653,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     help_parser = subparsers.add_parser("help", help="Show the command reference")
     help_parser.add_argument("help_topic", nargs="*", metavar="COMMAND")
-    help_parser.add_argument(
-        "--format",
-        # `menu` was the tab-separated dump the Command lib used to parse into
-        # Bash arrays before src/ui/menus.py built the menu directly. Nothing
-        # has called for it since; it outlived its only caller.
-        choices=("plain", "tui"),
-        default="plain",
-        dest="help_format",
-        help=argparse.SUPPRESS,
-    )
 
     install_parser = subparsers.add_parser(
         "install", help="Install Agentbot into this machine's agent homes"
@@ -2310,7 +2297,7 @@ def print_doctor(diagnostics: Diagnostics) -> int:
     return print_doctor_summary(list(diagnostics.collect().issues))
 
 
-def print_help_command(topic: str | None, *, output_format: str = "plain") -> int:
+def print_help_command(topic: str | None) -> int:
     spec: CommandSpec | None
     try:
         spec = command_by_name(topic) if topic else None

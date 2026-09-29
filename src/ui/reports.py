@@ -693,17 +693,6 @@ def print_memory_validation(report) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
-def _finding_rows(findings) -> list[tuple[str, str, str]]:
-    return [
-        (
-            item.path if item.line is None else f"{item.path}:{item.line}",
-            f"{item.rule}: {item.message}",
-            item.severity,
-        )
-        for item in findings
-    ]
-
-
 def print_memory_due(items, *, total: int, today) -> None:
     """Accepted records due for review or past validity. Status stays as written."""
     print_header("Memory review queue", "Agentbot › Memory › Due")
