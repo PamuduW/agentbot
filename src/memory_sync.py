@@ -55,6 +55,8 @@ from .memory import SLUG, MemoryVaultError, scan_secrets, validate
 
 REGISTRY = ".meta/projects.json"
 STATE_DIR = "agentbot-memory"
+# The operation changing files right now, written before it changes any.
+WRITING = "writing.json"
 RECOVERY_PREFIX = "refs/agentbot-memory/recovery"
 PUSH_ATTEMPTS = 5
 LOCK_WAIT = 120.0
@@ -205,14 +207,32 @@ def _in_history(root: Path, op_id: str, rev: str) -> str | None:
     return found or None
 
 
-def _recover(root: Path) -> None:
-    """Finish or undo a write that was queued but stopped before its commit was recorded.
+def _journal(root: Path, op: Op) -> None:
+    """Name the operation about to change files, before it changes any."""
+    _save(root, WRITING, [asdict(op)])
 
+
+def _unjournal(root: Path) -> None:
+    (_state(root) / WRITING).unlink(missing_ok=True)
+
+
+def _recover(root: Path) -> None:
+    """Finish or undo a write that an earlier process left half done.
+
+    First the operation that was changing files when it stopped, a new write
+    or a replay: its files go back as HEAD has them, touching nothing else.
+    A new write that had not been queued was never acknowledged, and is gone;
+    a replayed one is still queued, and the next sync replays it again.
+
+    Then a write that was queued but stopped before its commit was recorded.
     The queue entry is written before HEAD moves. If the commit reached HEAD,
     record it; otherwise put the operation's files back as HEAD has them. The
     entry stays queued either way, so the next sync applies it: a write that
     was queued is never lost.
     """
+    for item in _load(root, WRITING):
+        _restore(root, Op(**item))
+    _unjournal(root)
     items = _load(root, "pending.json")
     changed = False
     for item in items:
@@ -418,6 +438,7 @@ def _record(root: Path, op: Op) -> Op:
         _require_clean(root)
         before = _snapshot(root)
         index: Path | None = None
+        _journal(root, op)
         try:
             _apply(root, op)
             index = _stage(root, op)
@@ -430,12 +451,14 @@ def _record(root: Path, op: Op) -> Op:
                 )
         except BaseException:
             _restore(root, op)
+            _unjournal(root)
             if index is not None:
                 index.unlink(missing_ok=True)
             raise
         pending = _load(root, "pending.json")
         pending.append(asdict(op))
         _save(root, "pending.json", pending)
+        _unjournal(root)
         try:
             op.commit = _commit(root, op, index)
         except MemoryVaultError:
@@ -466,18 +489,40 @@ class _Snapshot:
     proposals: int
     records: list[Any]
     texts: dict[tuple[str, str], int]  # (project folder, body) -> accepted records with it
+    bodies: dict[str, str]  # project record path -> its text
+
+
+@contextlib.contextmanager
+def _candidate(root: Path, index: Path) -> Iterator[Path]:
+    """The private index written out to a folder: exactly what the commit will hold."""
+    tree = Path(tempfile.mkdtemp(prefix="candidate-", dir=_state(root)))
+    try:
+        _git(root, "checkout-index", "-a", f"--prefix={tree}/", index=index)
+        yield tree
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
 
 
 def _snapshot(root: Path, index: Path | None = None) -> _Snapshot:
-    report = validate(root, index=index)
+    if index is None:
+        return _measure(root, validate(root))
+    with _candidate(root, index) as tree:
+        return _measure(tree, validate(root, index=index, tree=tree))
+
+
+def _measure(base: Path, report: Any) -> _Snapshot:
     live: dict[str, int] = {}
     texts: dict[tuple[str, str], int] = {}
+    bodies: dict[str, str] = {}
     for record in report.records:
-        if record.path.startswith("projects/") and not record.draft and record.status == "accepted":
+        if not record.path.startswith("projects/"):
+            continue
+        bodies[record.path] = body = _body(base / record.path)
+        if not record.draft and record.status == "accepted":
             folder = record.path.split("/")[1]
             live[folder] = live.get(folder, 0) + 1
             if not record.path.endswith("/project.md"):
-                key = (folder, _body(root / record.path))
+                key = (folder, body)
                 texts[key] = texts.get(key, 0) + 1
     return _Snapshot(
         errors={(f.path, f.rule) for f in report.findings if f.severity == "error"},
@@ -485,6 +530,7 @@ def _snapshot(root: Path, index: Path | None = None) -> _Snapshot:
         proposals=sum(1 for r in report.records if r.draft and r.path.startswith("proposals/")),
         records=report.records,
         texts=texts,
+        bodies=bodies,
     )
 
 
@@ -513,7 +559,7 @@ def _new_errors(root: Path, before: _Snapshot, index: Path, op: Op) -> list[str]
     for record in after.records:
         if record.path not in changed or not record.path.startswith("projects/"):
             continue
-        body = _body(root / record.path)
+        body = after.bodies[record.path]
         if record.path.endswith("/active-context.md"):
             if estimate_tokens(body) > CONTEXT_HARD_TOKENS:
                 problems.append(f"{record.path} is over {CONTEXT_HARD_TOKENS} tokens")
@@ -1048,11 +1094,13 @@ def _replay_and_push(
             if has_upstream and _in_history(root, op.id, upstream):
                 result.noops.append(op.id)
                 continue
+            _journal(root, op)
             try:
                 outcome = _apply(root, op)
             except SyncConflict as error:
                 _restore(root, op)
                 _preserve(root, op, str(error), result)
+                _unjournal(root)
                 continue
             if outcome == "applied":
                 index = _stage(root, op)
@@ -1062,6 +1110,7 @@ def _replay_and_push(
                         _restore(root, op)
                         reason = "it would make the vault invalid (" + "; ".join(problems) + ")"
                         _preserve(root, op, reason, result)
+                        _unjournal(root)
                         continue
                     _commit(root, op, index)
                 finally:
@@ -1069,6 +1118,7 @@ def _replay_and_push(
                 result.applied.append(op.id)
             else:
                 result.noops.append(op.id)
+            _unjournal(root)
             remaining.append(item)
         push = _git(root, "push", "-q", remote, f"HEAD:{branch}", check=False)
         if push.returncode == 0:
@@ -1099,7 +1149,7 @@ def _device_files(root: Path, tip: str) -> dict[str, bytes]:
     of them or none: past the limits the sync stops before the reset, rather
     than keep some and lose the rest.
     """
-    tracked = set()
+    tracked: set[str] = set()
     for rev in ("HEAD", tip):
         listed = _git(
             root, "ls-tree", "-r", "-z", "--name-only", rev, "--", *DEVICE_STATE_DIRS, check=False

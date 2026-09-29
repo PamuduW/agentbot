@@ -381,8 +381,9 @@ def _git_text(root: Path, *args: str) -> str | None:
     return result.stdout.decode("utf-8", "replace").strip() or None
 
 
-def _listed_paths(root: Path, index: Path | None = None) -> list[str]:
-    result = _git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", index=index)
+def _listed_paths(root: Path, index: Path | None = None, *, others: bool = True) -> list[str]:
+    untracked = ("--others", "--exclude-standard") if others else ()
+    result = _git(root, "ls-files", "-z", "--cached", *untracked, index=index)
     if result.returncode != 0:
         raise MemoryVaultError("git could not list the vault's files")
     paths = {item for item in result.stdout.decode("utf-8", "surrogateescape").split("\0") if item}
@@ -864,24 +865,32 @@ def scan_secrets(relative: str, text: str) -> list[Finding]:
 
 
 def validate(
-    root: Path, *, acknowledge: Iterable[str] = (), index: Path | None = None
+    root: Path,
+    *,
+    acknowledge: Iterable[str] = (),
+    index: Path | None = None,
+    tree: Path | None = None,
 ) -> ValidationReport:
     """Validate the complete vault tree against the schema its marker names.
 
     ``index`` lists files from another Git index: the sync engine stages a
     change there and validates the vault as it would be after the commit.
+    ``tree`` is that index written out to a folder, and is what gets read, so
+    the check sees exactly the bytes the commit will hold, not whatever an
+    editor saved into the vault meanwhile.
     """
-    schema = read_marker(root)
+    base = tree or root
+    schema = read_marker(base)
     report = ValidationReport(
         root=root, schema=schema, acknowledged=frozenset(acknowledge) & WARNING_RULES
     )
-    listed = _listed_paths(root, index)
+    listed = _listed_paths(root, index, others=tree is None)
     for relative in listed:
         if relative.startswith(IGNORED_PREFIXES):
             continue
-        report.findings.extend(_check_file(root, relative, schema, report.records))
+        report.findings.extend(_check_file(base, relative, schema, report.records))
     report.findings.extend(_cross_record(report.records))
-    report.findings.extend(_check_projects(root, listed, report.records))
+    report.findings.extend(_check_projects(base, listed, report.records))
     return report
 
 

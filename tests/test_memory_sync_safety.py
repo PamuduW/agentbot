@@ -132,6 +132,46 @@ class CrashRecoveryTests(SafetyTestCase):
         self.assertEqual(head, queued["commit"])
         self.assertEqual("", git(self.a, "status", "--porcelain"))
 
+    def die_during(self, step: str, action: str) -> None:
+        """Run ``action`` in a real process that dies at ``step``, as a kill would."""
+        script = (
+            "import os, sys\n"
+            "from pathlib import Path\n"
+            "from unittest.mock import patch\n"
+            "from src import memory_sync as sync\n"
+            "from tests.test_memory_sync import at, record\n"
+            "root = Path(sys.argv[1])\n"
+            f"with patch.object(sync, {step!r}, side_effect=lambda *a, **k: os._exit(9)):\n"
+            f"    {action}\n"
+        )
+        died = subprocess.run([sys.executable, "-c", script, str(self.a)], cwd=ROOT, check=False)
+        self.assertEqual(9, died.returncode)
+
+    def test_a_process_killed_mid_write_leaves_nothing_behind(self) -> None:
+        # Review 2, R2-2: the files changed before anything was journaled, so a
+        # killed process left a dirty tree that paused every later sync.
+        self.die_during(
+            "_new_errors",
+            'sync.put_project(root, "hot", "lessons/died.md",'
+            ' record(at("hot", "lessons/died.md"), "died"))',
+        )
+        self.assertTrue((self.a / "projects/hot/lessons/died.md").exists())
+        with sync._locked(self.a):
+            pass
+        self.assertFalse((self.a / "projects/hot/lessons/died.md").exists())
+        self.assertEqual("", git(self.a, "status", "--porcelain"))
+        self.assertEqual([], sync.pending(self.a))  # never acknowledged, so not queued
+
+    def test_a_process_killed_mid_replay_is_replayed_again(self) -> None:
+        self.put(self.a, "hot", "lessons/replayed.md", "replayed")
+        self.die_during("_stage", "sync.sync(root)")
+        self.assertNotEqual("", git(self.a, "status", "--porcelain"))
+        result = sync.sync(self.a)
+        self.assertEqual("synced", result.state)
+        self.assertTrue(self.remote_has("projects/hot/lessons/replayed.md"))
+        self.assertEqual([], sync.pending(self.a))
+        self.assertEqual("", git(self.a, "status", "--porcelain"))
+
     def test_operations_already_on_the_remote_are_not_replayed_again(self) -> None:
         # A run that pushed but stopped before clearing its queue: two edits
         # of one record would otherwise conflict with themselves.
@@ -146,6 +186,25 @@ class CrashRecoveryTests(SafetyTestCase):
 
 
 class CandidateValidationTests(SafetyTestCase):
+    def test_an_editor_save_during_validation_cannot_pass_invalid_bytes(self) -> None:
+        # Review 2, R2-3: validation listed the staged paths but read the files
+        # on disk, so an editor saving good bytes over the file after staging
+        # let the invalid staged bytes be committed.
+        rel = "projects/hot/lessons/raced.md"
+        real_stage = sync._stage
+
+        def editor_saves(root: Path, op: sync.Op) -> Path:
+            index = real_stage(root, op)
+            (root / rel).write_bytes(record(rel, "saved by the editor"))
+            return index
+
+        head = git(self.a, "rev-parse", "HEAD")
+        with patch.object(sync, "_stage", side_effect=editor_saves):
+            with self.assertRaises(MemoryVaultError) as raised:
+                sync.put_project(self.a, "hot", "lessons/raced.md", b"---\nnot: closed\n")
+        self.assertIn("would make the vault invalid", str(raised.exception))
+        self.assertEqual(head, git(self.a, "rev-parse", "HEAD"))
+
     def test_the_users_staging_never_enters_an_engine_commit(self) -> None:
         # An Obsidian layout file the user staged: device state, so it does
         # not pause automation, and it must not ride along in a memory commit.

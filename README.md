@@ -175,11 +175,15 @@ conflict at sync time instead of an overwrite.
 
 The engine underneath runs one memory operation at a time per clone (a lock
 in `.git/agentbot-memory/`), stages each commit in its own Git index so
-nothing you staged rides along, and validates the whole vault as it would be
-after the commit: a change that adds a validation error, or takes a project
-past its record limit, is refused, and on replay it becomes a preserved
-conflict instead. A write is queued before HEAD moves, so one interrupted by
-a crash is finished or replayed on the next run. Each project write carries
+nothing you staged rides along, and validates that index written out to a
+private folder, so the check reads exactly the bytes the commit will hold:
+a change that adds a validation error, or takes a project past its record
+limit, is refused, and on replay it becomes a preserved conflict instead.
+Errors already in the vault do not block unrelated work; only new ones do.
+Before an operation changes any file it is journaled, and before HEAD moves
+it is queued. So after a crash or a killed process, the next memory command
+puts back the files of a write that was never acknowledged, replays a
+queued one on the next sync, and adopts one whose commit already landed. Each project write carries
 its project's registry ID, and replay refuses it if that folder now belongs
 to another project. Superseding marks
 the replaced record in the same operation, all or nothing, and only within
