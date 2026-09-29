@@ -141,7 +141,10 @@ scope `project` for exactly that folder), and tracked `proposals/core/`
 project folders and each `project.md`. Supersession stays within one tier
 and one project. Schema 3 is the only schema Agentbot reads: schema 1 and 2
 vaults, and the commands that migrated them, were removed on 2026-09-27, so
-an older vault is reported as unsupported.
+an older vault is reported as unsupported. Every command that reads records
+or changes the vault, sync and hook installation included, checks the marker
+first; `status`, `hook status` and `sync --status` still describe an older
+vault, so you can see what it is.
 
 In Obsidian, the vault is a linked graph. Every project record carries
 `up: "[[projects/<folder>/project]]"`, so `project.md` is the project's hub and

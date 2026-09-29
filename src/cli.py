@@ -352,6 +352,7 @@ def _handle_memory_hook(context: CommandContext) -> int:
         if action == "status" or not args.confirm:
             state = memory_hook.inspect(root, context.paths.root)
         elif action == "install":
+            memory.read_marker(root)
             state = memory_hook.install(root, context.paths.root)
         else:
             state = memory_hook.remove(root, context.paths.root)

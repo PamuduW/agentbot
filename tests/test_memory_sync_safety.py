@@ -260,6 +260,19 @@ class CandidateValidationTests(SafetyTestCase):
         self.assertEqual(0, subprocess.run(["git", "-C", str(self.b), "rev-parse", ref]).returncode)
 
 
+class OldVaultTests(SafetyTestCase):
+    def test_sync_refuses_an_older_vault_before_anything_moves(self) -> None:
+        # Review 2: sync fetched and reset before any schema check.
+        marker = self.a / ".meta/vault.json"
+        marker.write_text('{"agentbot_memory_schema": 2}\n')
+        head = git(self.a, "rev-parse", "HEAD")
+        with patch.object(sync, "_git", side_effect=AssertionError("git ran")):
+            with self.assertRaises(MemoryVaultError) as raised:
+                sync.sync(self.a)
+        self.assertIn("not supported", str(raised.exception))
+        self.assertEqual(head, git(self.a, "rev-parse", "HEAD"))
+
+
 class TimeoutTests(SafetyTestCase):
     def test_a_hung_fetch_is_offline_not_a_crash(self) -> None:
         real_run = subprocess.run

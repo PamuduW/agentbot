@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .atomic_io import write_text_atomic
-from .memory import SLUG, MemoryVaultError, scan_secrets, validate
+from .memory import SLUG, MemoryVaultError, read_marker, scan_secrets, validate
 
 REGISTRY = ".meta/projects.json"
 STATE_DIR = "agentbot-memory"
@@ -1032,6 +1032,7 @@ def _local_commits_are_ours(root: Path, upstream: str, pending: list[dict[str, A
 
 def sync(root: Path, *, remote: str = "origin") -> SyncResult:
     """Fetch, replay queued operations on the remote tip, push. Never force."""
+    read_marker(root)  # an older vault is refused before anything moves
     with _locked(root):
         return _sync(root, remote)
 
