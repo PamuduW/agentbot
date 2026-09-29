@@ -80,6 +80,7 @@ done <<'MENUS'
 main|agentbot_menu_dispatch|quit
 libraries|agentbot_menu_libraries_dispatch|back quit
 workspaces|agentbot_menu_workspaces_dispatch|back
+memory|agentbot_menu_memory_dispatch|back
 MENUS
 
 # A derived menu is only worth deriving if it tracks its source. Every public

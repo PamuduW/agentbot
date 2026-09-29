@@ -84,7 +84,7 @@ test_sources_local_helper_only() {
 
 test_mutating_skills_children_are_authenticated() (
 	local subcmd
-	for subcmd in install update upgrade; do
+	for subcmd in install update; do
 		reset_state
 		write_token_file "$(active_file)" "saved_$(token saved)"
 		run_install_script skills "$subcmd" >/dev/null || return 1
@@ -201,11 +201,11 @@ test_no_token_bearing_arguments() {
 	! grep -En -- '(-H|--header)[[:space:]].*Authorization|https?://[^/[:space:]]*@|GITHUB_TOKEN=.*run_cli' "$ROOT/install.sh"
 }
 
-test_sole_migration_owner() {
+test_no_retired_token_path() {
 	local matches
-	matches="$(grep -RIl --exclude=github_token.sh 'agent_bootstrap/github.env' "$ROOT/install.sh" "$ROOT/bin" "$ROOT/scripts" 2>/dev/null || true)"
+	matches="$(grep -RIl 'agent_bootstrap/github.env' "$ROOT/install.sh" "$ROOT/bin" "$ROOT/scripts" 2>/dev/null || true)"
 	[[ -z "$matches" ]] || return 1
-	! grep -Eq 'github_token_(migrate_legacy|read|write)' "$ROOT/install.sh"
+	! grep -Eq 'github_token_(read|write)' "$ROOT/install.sh"
 }
 
 install_child_fake
@@ -220,7 +220,7 @@ expect 'child nonzero status propagates unchanged' test_child_status_propagates
 expect 'saved token never remains in the calling shell' test_parent_never_gains_saved_token
 expect 'canary is absent from output logs diff and sampled process cmdline' test_canary_and_proc_safety
 expect 'owned entrypoint contains no token-bearing argument construction' test_no_token_bearing_arguments
-expect 'token helper remains the sole migration and legacy-path owner' test_sole_migration_owner
+expect 'no Agentbot code reads the retired token path' test_no_retired_token_path
 
 test_harness_verify_safety || failed=$((failed + 1))
 printf '\nRan %d consumer test(s); %d failure(s).\n' "$((passed + failed))" "$failed"

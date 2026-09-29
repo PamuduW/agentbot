@@ -124,3 +124,7 @@ class UpdateOutcome:
     #: does not report one, which the summary reads as "nothing to say".
     mcp: McpInstallOutcome | None = None
     cli_config: CliConfigReport | None = None
+    #: The editor and shell integrations an install sets up (Boost, VS Code,
+    #: the Cursor statusline, Codex Remote Control). Refreshed by every update
+    #: too, so a daily run and a menu Update end in the same state as install.
+    platform: tuple[PlatformOutcome, ...] = ()

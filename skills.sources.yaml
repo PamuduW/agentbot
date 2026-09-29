@@ -72,6 +72,9 @@ sources:
     repo: brycewang-stanford/Auto-Empirical-Research-Skills
     skills:
       - deslop
+    # Disabled 2026-09-27 (skill review): humanizer covers the same AI-prose
+    # tells more rigorously, and this description fires on any writing request.
+    enabled: false
 
   - id: humanizer
     repo: blader/humanizer
@@ -87,10 +90,18 @@ sources:
     repo: obra/the-elements-of-style
     skills:
       - writing-clearly-and-concisely
+    # Disabled 2026-09-27 (skill review): simple-english and humanizer cover it.
+    enabled: false
 
   - id: watermarks-remover
     repo: guillaumemeyer/watermarks-remover
     skills: all
+    # remove-ai-marks is excluded (2026-09-27 skill review). It needs a separate
+    # HTTP service container, and what it adds beyond clean-user-facing-text is
+    # defeating AI-provenance marks and detectors, which this setup has no use
+    # for. clean-user-facing-text keeps the local invisible-Unicode clean-up.
+    exclude:
+      - remove-ai-marks
 
   - id: akindu-agent-skills
     repo: Akindu23/my-agent-skills

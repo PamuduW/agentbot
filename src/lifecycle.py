@@ -31,7 +31,7 @@ from .skill_catalog import (
     verified_source_checkouts,
 )
 from .skill_reconcile import apply_reconcile_plan, build_reconcile_plan
-from .skills_installer import InstallResult, list_installed_skills, migrate_renamed_lock_sources
+from .skills_installer import InstallResult, list_installed_skills
 from .skills_installer import install_skills as install_skills_default
 from .skills_installer import update_skills as update_skills_default
 from .skills_sources import SkillsSourcesConfig, load_skills_sources
@@ -67,10 +67,12 @@ class Lifecycle:
         checkout_provider: Callable | None = None,
         reconcile_applier: Callable | None = None,
         planned_installer: Callable | None = None,
+        integration_refresher: Callable[[], tuple[PlatformOutcome, ...]] | None = None,
         command_runner: CommandRunner | None = None,
     ) -> None:
         self.paths = paths
         self._command_runner = command_runner or CommandRunner()
+        self._integration_refresher = integration_refresher or self._refresh_integrations
         self.diagnostics = diagnostics or Diagnostics(paths)
         self.graphify = graphify or GraphifyIntegration(paths, runner=self._command_runner)
         self.boost = boost or BoostIntegration(paths, runner=self._command_runner)
@@ -165,10 +167,6 @@ class Lifecycle:
 
         stage_start = time.monotonic()
 
-        # Before anything reads ownership: a lock still pinned to a renamed
-        # upstream repository makes its skills look unowned, which shows up as
-        # prune candidates rather than as an error.
-        migrate_renamed_lock_sources(self.paths.global_skill_lock)
         started = stage_start
 
         # None means every component, so an install that was never narrowed
@@ -230,6 +228,28 @@ class Lifecycle:
         diagnostics = self.diagnostics.collect()
         stage("Install complete")
         return InstallOutcome(skills, graphify, boost, outputs, diagnostics, tuple(platform), mcp)
+
+    def _refresh_integrations(self) -> tuple[PlatformOutcome, ...]:
+        """What install sets up beyond skills, refreshed by every update."""
+        from . import codex_remote_control, memory_backup
+        from .ui.reports import integration_result
+
+        boost = self.boost.setup_if_cli_available()
+        outcomes = [PlatformOutcome("boost", "Boost", boost.state, integration_result(boost.state))]
+        for key, name, _phase in self.PLATFORM_COMPONENTS:
+            if key != "cli-config":  # the update already merged CLI config above
+                outcomes.append(self._apply_platform(key, name))
+        remote_detail, remote_result = codex_remote_control.ensure(self.paths, self._command_runner)
+        outcomes.append(
+            PlatformOutcome("codex-remote", "Codex Remote Control", remote_detail, remote_result)
+        )
+        backup_detail, backup_result = memory_backup.refresh(
+            self.paths.root, self.paths.config_home
+        )
+        outcomes.append(
+            PlatformOutcome("memory-backup", "Memory backup", backup_detail, backup_result)
+        )
+        return tuple(outcomes)
 
     def _mcp_install(self, *, apply: bool) -> McpInstallOutcome:
         """The MCP phase, degrading to an empty outcome rather than a failure.
@@ -418,6 +438,11 @@ class Lifecycle:
                             + "; ".join(issue.message for issue in errors)
                         )
                     stage["diagnostics"] = diagnostics
+                    # After the Doctor gate, so a failed update never leaves
+                    # these half-changed. Each surface reports its own state and
+                    # none of them can fail the update.
+                    stage_begins("Refreshing editor and shell integrations")
+                    stage["platform"] = self._integration_refresher()
                     stage_begins("Update complete")
 
                 reconcile = self._reconcile_applier(
@@ -451,6 +476,7 @@ class Lifecycle:
                     diagnostics=cast("DiagnosticsSnapshot | None", stage.get("diagnostics")),
                     mcp=cast("McpInstallOutcome | None", stage.get("mcp")),
                     cli_config=cast("CliConfigReport | None", stage.get("cli_config")),
+                    platform=cast("tuple[PlatformOutcome, ...]", stage.get("platform", ())),
                 )
         except StaleSourceCatalogError as error:
             return UpdateOutcome("stale-plan", str(error))
@@ -581,15 +607,6 @@ class Lifecycle:
         if status.cli_path is not None and status.state != "broken":
             self.refresh_outputs()
             return self.boost.status()
-        return status
-
-    def sync_graphify_if_cli_available(self, *, refresh_outputs: bool = True) -> GraphifyStatus:
-        current = self.graphify.status()
-        if current.cli_path is None:
-            return current
-        status = self.graphify.setup()
-        if refresh_outputs and status.skill_path.is_file() and status.state != "broken":
-            self.refresh_outputs()
         return status
 
     def list_skills(self) -> list[str]:

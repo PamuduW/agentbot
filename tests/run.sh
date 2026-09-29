@@ -35,6 +35,16 @@ if [[ "${AGENTBOT_TEST_RUNNER_SOURCE_ONLY:-0}" == 1 ]]; then
 	return 0
 fi
 
+# No test sees the real home. One that forgot to isolate itself would
+# otherwise read or write this machine's ~/.config/agentbot, its Git config,
+# or the live memory vault named by AGENTBOT_MEMORY_DIR.
+TEST_HOME="$(mktemp -d)"
+trap 'rm -rf "$TEST_HOME"' EXIT
+export HOME="$TEST_HOME/home" XDG_CONFIG_HOME="$TEST_HOME/config"
+export XDG_CACHE_HOME="$TEST_HOME/cache" XDG_DATA_HOME="$TEST_HOME/data"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
+unset AGENTBOT_MEMORY_DIR AGENTBOT_MEMORY_ROOT GIT_CONFIG_GLOBAL
+
 run_check() {
 	local label="$1" started=$SECONDS elapsed
 	shift

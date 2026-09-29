@@ -397,6 +397,21 @@ test_full_runs_install_then_update_with_one_restart_budget() (
 	[[ "$rc" -eq 23 && ! -s "$events" ]]
 )
 
+test_an_installed_machine_runs_update_alone() (
+	# Break caught: every daily full update ran install and then update, which
+	# installed every skill source, refreshed every integration, and ran
+	# Doctor twice. Update is the converge pass; install is the first run.
+	AGENTBOT_SOURCE_ONLY=1 source "$ROOT/install.sh"
+	local events="$TEST_ROOT/full-installed.events"
+	: >"$events"
+	agentbot_is_installed() { return 0; }
+	run_install() { printf 'install\n' >>"$events"; }
+	check_skills_deps() { :; }
+	run_update_backend_as() { printf 'update:%s\n' "$*" >>"$events"; }
+	run_full >/dev/null || return 1
+	[[ "$(<"$events")" == 'update:update --yes' ]]
+)
+
 test_full_reports_each_stage_to_a_caller_that_asks() (
 	# `agentbot full` is one command to whoever ran it, so a Dotfiles full
 	# update could only time it as one section while both halves printed their
@@ -474,6 +489,7 @@ test_a_restarted_stage_reports_the_attempt_that_finished() (
 )
 
 check 'full runs install then update with a one-restart budget' test_full_runs_install_then_update_with_one_restart_budget
+check 'an installed machine runs update alone' test_an_installed_machine_runs_update_alone
 check 'full reports each stage to a caller that asks' test_full_reports_each_stage_to_a_caller_that_asks
 check 'the restart seam replaces the process' test_the_restart_seam_replaces_the_process
 check 'a restarted stage reports the attempt that finished' test_a_restarted_stage_reports_the_attempt_that_finished

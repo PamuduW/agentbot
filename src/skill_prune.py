@@ -142,11 +142,23 @@ def plan_prune(paths: AgentbotPaths, config: SkillsSourcesConfig) -> PruneReport
                 continue
             if name == "graphify" and (directory / ".graphify_version").is_file():
                 continue
+            excluder = next(
+                (source for source in config.active_sources() if source.excludes(name)), None
+            )
+            # With no lock entry, nothing shows Agentbot installed it, so a
+            # matching name is not enough to delete it: it may be the user's
+            # own skill. It is removed only when named, like any manual skill.
+            detail = (
+                f"on disk, not in the lock; {excluder.id} excludes this name, so remove it "
+                "by name if it is not yours"
+                if excluder is not None
+                else "on disk, not in the lock; user-placed"
+            )
             candidates.append(
                 PruneCandidate(
                     name=name,
                     reason="manual",
-                    detail="on disk, not in the lock; user-placed",
+                    detail=detail,
                     directory=directory,
                     locked=False,
                 )
@@ -195,7 +207,7 @@ def plan_prune(paths: AgentbotPaths, config: SkillsSourcesConfig) -> PruneReport
 
 
 def enforce_exclusions(paths: AgentbotPaths, config: SkillsSourcesConfig) -> tuple[str, ...]:
-    """Remove skills the manifest excludes, right after an install.
+    """Remove skills the manifest excludes or whose source it disables, after an install.
 
     `exclude:` has to mean "never present", not "prunable later". The Skills
     CLI installs everything a `skills: all` source publishes and has no
@@ -209,12 +221,26 @@ def enforce_exclusions(paths: AgentbotPaths, config: SkillsSourcesConfig) -> tup
     report = plan_prune(paths, config)
     if report.blocked_reason is not None:
         raise ValueError(report.blocked_reason)
-    excluded = PruneReport(
-        candidates=tuple(item for item in report.candidates if item.reason == "excluded")
+    # A skill pinned to a manifest source that is disabled goes too: disabling
+    # the source is the decision. A pin to a repository the manifest never
+    # named stays, because that is a skill the user installed themselves.
+    disabled = {
+        source.repo
+        for source in config.sources
+        if source.repo and source not in config.active_sources()
+    }
+    lock = _read_lock(paths.global_skill_lock).skills
+    unwanted = PruneReport(
+        candidates=tuple(
+            item
+            for item in report.candidates
+            if item.reason == "excluded"
+            or (item.reason == "orphaned" and lock.get(item.name, {}).get("source") in disabled)
+        )
     )
-    if not excluded.candidates:
+    if not unwanted.candidates:
         return ()
-    return apply_prune(paths, excluded).removed
+    return apply_prune(paths, unwanted).removed
 
 
 def _bridge_is_owned(link: Path, owned_root: Path) -> bool:

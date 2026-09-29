@@ -64,6 +64,10 @@ owns project-specific engineering rules. Keep this provider-neutral and concise.
 - Use relevant task-specific skills when available. Agent Skills may be portable
   across compatible harnesses; tools, scripts, MCP dependencies, permissions,
   and harness extensions may not be.
+- The user's durable memory is the vault behind `agentbot memory` (see the
+  `agent-memory` skill). Answer questions about what you remember about the
+  user from it, not from client built-in memory, which is advisory and
+  unverified. If no vault is configured, continue without memory.
 - Keep provider names, model routing, reasoning settings, quotas, native tool
   syntax, and permission configuration in harness config, adapters, or skills.
 - Instruction files guide behavior; they are not a hard security boundary. Use

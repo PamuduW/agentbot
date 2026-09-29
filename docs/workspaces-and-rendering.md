@@ -26,9 +26,20 @@ refer to the canonical `AGENTS.md`; Agentbot does not create a separate Codex
 policy file. Cursor receives a pointer rule instead of a duplicate policy copy.
 
 `agentbot boot PATH` previews or applies one workspace render and registers a
-successful apply. `agentbot resync` refreshes registered workspaces. Both flows
+successful apply. `agentbot resync` refreshes registered workspaces; so does every update. A
+registered folder that no longer exists is skipped, never a failure, and stays
+registered until you remove it (`agentbot workspaces --remove PATH`, or the
+Workspaces menu). Both flows
 preview unless `--yes` authorizes writes. Removing a registry record never
 deletes workspace files.
+
+When a schema 3 memory vault is configured and the target is a Git
+repository, a successful `boot` also registers it for project memory, the same
+as `agentbot memory project register`, and syncs that registration. The report
+gains a `Project memory` row: `applied` for a new project, `ok` when the
+repository already has one, `skipped` without a vault, on an older schema, or
+outside a repository, and `conflict` on a registry collision. Memory never
+changes boot's exit code. `--no-memory` skips the step.
 
 Relative paths -- including `boot`'s current-directory default -- resolve
 against the directory the command was invoked from, not the Agentbot checkout.
@@ -40,3 +51,11 @@ overrides them.
 Global Codex and Claude policy adapters, Claude skill links, and the managed
 Claude statusline are rendered from canonical sources. Use install, update, or
 the relevant resync/setup flow to reconcile them.
+
+Cursor has no global output. Its user-level rules live only in its settings
+screen, and neither the editor nor the Cursor CLI reads a user-level rules
+file from disk; both read a repository's `.cursor/rules`, `AGENTS.md`, and
+`CLAUDE.md`. Cursor therefore gets Agentbot policy per repository, from
+`agentbot boot` (its `cursor` target). To carry the machine policy into
+repositories that are not booted, paste `global/AGENTS.md` into Cursor's
+User Rules by hand.

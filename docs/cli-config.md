@@ -55,6 +55,17 @@ model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 ```
 
+A TOML desired file may declare one table level. Each key in it is merged on
+its own, so the table's other keys stay; nested tables such as `[hooks.state]`
+are refused. Codex's desired state uses this to turn off Codex's own memory
+(`[features] memories = false`), so the `agentbot memory` vault is the only
+memory Codex consults (ADR-0008).
+
+Claude's desired state also owns `skillOverrides`, which decides how each
+skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
+Agentbot owns that whole object, so add personal overrides in
+`cli/claude.settings.json` rather than in `~/.claude/settings.json`.
+
 ## Remote Control
 
 Both agents are kept reachable from the Claude and ChatGPT mobile apps.
@@ -82,8 +93,8 @@ paste it anywhere or commit it.
 
 - **Unowned keys survive.** Merging is per key; nothing else in the file is
   touched. Comments survive in JSON (the merge edits text rather than
-  re-serialising) and in TOML (only the region above the first table header is
-  rewritten).
+  re-serialising) and in TOML (only the lines of owned keys are rewritten: above the
+  first table header for top-level keys, inside the table for a table's keys).
 - **The whole run rolls back.** If one target fails, the targets already
   written are restored. A half-applied run across three agents is worse than
   none: you would have to work out which two of three now disagree with the

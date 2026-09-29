@@ -18,10 +18,12 @@ test_main_menu_snapshot() {
 	_agentbot_menu_setup
 	output="$(AGENTBOT_TUI=1 tui_menu_draw 0 80 | strip_ansi_stream)"
 	[[ "$output" == *$'=== Agentbot ===\n  Agentbot'* ]] || return 1
-	# Eight entries: Platform's seven actions became install components and
+	# Nine entries: Platform's seven actions became install components and
 	# status rows, and MCP followed them -- it was an entry that only showed
-	# status, and install, update and status manage it directly now.
-	[[ "$output" == *'1. Check status'* && "$output" == *'8. Quit'* ]] || return 1
+	# status, and install, update and status manage it directly now. Memory
+	# joined for explicit vault setup.
+	[[ "$output" == *'1. Check status'* && "$output" == *'9. Quit'* ]] || return 1
+	[[ "$output" == *'Memory'* ]] || return 1
 	# Token Config, not GitHub token config: the entry opens a provider list
 	# now that a GitLab credential exists beside the GitHub one.
 	[[ "$output" == *'Prune Skills'* && "$output" == *'Token Config'* ]] || return 1

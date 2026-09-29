@@ -51,6 +51,25 @@ src/lifecycle.py  src/mcp_service.py
   allowlist. GitLab uses `src/gitlab_read_mcp.py` over
   `src/gitlab_read_client.py`: the MCP surface maps to typed, bounded REST
   `GET` routes only and contains no generic request or mutation primitive.
+- The memory vault (workspace ADR-0009) is its own set of modules, each with
+  one job; `src/cli.py` composes them behind `agentbot memory`:
+  - `src/memory.py` finds the vault, reads its schema 3 marker, and validates
+    every record (front matter, links, secret scan, project registry).
+  - `src/memory_sync.py` is the only writer: one operation at a time per clone
+    (a lock under `.git/agentbot-memory/`), journaled before any file changes,
+    staged in a private index, validated as the exact tree to commit, then
+    fetched, replayed on the remote tip, and pushed; a clash is preserved as a
+    conflict, never overwritten.
+  - `src/memory_autosync.py` runs that sync after every write and before reads
+    (fetch interval), and resolves conflicts from the repository that owns them.
+  - `src/memory_projects.py` maps a repository to its project by origin;
+    `src/memory_project_writes.py` holds the project-tier writes and their
+    limits; `src/memory_proposals.py` the core proposals a person approves.
+  - `src/memory_retrieve.py` answers `search`, `show`, `brief`, and the index
+    straight from the files, within token budgets.
+  - `src/memory_setup.py`, `src/memory_hook.py`, `src/memory_backup.py`, and
+    `src/memory_obsidian.py` own setup, the vault's own Git hooks, the verified
+    local backup, and the per-machine Obsidian settings.
 - `scripts/lib/tui.sh` and `scripts/menus/` are presentation adapters.
 - `src/ui/menu.py` draws menu frames and `src/ui/menu_select.py` runs the
   selection loop. ADR-0001 in the workspace repository moves presentation to
@@ -111,8 +130,7 @@ Local mutable state is outside the checkout under
 recorded in private `mcp.json`; secure operation snapshots live under
 `backups/mcp/`. The catalog contains eligibility and credential-reference
 metadata, but no selection or secret value. Ineligible candidates such as the
-unadmitted GitHub and GitLab entries cannot be rendered. The MCP
-snapshots under `archive/` are historical research inputs only.
+unadmitted GitHub and GitLab entries cannot be rendered.
 
 ## Cross-repository ownership
 

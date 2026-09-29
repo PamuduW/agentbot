@@ -27,9 +27,8 @@ stateless_token() {
 	printf 'ghs_12345_%0250d.%0200d.%055d-x' 0 0 0
 }
 active_file() { printf '%s\n' "$XDG_CONFIG_HOME/agentbot/github.env"; }
-legacy_file() { printf '%s\n' "$XDG_CONFIG_HOME/agent_bootstrap/github.env"; }
 reset_state() {
-	rm -rf "$XDG_CONFIG_HOME/agentbot" "$XDG_CONFIG_HOME/agent_bootstrap"
+	rm -rf "$XDG_CONFIG_HOME/agentbot"
 	unset GITHUB_TOKEN
 }
 write_token_file() {
@@ -41,7 +40,7 @@ write_token_file() {
 }
 require_contract() {
 	local fn
-	for fn in github_token_file github_token_is_valid github_token_read github_token_export_if_valid github_token_write github_token_remove github_token_fingerprint github_token_migrate_legacy; do
+	for fn in github_token_file github_token_is_valid github_token_read github_token_export_if_valid github_token_write github_token_remove github_token_fingerprint; do
 		declare -F "$fn" >/dev/null || return 1
 	done
 }
@@ -49,7 +48,9 @@ require_contract() {
 test_interface_and_independence() (
 	require_contract || return 1
 	[[ "$(github_token_file)" == "$(active_file)" ]] || return 1
-	! grep -Fq '/dotfiles/' "$TOKEN_LIB"
+	! grep -Fq '/dotfiles/' "$TOKEN_LIB" || return 1
+	# The pre-rename agent_bootstrap token path is retired, not migrated.
+	! grep -Fq 'agent_bootstrap' "$TOKEN_LIB"
 )
 
 test_precedence_and_absent_optional() (
@@ -59,12 +60,10 @@ test_precedence_and_absent_optional() (
 	saved="$(token saved)"
 	env="$(token env)"
 	write_token_file "$(active_file)" "GITHUB_TOKEN=${saved}\n"
-	write_token_file "$(legacy_file)" 'GITHUB_TOKEN=short\n'
 	GITHUB_TOKEN="$env"
 	export GITHUB_TOKEN
 	github_token_export_if_valid 2>"$err" || return 1
 	[[ "$GITHUB_TOKEN" == "$env" && ! -s "$err" ]] || return 1
-	[[ -e "$(legacy_file)" ]] || return 1
 	reset_state
 	github_token_read value 2>"$err" || return 1
 	[[ -z "$value" && ! -s "$err" ]]
@@ -132,37 +131,6 @@ test_private_atomic_storage_and_removal() (
 	[[ "$(<"$outside")" == safe ]]
 )
 
-test_migration_matrix() (
-	require_contract || return 1
-	reset_state
-	local one two err="$TEST_ROOT/migrate.err"
-	one="$(token one)"
-	two="$(token two)"
-	github_token_migrate_legacy 2>"$err" || return 1
-	[[ ! -e "$(active_file)" && ! -s "$err" ]] || return 1
-	write_token_file "$(legacy_file)" "GITHUB_TOKEN=${one}\n"
-	github_token_migrate_legacy 2>"$err" || return 1
-	[[ -f "$(active_file)" && ! -e "$(legacy_file)" && "$(stat -c %a "$(active_file)")" == 600 ]] || return 1
-	reset_state
-	write_token_file "$(active_file)" "GITHUB_TOKEN=${one}\n"
-	write_token_file "$(legacy_file)" "GITHUB_TOKEN=${one}\n"
-	github_token_migrate_legacy 2>"$err" || return 1
-	[[ ! -e "$(legacy_file)" ]] || return 1
-	reset_state
-	write_token_file "$(active_file)" "GITHUB_TOKEN=${one}\n"
-	write_token_file "$(legacy_file)" "GITHUB_TOKEN=${two}\n"
-	github_token_migrate_legacy 2>"$err" || return 1
-	[[ -e "$(legacy_file)" && "$(<"$(active_file)")" == "GITHUB_TOKEN=$one" && "$(wc -l <"$err")" -eq 1 ]] || return 1
-	reset_state
-	write_token_file "$(legacy_file)" 'GITHUB_TOKEN=short\n'
-	github_token_migrate_legacy 2>"$err" || return 1
-	[[ -e "$(legacy_file)" && ! -e "$(active_file)" ]] || return 1
-	reset_state
-	write_token_file "$(legacy_file)" "GITHUB_TOKEN=${one}\n" 644
-	github_token_migrate_legacy 2>"$err" || return 1
-	[[ -e "$(legacy_file)" && ! -e "$(active_file)" ]]
-)
-
 test_fingerprint_is_safe() (
 	require_contract || return 1
 	local value fp
@@ -191,22 +159,13 @@ test_canary_absent_from_output_and_harness_logs() (
 	! grep -FRq -- "$canary" "$output" "$TEST_COMMAND_LOG" "$TEST_URL_LOG" "$TEST_SIBLING_LOG" "$TEST_RELAUNCH_LOG" "$git_log"
 )
 
-test_sole_migration_owner() (
-	require_contract || return 1
-	local matches
-	matches="$(grep -RIl --exclude=github_token.sh 'agent_bootstrap/github.env' "$ROOT/install.sh" "$ROOT/bin" "$ROOT/scripts" 2>/dev/null || true)"
-	[[ -z "$matches" ]]
-)
-
 expect 'independent Agentbot token interface targets shared active file' test_interface_and_independence
 expect 'environment precedence and absent optional fallback are strict' test_precedence_and_absent_optional
 expect 'strict parser rejects unsafe content and falls back anonymously' test_strict_parser_and_warning_fallback
 expect 'stateless GitHub App installation tokens round-trip through strict storage' test_stateless_installation_token_round_trip
 expect 'private atomic storage, replacement, symlink rejection, and removal work' test_private_atomic_storage_and_removal
-expect 'legacy migration handles absent, valid, identical, conflict, malformed, and wrong-mode states' test_migration_matrix
 expect 'fingerprint never returns the full token' test_fingerprint_is_safe
 expect 'canary is absent from output and harness logs' test_canary_absent_from_output_and_harness_logs
-expect 'Agentbot token helper is the sole legacy migration owner' test_sole_migration_owner
 
 test_harness_verify_safety || failed=$((failed + 1))
 printf '\nRan %d token test(s); %d failure(s).\n' "$((passed + failed))" "$failed"

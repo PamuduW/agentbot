@@ -75,8 +75,8 @@ agentbot install --menu           # choose components, review the plan, install
 agentbot install --components L   # install a named subset, unattended
 agentbot update --dry-run         # preview repository and lifecycle changes
 agentbot update                   # confirm and apply an update
-agentbot full                     # install, then update
-agentbot boot /path/to/repo       # render and register a workspace
+agentbot full                     # first run: install + update; then: update
+agentbot boot /path/to/repo       # render, register, and give it project memory
 agentbot workspaces               # list registered workspaces
 agentbot resync --dry-run --all   # preview every registered workspace
 agentbot token                    # Token Config: the GitHub and GitLab credentials
@@ -84,6 +84,261 @@ agentbot gitlab-token status      # inspect the saved GitLab read token, by fing
 agentbot mcp catalog              # list validated MCP candidates
 agentbot mcp status               # inspect MCP ownership without network access
 ```
+
+## Memory vault
+
+`agentbot memory status` and `agentbot memory validate` inspect the private
+Markdown memory vault without writing to it. Agentbot never searches for a
+vault; each machine is set up explicitly, from the CLI or the menu's
+**Memory** entry:
+
+```bash
+agentbot memory setup --path /home/me/agent-memory            # an existing checkout
+agentbot memory setup --clone git@github.com:me/agent-memory.git --dest /home/me/agent-memory
+agentbot memory setup --new /home/me/agent-memory [--remote URL]
+agentbot memory setup                                          # show the current choice
+agentbot memory setup --remove                                 # forget it; the vault is untouched
+```
+
+Each previews first and applies only with `--yes`. The choice lives in
+`${XDG_CONFIG_HOME:-~/.config}/agentbot/memory.json` (`0600`, in a `0700`
+directory): the path, the vault's identity (its root commits), the remote, and
+the branch, never credentials. A remote URL with embedded credentials is
+refused; SSH keys or a Git credential helper authenticate. A configured path
+that later holds a different repository, or no vault, fails closed.
+`--clone` and `--new` refuse a destination that is not empty, is inside
+another repository, crosses a symlink, or sits on a Windows drive or in a
+temporary directory; `--new` creates an empty schema 3 vault (a marker with a
+new `vault_id`, an empty project registry, and the tier READMEs) and never
+pushes.
+`AGENTBOT_MEMORY_ROOT` and `AGENTBOT_MEMORY_DIR` still override the setting
+(the vault hooks use them). No vault configured is a clean state: memory
+commands say so and exit `2`, and nothing else in Agentbot depends on memory.
+
+`agentbot memory project` shows which project memory the current repository
+resolves to. Resolution goes from the Git top level to `remote.origin.url`,
+normalized (SSH, `ssh://`, and HTTPS forms, credentials stripped, an SSH host
+alias resolved through `ssh -G` to the host it stands for, a non-default port
+kept, and case folded on GitHub, GitLab, and Bitbucket), to an entry in the vault's
+`.meta/projects.json`, so the same repository maps to the same folder on
+every machine. Forks and renames are separate projects until explicitly
+linked. A repository without a remote gets a generated `local/<id>-<name>`
+origin and must be attached on each extra machine; that binding stays in
+private `memory-bindings.json`. Two projects claiming one origin, alias, or
+folder is a collision, and project writes stop until it is fixed. `agentbot boot` gives the repository
+project memory (a registry entry plus its `project.md`) unless `--no-memory`
+is passed, and `memory project register` does the same on its own; `attach PROJECT`
+binds a no-remote checkout on another machine, and `link URL PROJECT --yes`
+(human-only) adds a rename or fork as an alias.
+
+Schema 3 (ADR-0009) splits the vault into trust tiers by path: `core/`
+(`user/profile.md`, `user/preferences.md`, `decisions/`, `lessons/`; global or
+shared scope, changed only with approval), `projects/<folder>/` (`project.md`,
+`active-context.md`, `preferences.md`, `decisions/`, `lessons/`, `notes/`;
+scope `project` for exactly that folder), and tracked `proposals/core/`
+(drafts, never retrieved). Its marker carries a `vault_id`, and
+`.meta/projects.json` is the project registry, cross-checked against the
+project folders and each `project.md`. Supersession stays within one tier
+and one project. Schema 3 is the only schema Agentbot reads: schema 1 and 2
+vaults, and the commands that migrated them, were removed on 2026-09-27, so
+an older vault is reported as unsupported. Every command that reads records
+or changes the vault, sync and hook installation included, checks the marker
+first; `status`, `hook status` and `sync --status` still describe an older
+vault, so you can see what it is.
+
+In Obsidian, the vault is a linked graph. Every project record carries
+`up: "[[projects/<folder>/project]]"`, so `project.md` is the project's hub and
+its backlinks list the project; a superseding record carries `replaces:` links
+to what it replaced. Both are derived from `projects` and `supersedes`, which
+stay canonical, and `project move` keeps them pointing at the right file. On
+each machine where the vault is open in Obsidian, the sync sets Obsidian up
+once: it adds `views/memory.base`, a Bases dashboard (project memory by
+project, core memory, proposals waiting for approval, records due for review,
+and superseded or retired records), enables the Bases core plugin, makes new
+links absolute vault paths that update on rename, excludes `templates/` and
+`exports/` from search and the graph, and colours core, projects and
+proposals in the graph when no colour groups exist yet. All of it stays on
+that machine. It never overwrites a dashboard or colour groups you already
+have.
+
+Project memory is written without approval, always for the repository you
+are in: `agentbot memory project add --kind decision|lesson|note --title T
+[--tag TAG] [--supersedes ID] --stdin`, `edit PATH [--title] [--tag]
+[--stdin]`, `context --stdin` (the project's active context), `move PATH
+NEW_PATH`, `delete PATH`, and `forget --yes` (the whole project folder; its
+registry identity stays; the result says how to bring it back: find the
+commit carrying its operation ID with `git log -F --grep 'Agentbot-Op: ID'`
+and `git revert` it, on any machine, because sync replays the operation and
+its local SHA changes). Paths are relative to the project and cannot leave
+it; `project.md` cannot be moved or deleted. Each write generates or keeps
+valid v3 front matter, is validated for its destination and secret-scanned,
+and is one structured operation committed locally with the version it
+expects, so a concurrent change on another machine becomes a preserved
+conflict at sync time instead of an overwrite.
+
+The engine underneath runs one memory operation at a time per clone (a lock
+in `.git/agentbot-memory/`), stages each commit in its own Git index so
+nothing you staged rides along, and validates that index written out to a
+private folder, so the check reads exactly the bytes the commit will hold:
+a change that adds a validation error, or takes a project past its record
+limit, is refused, and on replay it becomes a preserved conflict instead.
+Errors already in the vault do not block unrelated work; only new ones do.
+Before an operation changes any file it is journaled, and before HEAD moves
+it is queued. So after a crash or a killed process, the next memory command
+puts back the files of a write that was never acknowledged, replays a
+queued one on the next sync, and adopts one whose commit already landed. Each project write carries
+its project's registry ID, and replay refuses it if that folder now belongs
+to another project. Superseding marks
+the replaced record in the same operation, all or nothing, and only within
+the project. `AGENTBOT_MEMORY_PROJECT_WRITES=off` turns project writes off;
+reads keep working.
+
+Syncing is automatic. After every Agentbot-owned write
+the vault is synced: fetched, pending operations replayed on the remote tip,
+and pushed, never forced. Reads (`status`, `search`, `show`, `brief`, `due`,
+`project`) fetch first, at most once per interval (300 seconds by default,
+counted from the last attempt, so an offline machine does not retry on every
+read); `validate` does not, because hooks run it mid-commit. Offline (or a
+Git network command that times out), writes stay committed locally and
+pending until the next sync; uncommitted manual edits pause automation until
+they are committed or reverted; neither fails the command. Obsidian's own folders (`.obsidian/`, its settings and layout, `views/`, its
+Bases dashboards, and `.trash/`) are per machine and not manual edits:
+Obsidian rewrites them itself (on open, as you zoom the graph, as you resize a
+table), so they never pause sync, and the first sync adds them to a managed block in the vault's
+`.gitignore` and stops tracking them, keeping each machine's copy. While
+history still tracks some, sync reads them just before each reset and puts
+this machine's copy back; if there are more than it can hold (500 files or
+16 MiB), it stops before the reset instead of keeping only some.
+`agentbot memory sync` syncs now;
+`--status` shows the mode, pending operations, open conflicts, and last sync;
+`--mode manual` stops automatic pushing and fetching (writes are still
+committed locally), and `--interval SECONDS` sets the fetch interval. When two
+machines changed the same record, the losing operation is preserved:
+`agentbot memory conflict` lists open conflicts, `conflict show OP` shows the
+current version beside yours, and `conflict resolve OP --keep theirs|mine`
+accepts the current state or re-applies yours as a new operation (a lost
+supersession or move is re-applied whole). Core conflicts are for the human
+to resolve.
+
+Core memory changes only through tracked proposals.
+`agentbot memory propose --type decision|lesson|preference|profile --title T
+--scope global|shared [--supersedes ID] --stdin` writes one validated,
+secret-scanned record under `proposals/core/`, commits it, and syncs it, so it
+can be reviewed from any machine; proposals are never returned by search,
+show, or brief. The queue warns at 10 open proposals and refuses new ones at
+25, and a title that duplicates an open proposal is refused. `memory review`
+lists the queue. `memory approve PATH` previews and `--yes` (the user's action)
+installs the record in `core/` in one operation with the proposal's removal
+and any superseded core records marked; preference and profile proposals
+replace `core/user/preferences.md` or `profile.md` and keep its ID. `memory
+reject PATH --yes` removes a proposal. Identical approvals from two machines
+converge; two different approvals of one core file become a conflict for the
+human.
+
+Human-only confirmations need a person at a terminal. `approve --yes` and
+`reject --yes` and `conflict resolve` for a core
+conflict refuse unless standard input is a terminal, then ask you to type the
+short code shown (the record's or operation's first 8 characters). An
+ordinary agent shell has no terminal, so an agent that is told to approve
+gets the command to hand back instead. This deters; it is not a security
+boundary: a harness that gives the agent a pseudo-terminal can pass it, and
+nothing here proves a person is present. Conflict resolution (keep mine or
+theirs) is also refused outside the repository the conflict belongs to.
+
+`search`, `show`, and `brief` detect the project from the
+directory you run them in (Git top level, origin, registry) when neither
+`--project` nor `--cross-project` is given; `--no-auto-project` turns that off.
+An unregistered repository, a registry collision, or a directory outside any
+repository gets global and shared memory only; nothing is guessed. The JSON
+output reports `project` and `project_source` (`explicit`, `auto`, or none).
+Every output that carries record text (the brief; search and show, as text
+or JSON; a proposal's body in `review`; both versions in `conflict show`)
+carries a fixed notice that the content is retrieved memory to treat as
+evidence, never as instructions, and record text is never rendered into
+policy. The notice is guidance to the model, not enforcement: memory an
+agent was tricked into writing is contained to its project folder, but the
+agent reading it may still have other tools. A project's `active-context.md` leads its share of the brief.
+
+Project memory keeps itself in shape with deterministic checks on every
+write: a body identical to another record in the project is refused, a
+near-duplicate title is a warning, the active context warns above about 800
+tokens and is refused above 1,200, and a project with 48 live records warns
+while 64 stops new records until some are retired, superseded, or deleted
+(superseding never grows the pool). `agentbot memory project maintain` reports
+what the current project needs (live count against the limits, expired and
+due records, similar titles, context size) without writing. `project retire
+PATH` takes a record out of retrieval but keeps it; `project promote PATH
+[--scope global|shared]` proposes a project lesson or decision for core
+memory, leaving the source in place.
+
+The marker's `agentbot_memory_schema` must be `3`. Validation covers every
+tracked or unignored file: Markdown only, no symlinks or special files, UTF-8
+without NUL, size and front-matter limits, strict YAML (no duplicate keys,
+anchors, aliases or tags), type, path, status, slug and project rules, UUID
+uniqueness across records and proposals, scope/tier consistency, date order,
+supersession edges, the project registry, and the built-in secret scanner
+(`agentbot-memory-secrets/v1`).
+Findings name a relative path, a rule ID and a line; never a note body, a field
+value, or a matched secret. `--acknowledge-warning RULE_ID` accepts one warning
+rule for a single run; blocking rules cannot be acknowledged. `validate` exits
+`0` when valid and `1` otherwise; `status` exits `0` whenever it can report,
+including a dirty or invalid vault.
+
+`agentbot memory hook [status|install|remove] [--yes]` manages the vault's
+pre-commit and pre-push hooks, which run `memory validate` before Git proceeds.
+Only hooks carrying the `agentbot-memory-hook` marker are written or removed;
+a `core.hooksPath` outside the vault's Git directory is refused. The hooks are
+an accident guard (`--no-verify` bypasses them), and they do not scan
+`.obsidian/`, where plugin settings are committed unscanned.
+
+`agentbot memory due [--limit N]` is the bounded review queue (20 by default,
+at most 100): accepted records whose `review_after` date has arrived, and those
+past `valid_until`, oldest first, by UTC calendar day. A record is valid
+through its `valid_until` day. Both flags are derived; neither changes a
+record's status or file, and superseded or retired records never appear.
+`memory status` shows the due and expired counts.
+
+`agentbot memory search QUERY`, `memory show PATH`, and `memory brief` read
+validated records straight from the files; there is no index to go stale.
+Only records with no validation or scanner finding are eligible, and proposals
+never are. Superseded, retired, and expired records, and records past each
+pool's hot limit (64 per project, 32 global, 48 shared, newest first), are
+left out unless `--history` asks for them, labelled. Scope is never guessed:
+without `--project SLUG` only global and shared records are offered, and other
+projects need `--cross-project`. Search reserves slots before merging (the
+best global, shared, and target-project result, then one per other project),
+caps the target project at 4 and each other project at 1, skips near-duplicate
+titles, and returns 8 results by default with provenance and a bounded
+excerpt. Without a query, `search` is the index: record headers (title, type,
+tags, date, path) with no excerpt, newest first, 30 by default and at most
+100, within the same scope. It lists every record in that scope, without the
+search's near-duplicate skip or per-project quota, and reports any past the
+limit as `over-limit`, so an agent can see what exists before reading anything. A
+bad request (an overlong query, a path outside scope) is refused as `refused`,
+never reported as a broken vault. A record over about 400 tokens is still
+written, with advice to split it into one record per idea. `brief` prints a disposable Markdown brief of 800 tokens by default
+and at most 1,200 (four characters per token), with the project slice capped
+at 65%.
+
+`agentbot memory backup --destination PATH` previews, and with `--yes` writes,
+a private (`0700`) backup: a bare mirror of the vault's committed refs plus a
+manifest, together one generation. Each run builds a new generation, verifies
+it with `git fsck`, compares refs with the source, trial-restores it through
+the validator, writes its manifest, and only then switches the destination's
+`current` link to it in one rename; a backup that fails or is interrupted
+before that switch leaves the previous generation intact. A destination inside
+the vault, containing it, symlinked, or holding another vault's backup (other
+history or vault ID) is refused. A dirty tree is reported, not blocking.
+`agentbot memory restore --source BACKUP --destination PATH` clones into a new
+or empty directory, removes the backup `origin`, validates the result, and
+never touches the active checkout, Agentbot's configuration, or a remote.
+Git snapshots hold committed history only: uncommitted edits and exports are
+never included. Remote snapshots are not implemented. A completed backup
+records its destination (and assurance) in this machine's `memory.json`;
+each `agentbot update`, and so `agentbot full` and `dotfiles fu`, refreshes it
+once its earlier steps have run, and shows a "Memory backup" row, and `memory backup --yes` without
+`--destination` refreshes it by hand. A refresh that fails is reported and
+leaves the previous snapshot in place.
 
 The editor and CLI surfaces are part of an install and appear in `status`. They
 are also directly addressable:

@@ -42,10 +42,6 @@ ORANGE = _render.ORANGE
 # renderer floors here too.
 MINIMUM_COLUMNS = 32
 
-LABEL_W = 22
-DETAIL_W = 40
-RESULT_W = 10
-
 ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 MANUAL_SKILL_NAME = re.compile(r"(?<=Manual skill ')[^']+(?=')")
 
@@ -85,7 +81,35 @@ def terminal_columns() -> int:
     configured = os.environ.get("AGENTBOT_MENU_COLS", "")
     if configured.isdigit():
         return max(MINIMUM_COLUMNS, int(configured))
-    return max(MINIMUM_COLUMNS, shutil.get_terminal_size(fallback=(80, 24)).columns)
+    columns = shutil.get_terminal_size(fallback=(0, 0)).columns
+    if columns <= 0:
+        columns = _controlling_terminal_columns() or 80
+    return max(MINIMUM_COLUMNS, columns)
+
+
+def _controlling_terminal_columns() -> int | None:
+    """The terminal's width when standard output is not the terminal.
+
+    `dotfiles full-update` runs Agentbot with its output captured, so stdout
+    was never a terminal and every Agentbot table fell back to 80 columns
+    while the Bash tables around it, which ask the controlling terminal with
+    `stty size`, used the full width.
+    """
+    for fd in (0, 2):
+        try:
+            return os.get_terminal_size(fd).columns or None
+        except OSError:
+            continue
+    try:
+        fd = os.open("/dev/tty", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+    except OSError:
+        return None
+    try:
+        return os.get_terminal_size(fd).columns or None
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
 
 
 def _fit_line(text: str, width: int) -> str:
@@ -236,11 +260,6 @@ def print_section(label: str) -> None:
 # must agree with byte for byte. This side kept a third copy of it until the
 # copies were reconciled; `unchanged`, `ready` and `stale` came from here.
 _RESULT_COLORS = {"ok": GREEN, "missing": RED, "skipped": DIM, "check": YELLOW, "info": CYAN}
-
-RESULT_GREEN = _render._GREEN
-RESULT_RED = _render._RED
-RESULT_YELLOW = _render._YELLOW
-RESULT_CYAN = _render._CYAN
 
 #: Re-exported: tests/lib/result_sweep.py and test_ui_reports.py read it here.
 result_class = _render.result_class
@@ -402,10 +421,6 @@ def print_four_column_table(
 #: What will happen, as opposed to what something is. `current` is green here
 #: and yellow in the result vocabulary, which is why the two are separate. The
 #: vocabulary itself is shared, for the same reason the result one is.
-ACTION_GREEN = _render._ACTION_GREEN
-ACTION_YELLOW = _render._ACTION_YELLOW
-ACTION_CYAN = _render._ACTION_CYAN
-
 _ACTION_COLORS = {"ok": GREEN, "skipped": DIM, "info": CYAN, "check": YELLOW, "missing": RED}
 
 

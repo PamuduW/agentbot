@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -16,7 +17,12 @@ from .atomic_io import write_text_atomic
 from .command_runner import CommandResult, CommandRunner
 from .models import DoctorIssue
 from .paths import AgentbotPaths
-from .skill_catalog import skill_name_from_file
+from .skill_catalog import (
+    SourceCatalog,
+    discover_remote_catalogs,
+    skill_name_from_file,
+    verified_source_checkouts,
+)
 from .skills_sources import (
     SkillSourceEntry,
     SkillsSourcesConfig,
@@ -57,6 +63,36 @@ class InstallSummary:
     ok: int
     failed: int
     skipped: int
+
+
+@dataclass(frozen=True)
+class SourceSnapshot:
+    source_id: str
+    repo: str
+    revision: str
+    installed: tuple[str, ...]
+    excluded: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SkillUpdatePlan:
+    catalogs: tuple[SourceCatalog, ...]
+    previous: tuple[tuple[str, str | None], ...]
+    manifest_sha256: str
+    lock_sha256: str | None
+
+    @property
+    def review_id(self) -> str:
+        payload = {
+            "catalogs": [
+                (catalog.source_id, catalog.repo, catalog.revision, catalog.skills)
+                for catalog in self.catalogs
+            ],
+            "previous": self.previous,
+            "manifest": self.manifest_sha256,
+            "lock": self.lock_sha256,
+        }
+        return sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 InstallProgress = Callable[[str], None]
@@ -194,6 +230,52 @@ def _clone_remote_source(
         raise SkillsInstallError(f"failed to clone skill source {repo!r}: {detail}")
 
 
+def _clone_pinned_source(
+    repo: str,
+    revision: str,
+    destination: Path,
+    *,
+    runner: CommandRunner | None = None,
+) -> None:
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise SkillsInstallError(f"invalid pinned revision for source {repo!r}")
+    clone_url = source_clone_url(repo)
+    if clone_url is None:
+        raise SkillsInstallError(f"not a supported skill source: {repo!r}")
+    command_runner = runner or CommandRunner()
+    timeout = _github_clone_timeout_seconds()
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    for argv in (
+        ["git", "clone", "--depth=1", "--no-checkout", clone_url, str(destination)],
+        ["git", "-C", str(destination), "fetch", "--depth=1", "origin", revision],
+        ["git", "-C", str(destination), "checkout", "--detach", revision],
+    ):
+        result = command_runner.run(argv, timeout_seconds=timeout, env=env)
+        if result.returncode != 0 or result.timed_out:
+            raise SkillsInstallError(f"unable to restore reviewed revision for source {repo!r}")
+    if _checkout_revision(destination, runner=command_runner) != revision:
+        raise SkillsInstallError(f"restored source {repo!r} did not match its reviewed revision")
+
+
+def _checkout_revision(checkout: Path, *, runner: CommandRunner | None = None) -> str | None:
+    if not (checkout / ".git").exists():
+        return None
+    command_runner = runner or CommandRunner()
+    status = command_runner.run(
+        ["git", "-C", str(checkout), "status", "--porcelain", "--untracked-files=all"],
+        timeout_seconds=30,
+    )
+    if status.returncode != 0 or status.stdout.strip():
+        raise SkillsInstallError(f"skill source checkout {checkout.name!r} is not clean")
+    result = command_runner.run(
+        ["git", "-C", str(checkout), "rev-parse", "HEAD"], timeout_seconds=30
+    )
+    revision = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise SkillsInstallError(f"unable to read source revision for {checkout.name!r}")
+    return revision
+
+
 def _skill_folder_hash(skill_dir: Path) -> str:
     digest = sha256()
     for path in sorted(
@@ -217,7 +299,23 @@ def _require_global_lock(global_lock_file: Path | None) -> Path:
     return global_lock_file
 
 
-def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: Path) -> None:
+def _same_skill_folder(source_dir: Path, installed_dir: Path) -> bool:
+    """Every file byte for byte: one matching SKILL.md is not proof of a copy."""
+    try:
+        return installed_dir.is_dir() and _skill_folder_hash(installed_dir) == _skill_folder_hash(
+            source_dir
+        )
+    except OSError:
+        return False
+
+
+def _record_checkout_lock(
+    source: SkillSourceEntry,
+    checkout: Path,
+    lock_file: Path,
+    *,
+    source_revision: str | None = None,
+) -> None:
     if source.repo is None:
         raise SkillsInstallError(f"source {source.id!r} has no repository to record")
     try:
@@ -233,6 +331,14 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
     skills = lock.setdefault("skills", {})
     if not isinstance(skills, dict):
         raise SkillsInstallError(f"global skill lock {lock_file} has an invalid skills section")
+    sources = lock.setdefault("agentbotSources", {})
+    if not isinstance(sources, dict):
+        raise SkillsInstallError(f"global skill lock {lock_file} has an invalid source section")
+    previous_sources = lock.setdefault("agentbotPreviousSources", {})
+    if not isinstance(previous_sources, dict):
+        raise SkillsInstallError(f"global skill lock {lock_file} has an invalid previous source section")
+    if source_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", source_revision):
+        raise SkillsInstallError(f"source {source.id!r} has an invalid Git revision")
 
     wanted = None if source.skills == ["*"] else set(source.skills)
     installed_skills_home = lock_file.parent / "skills"
@@ -247,6 +353,10 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
     )
 
     checkout_skills: dict[str, Path] = {}
+    # Excluded skills `skills add` installed anyway (it has no exclusion flag).
+    # Pinned so the clean-up that follows can remove them, but only a folder
+    # identical to the source's in every file; any difference is the user's.
+    excluded_copies: dict[str, Path] = {}
     for skill_file in sorted(
         checkout.rglob("SKILL.md"),
         key=lambda path: (
@@ -256,7 +366,10 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
     ):
         name = skill_name_from_file(skill_file)
         if (wanted is None or name in wanted) and name in installed_names:
-            checkout_skills.setdefault(name, skill_file)
+            if not source.excludes(name):
+                checkout_skills.setdefault(name, skill_file)
+            elif _same_skill_folder(skill_file.parent, installed_skills_home / name):
+                excluded_copies.setdefault(name, skill_file)
 
     # A wildcard checkout can contain SKILL.md fixtures that npx deliberately
     # ignores. Only pin names that the successful command actually installed.
@@ -266,11 +379,12 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
             isinstance(entry, dict)
             and entry.get("source") == source.repo
             and name not in checkout_skills
+            and name not in excluded_copies
         ):
             del skills[name]
 
     now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    for name, skill_file in checkout_skills.items():
+    for name, skill_file in {**checkout_skills, **excluded_copies}.items():
         relative_path = skill_file.relative_to(checkout).as_posix()
         existing = skills.get(name)
         skills[name] = {
@@ -279,70 +393,25 @@ def _record_checkout_lock(source: SkillSourceEntry, checkout: Path, lock_file: P
             "sourceUrl": source_clone_url(source.repo),
             "skillPath": relative_path,
             "skillFolderHash": _skill_folder_hash(skill_file.parent),
+            **({"sourceRevision": source_revision} if source_revision else {}),
             "installedAt": existing.get("installedAt", now) if isinstance(existing, dict) else now,
             "updatedAt": now,
         }
+    new_snapshot = {
+        "repo": source.repo,
+        "revision": source_revision,
+        "installed": sorted(checkout_skills),
+        "excluded": sorted(source.exclude),
+    }
+    old_snapshot = sources.get(source.id)
+    if old_snapshot is not None and not isinstance(old_snapshot, dict):
+        raise SkillsInstallError(f"source {source.id!r} has an invalid recorded snapshot")
+    if old_snapshot is not None and old_snapshot != new_snapshot:
+        previous_sources[source.id] = old_snapshot
+    sources[source.id] = new_snapshot
     lock["version"] = 3
     lock_file.parent.mkdir(parents=True, exist_ok=True)
     write_text_atomic(lock_file, json.dumps(lock, indent=2) + "\n")
-
-
-# Sources whose upstream repository was renamed. Ownership is keyed on this
-# exact string, so a lock still carrying the old name makes every skill from it
-# look unowned: `plan_prune` classifies it `orphaned` and offers it for
-# deletion, and `render.py` drops it from the managed name list. Renaming the
-# manifest without migrating the lock is therefore not a cosmetic change.
-RENAMED_SOURCE_REPOS: dict[str, str] = {
-    "PamuduW/agent_bootstrap_skills": "PamuduW/agentbot_skills",
-}
-
-
-def migrate_renamed_lock_sources(
-    lock_file: Path,
-    renames: Mapping[str, str] | None = None,
-) -> tuple[str, ...]:
-    """Rewrite lock entries pinned to a renamed source. Returns migrated names.
-
-    Idempotent, and deliberately fails closed: an unreadable or malformed lock
-    is left untouched rather than rebuilt, matching how pruning treats an
-    invalid lock. Callers that need the distinction should read the lock
-    themselves.
-    """
-    mapping = dict(RENAMED_SOURCE_REPOS if renames is None else renames)
-    if not mapping or not lock_file.is_file():
-        return ()
-    try:
-        import json
-
-        lock = json.loads(lock_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ()
-    if not isinstance(lock, dict) or not isinstance(lock.get("skills"), dict):
-        return ()
-
-    migrated: list[str] = []
-    for name, entry in lock["skills"].items():
-        if not isinstance(entry, dict):
-            continue
-        current = entry.get("source")
-        if not isinstance(current, str):
-            continue
-        replacement = mapping.get(current)
-        if replacement is None:
-            continue
-        entry["source"] = replacement
-        entry["sourceType"] = source_type(replacement)
-        url = source_clone_url(replacement)
-        if url is not None:
-            entry["sourceUrl"] = url
-        migrated.append(str(name))
-
-    if not migrated:
-        return ()
-    import json
-
-    write_text_atomic(lock_file, json.dumps(lock, indent=2) + "\n")
-    return tuple(sorted(migrated))
 
 
 def _lock_skill_names(lock_file: Path) -> set[str] | None:
@@ -472,10 +541,14 @@ def install_source(
                 runner=runner,
             )
         elif checkout is not None:
+            source_revision = _checkout_revision(checkout, runner=runner)
             argv[4] = str(checkout)
             result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
             if result.returncode == 0 and global_scope:
-                _record_checkout_lock(source, checkout, _require_global_lock(global_lock_file))
+                _record_checkout_lock(
+                    source, checkout, _require_global_lock(global_lock_file),
+                    source_revision=source_revision,
+                )
             result = InstallResult(
                 source_id=result.source_id,
                 command=build_add_argv(
@@ -493,10 +566,14 @@ def install_source(
             with tempfile.TemporaryDirectory(prefix="agentbot-skill-") as temp_dir:
                 checkout = Path(temp_dir) / source.id
                 _clone_remote_source(source.repo, checkout, runner=runner)
+                source_revision = _checkout_revision(checkout, runner=runner)
                 argv[4] = str(checkout)
                 result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
                 if result.returncode == 0 and global_scope:
-                    _record_checkout_lock(source, checkout, _require_global_lock(global_lock_file))
+                    _record_checkout_lock(
+                        source, checkout, _require_global_lock(global_lock_file),
+                        source_revision=source_revision,
+                    )
                 result = InstallResult(
                     source_id=result.source_id,
                     command=build_add_argv(
@@ -607,8 +684,158 @@ def install_skills(
             # Prefixed like everything else this run prints. It was the one
             # unmarked line in a column of [STEP] and [OK], which read as
             # output that had escaped rather than as a step's result.
-            _print_install_progress(f"[OK] Excluded by manifest, removed: {name}")
+            _print_install_progress(f"[OK] Excluded or disabled in the manifest, removed: {name}")
     return results
+
+
+def plan_skill_update(
+    paths: AgentbotPaths, *, runner: CommandRunner | None = None
+) -> SkillUpdatePlan:
+    config = load_skills_sources(paths.skills_sources_file)
+    manifest_digest = sha256(paths.skills_sources_file.read_bytes()).hexdigest()
+    lock_file = paths.global_skill_lock
+    if lock_file.is_symlink():
+        raise SkillsInstallError("global skill lock must not be a symlink")
+    lock_digest = sha256(lock_file.read_bytes()).hexdigest() if lock_file.is_file() else None
+    if lock_file.is_file():
+        try:
+            lock = json.loads(lock_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise SkillsInstallError(f"unable to read global skill lock: {error}") from error
+        if not isinstance(lock, dict) or not isinstance(lock.get("skills"), dict):
+            raise SkillsInstallError("global skill lock has an invalid skills section")
+        recorded = lock.get("agentbotSources", {})
+        if not isinstance(recorded, dict):
+            raise SkillsInstallError("global skill lock has an invalid source section")
+    else:
+        recorded = {}
+    previous: list[tuple[str, str | None]] = []
+    for source in config.active_sources():
+        entry = recorded.get(source.id)
+        if entry is None:
+            previous.append((source.id, None))
+            continue
+        revision = entry.get("revision") if isinstance(entry, dict) else None
+        if (
+            not isinstance(entry, dict)
+            or entry.get("repo") != source.repo
+            or not isinstance(revision, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", revision)
+        ):
+            raise SkillsInstallError(f"source {source.id!r} has an invalid recorded revision")
+        previous.append((source.id, revision))
+    catalogs = discover_remote_catalogs(config, runner=runner)
+    return SkillUpdatePlan(catalogs, tuple(previous), manifest_digest, lock_digest)
+
+
+def apply_skill_update(
+    paths: AgentbotPaths,
+    plan: SkillUpdatePlan,
+    *,
+    runner: CommandRunner | None = None,
+) -> list[InstallResult]:
+    current_manifest = sha256(paths.skills_sources_file.read_bytes()).hexdigest()
+    lock_file = paths.global_skill_lock
+    if lock_file.is_symlink():
+        raise SkillsInstallError("global skill lock must not be a symlink")
+    current_lock = sha256(lock_file.read_bytes()).hexdigest() if lock_file.is_file() else None
+    if current_manifest != plan.manifest_sha256 or current_lock != plan.lock_sha256:
+        raise SkillsInstallError("managed skill state changed after preview; preview again")
+    config = load_skills_sources(paths.skills_sources_file)
+    with verified_source_checkouts(config, plan.catalogs, runner=runner) as checkouts:
+        return install_skills(paths, checkouts=checkouts, runner=runner)
+
+
+def restore_skills(
+    paths: AgentbotPaths,
+    *,
+    apply: bool = False,
+    previous: bool = False,
+    runner: CommandRunner | None = None,
+) -> tuple[SourceSnapshot, ...]:
+    config = load_skills_sources(paths.skills_sources_file)
+    lock_file = paths.global_skill_lock
+    if lock_file.is_symlink():
+        raise SkillsInstallError("global skill lock must not be a symlink")
+    try:
+        lock = json.loads(lock_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise SkillsInstallError(f"unable to read reviewed skill lock: {error}") from error
+    if not isinstance(lock, dict) or not isinstance(lock.get("skills"), dict):
+        raise SkillsInstallError("reviewed skill lock has an invalid skills section")
+    current_sources = lock.get("agentbotSources")
+    if not isinstance(current_sources, dict):
+        raise SkillsInstallError("reviewed skill lock has no selected source revisions")
+    if previous:
+        previous_sources = lock.get("agentbotPreviousSources")
+        if not isinstance(previous_sources, dict) or not previous_sources:
+            raise SkillsInstallError("reviewed skill lock has no previous source revisions")
+    else:
+        previous_sources = {}
+
+    snapshots: list[SourceSnapshot] = []
+    for source in config.active_sources():
+        historical = previous and source.id in previous_sources
+        saved = previous_sources.get(source.id) if historical else current_sources.get(source.id)
+        if not isinstance(saved, dict) or saved.get("repo") != source.repo:
+            raise SkillsInstallError(f"source {source.id!r} has no matching reviewed snapshot")
+        revision = saved.get("revision")
+        installed = saved.get("installed")
+        excluded = saved.get("excluded")
+        if (
+            not isinstance(revision, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", revision)
+            or not isinstance(installed, list)
+            or not installed
+            or not all(isinstance(name, str) and name for name in installed)
+            or len(set(installed)) != len(installed)
+            or not isinstance(excluded, list)
+            or not all(isinstance(name, str) and name for name in excluded)
+        ):
+            raise SkillsInstallError(f"source {source.id!r} has an invalid reviewed snapshot")
+        for name in installed:
+            entry = lock["skills"].get(name)
+            if historical:
+                if entry is not None and (
+                    not isinstance(entry, dict) or entry.get("source") != source.repo
+                ):
+                    raise SkillsInstallError(f"skill {name!r} is owned by another source")
+                manual = lock_file.parent / "skills" / name / "SKILL.md"
+                if entry is None and manual.exists():
+                    raise SkillsInstallError(f"skill {name!r} is now manually installed")
+            elif (
+                not isinstance(entry, dict)
+                or entry.get("source") != source.repo
+                or entry.get("sourceRevision") != revision
+            ):
+                raise SkillsInstallError(f"skill {name!r} does not match its reviewed source pin")
+        snapshots.append(SourceSnapshot(
+            source.id, source.repo or "", revision, tuple(installed), tuple(excluded)
+        ))
+
+    if not apply:
+        return tuple(snapshots)
+    with tempfile.TemporaryDirectory(prefix="agentbot-skill-restore-") as temp_dir:
+        checkouts: dict[str, Path] = {}
+        for snapshot in snapshots:
+            checkout = Path(temp_dir) / snapshot.source_id
+            _clone_pinned_source(snapshot.repo, snapshot.revision, checkout, runner=runner)
+            checkouts[snapshot.source_id] = checkout
+        for snapshot in snapshots:
+            source = SkillSourceEntry(
+                id=snapshot.source_id,
+                repo=snapshot.repo,
+                skills=list(snapshot.installed),
+                exclude=list(snapshot.excluded),
+            )
+            install_source(
+                source,
+                agents=config.agents,
+                checkout=checkouts[source.id],
+                global_lock_file=lock_file,
+                runner=runner,
+            )
+    return tuple(snapshots)
 
 
 def _elapsed(started: float) -> str:

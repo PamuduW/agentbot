@@ -118,7 +118,7 @@ run_skills() {
 	shift
 
 	case "$subcmd" in
-	install | update | upgrade) github_token_child run_cli skills "$subcmd" "$@" ;;
+	install | update | restore) github_token_child run_cli skills "$subcmd" "$@" ;;
 	*) run_cli skills "$subcmd" "$@" ;;
 	esac
 }
@@ -384,7 +384,10 @@ run_update_backend_as() {
 	github_token_child run_cli "$update_command" "$@"
 }
 
-# `full` = install then update, sharing one exit contract.
+# `full` = install then update on a machine's first run, and update alone once
+# it is installed: update is the one converge pass (skills, integrations,
+# outputs, workspaces, CLI config, Doctor), so running install first did all of
+# that twice every day. Both stages share one exit contract.
 #
 # Both stages already return 0 continue / 1 stop / 2 repository changed. The
 # only extra rule is the restart budget: a repository change may legitimately
@@ -415,6 +418,12 @@ agentbot_restart_full() {
 	AGENTBOT_FULL_RESTARTS="$1" exec bash "$REPO_ROOT/install.sh" full
 }
 
+# Installed means the skill lock and the launcher both exist; anything less is
+# a first run, and install sets both up.
+agentbot_is_installed() {
+	[[ -f "${HOME}/.agents/.skill-lock.json" && -L "${HOME}/bin/agentbot" ]]
+}
+
 run_full() {
 	# Carried across the exec below, so a second change stops the run rather
 	# than restarting forever.
@@ -430,7 +439,9 @@ run_full() {
 	# full update does with its own phases.
 	export AGENTBOT_UPDATE_SHOW_STATUS=0
 	export AGENTBOT_INSTALL_SHOW_DOCTOR=0
-	for stage in install update; do
+	local -a stages=(install update)
+	agentbot_is_installed && stages=(update)
+	for stage in "${stages[@]}"; do
 		while true; do
 			rc=0
 			stage_started="$(_agentbot_now_seconds)"
@@ -475,7 +486,7 @@ Usage: ./install.sh <command> [args]
   install [--components L]   Install Agentbot and link its launcher;
                              L narrows it to skills, graphify, boost,
                              vscode, cursor, cli-config
-  full                       Run install, then update, in one command
+  full                       Install on a first run, then update (update alone once installed)
   update [--dry-run|--yes]   Run the repository-first update flow
   status [--json]            Show current Agentbot state
   doctor                     Validate the installation
@@ -484,6 +495,7 @@ Usage: ./install.sh <command> [args]
   workspace|workspaces|resync Manage registered workspace outputs
   graphify status|setup      Inspect or repair generic Graphify Agent Skills
   boost status|setup|off     Inspect or manage Boost Claude/Codex/Cursor integration
+  memory status|validate     Inspect or validate the private memory vault (read-only)
   cli-config status|apply    Merge the declared agent CLI configuration keys
   cursor status|statusline   Inspect or install the managed Cursor statusline
   vscode status|seed|apply   Reconcile VS Code extensions and owned settings
@@ -501,16 +513,6 @@ main() {
 	export AGENTBOT_CALLER_PWD
 	cd "$REPO_ROOT"
 
-	# This must happen in main: `set --` inside a helper only changes that
-	# helper's positional parameters, which broke the advertised legacy flags.
-	case "${1:-}" in
-	--status) set -- status "${@:2}" ;;
-	--global) set -- global "${@:2}" ;;
-	--workspace | --all)
-		die "workspace/all render is archived — see archive/docs/README.md"
-		;;
-	esac
-
 	local cmd="${1:-}"
 
 	case "$cmd" in
@@ -524,16 +526,16 @@ main() {
 		check_skills_deps
 		run_full
 		;;
-	update | upgrade)
+	update)
 		check_skills_deps
 		run_update_backend_as "$cmd" "${@:2}"
 		;;
 	skills)
 		if [[ $# -lt 2 ]]; then
-			die "usage: ./install.sh skills <install|update|upgrade|list|doctor|prune|remove-manual>"
+			die "usage: ./install.sh skills <install|update|restore|list|doctor|prune|remove-manual>"
 		fi
 		case "${2}" in
-		install | update | upgrade) check_skills_deps ;;
+		install | update | restore) check_skills_deps ;;
 		*) check_python_deps ;;
 		esac
 		run_skills "${2}" "${@:3}"
@@ -554,7 +556,7 @@ main() {
 		check_python_deps
 		run_cli boot "${@:2}"
 		;;
-	graphify | boost | gitlab-token)
+	graphify | boost | gitlab-token | memory)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;
@@ -565,9 +567,6 @@ main() {
 	cli-config | cursor | vscode)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
-		;;
-	all | interactive | import-local | remove-managed | delete-local)
-		die "${cmd} is archived — see archive/docs/README.md"
 		;;
 	-h | --help | help)
 		usage

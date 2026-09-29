@@ -12,6 +12,13 @@ records the repository, manifest, global lock, and remote revisions, then
 checks those inputs again before apply. A source failure makes the operation
 fail even if other sources installed successfully.
 
+For a skills-only update, run `./install.sh skills update` to preview source
+revisions and the review ID. Apply that exact preview with
+`./install.sh skills update --yes --plan-sha256 <review-id>`. Apply rechecks the
+manifest, lock, source revisions, and discovered source inventory before it
+installs anything. If any changed, preview again. Preview clones into temporary directories and does not change installed
+skills or the lock.
+
 ## Lock ownership
 
 Global `-g` installations are pinned in `~/.agents/.skill-lock.json`. The
@@ -22,6 +29,24 @@ The global lock is the authority for curated machine installations. The
 project stub remains empty until this repository intentionally adopts
 project-local skill restoration.
 
+Agentbot records each installed skill's source commit and content hash in the
+global lock. Its `agentbotSources` section records each source's revision,
+resolved installed names, and exclusions. `agentbotPreviousSources` keeps one
+prior reviewed selection per changed source. A legacy lock without source
+commits remains readable, but exact restore is unavailable until a reviewed
+install or update records those commits.
+
+`./install.sh skills restore` previews the pinned revisions. Add `--yes` to
+clone those exact commits and reinstall only the recorded curated selections.
+Use `skills restore --previous` to preview the prior reviewed selection, then
+add `--yes` to apply it. Sources without a previous snapshot keep their current
+pin. Only one prior selection per source is retained.
+It leaves manually installed skills alone and refreshes managed assistant
+links. If a pin is missing, malformed, no longer available upstream, or does
+not match the manifest's source repository, restore fails without substituting
+the latest revision. Neither update nor restore stages, commits, or pushes a
+repository.
+
 ## Reconciliation and removal
 
 `skills prune` classifies candidates as `excluded`, `orphaned`, `stale-pin`, or
@@ -29,6 +54,31 @@ project-local skill restoration.
 are preserved unless explicitly included. `skills remove-manual` accepts exact
 names and never treats an empty selection as permission to remove everything.
 Agentbot-protected Graphify output is not a manual-removal candidate.
+
+Every install and update also applies two of those decisions without a
+separate prune: a skill a source `exclude`s is removed when the lock pins it to
+that source, and so is a skill the lock pins to a manifest source set to
+`enabled: false`. The Skills CLI installs every skill a `skills: all` source
+publishes, so the install pins each excluded skill it can prove it put there
+(the whole folder is byte-identical to the source's, not just `SKILL.md`) for
+that removal; a copy with any changed or added file is the user's and stays. A skill pinned to a repository the manifest never names is
+left alone, because the user installed it, and so is an unpinned directory that
+only shares an excluded name: nothing shows Agentbot installed it, so it is a
+`manual` candidate, removed only by name.
+
+## Claude listing states
+
+Every listed skill's description is sent in every Claude session. The
+`skillOverrides` key in `cli/claude.settings.json` (merged by
+`cli-config apply`, `install` and `update`) sets each skill to `name-only`,
+`user-invocable-only` or `off` without editing the skill. Building blocks that
+other skills call are `name-only`, so they stay callable. The overrides also
+cover Claude Code's built-in skills and the skills synced from the claude.ai
+account (measured with `/context` on Claude Code 2.1.283). They do not reach
+plugins synced from the account (for example the `knowledge-work-plugins`
+ones), and neither does `enabledPlugins`; switch those off in the Claude
+account. Codex and Cursor have no equivalent setting, so duplicates are
+removed at the source instead.
 
 ## Graphify
 

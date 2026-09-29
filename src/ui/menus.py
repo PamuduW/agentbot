@@ -50,6 +50,7 @@ MENUS: dict[str, Menu] = {
             "Prune Skills",
             "Token Config",
             "Workspaces",
+            "Memory",
             "Libraries",
             "Quit",
         ),
@@ -60,6 +61,7 @@ MENUS: dict[str, Menu] = {
             "prune-skills",
             "token",
             "workspaces",
+            "memory",
             "libraries",
             "quit",
         ),
@@ -76,6 +78,8 @@ MENUS: dict[str, Menu] = {
             "Tokens are stored outside this repository, one file each.",
             "List, preview, and resync locally registered workspaces.\n"
             "Apply actions require explicit confirmation.",
+            "Choose this machine's memory vault, check it, or validate it.\n"
+            "Setup previews first and asks before it writes anything.",
             "Open the Agentbot and Graphify command reference libraries.\n"
             "Read-only command and safety information.",
             "Exit the Agentbot menu.\nReturn to the calling process.",
@@ -92,6 +96,46 @@ MENUS: dict[str, Menu] = {
             "Read access only; shared with the sibling product.",
             "The read_api credential the Agentbot GitLab facade reads with.\n"
             "Read access only; no project or instance settings are stored beside it.",
+        ),
+    ),
+    "memory": Menu(
+        title="Memory",
+        breadcrumb="Agentbot › Memory",
+        labels=(
+            "Vault status",
+            "Validate vault",
+            "Review proposals",
+            "Sync conflicts",
+            "Use an existing checkout",
+            "Clone a vault",
+            "Create a new vault",
+            "Forget this machine's vault",
+        ),
+        keys=(
+            "status",
+            "validate",
+            "review",
+            "conflicts",
+            "setup-path",
+            "setup-clone",
+            "setup-new",
+            "remove",
+        ),
+        descs=(
+            "Show the configured vault, its schema, Git state, and validation totals.\nRead-only.",
+            "Check every vault file against its schema and the secret scanner.\n"
+            "Read-only; findings name paths and rules, never note text.",
+            "Go through the core memory proposals agents made, one at a time:\n"
+            "approve, reject, or skip each; approving asks for its short code.",
+            "Writes another machine changed first, kept for you to settle.\n"
+            "Show both versions, then keep yours or theirs.",
+            "Point Agentbot at a vault checkout already on this machine.\n"
+            "Previews, then asks before saving the private config.",
+            "Clone your existing vault from its Git URL into a new folder.\n"
+            "Previews, then asks; nothing is pushed.",
+            "Start a new, empty vault, with an optional remote for later.\n"
+            "Previews, then asks; nothing is pushed.",
+            "Remove this machine's vault setting.\nThe vault itself is not touched.",
         ),
     ),
     "libraries": Menu(

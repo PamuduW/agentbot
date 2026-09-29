@@ -56,12 +56,8 @@ class ProductRenameTests(unittest.TestCase):
         self.assertFalse((ROOT / "bin/agentboot").exists())
         self.assertTrue(os.access(ROOT / "bin/agentbot", os.X_OK))
 
-    def test_legacy_config_reference_is_limited_to_migration_contract(self) -> None:
-        allowed = {
-            ROOT / "scripts/lib/github_token.sh",
-            ROOT / "tests/test_github_token.sh",
-            ROOT / "tests/test_token_consumers.sh",
-        }
+    def test_the_retired_token_path_is_only_named_by_its_guard(self) -> None:
+        allowed = {ROOT / "tests/test_token_consumers.sh"}
         hits = []
         for path in active_files():
             if (

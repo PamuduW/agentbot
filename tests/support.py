@@ -27,6 +27,13 @@ def run_cli_main(argv: list[str]) -> tuple[int, str, str]:
         return main(), stdout.getvalue(), stderr.getvalue()
 
 
+class TerminalInput(io.StringIO):
+    """Standard input that claims to be a terminal, holding what the person types."""
+
+    def isatty(self) -> bool:
+        return True
+
+
 def isolated_launcher_env(temporary_root: Path) -> dict[str, str]:
     root = Path(__file__).resolve().parents[1]
     fixture_bin = temporary_root / "path-bin"

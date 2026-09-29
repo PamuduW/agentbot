@@ -23,7 +23,6 @@ class CommandSpec:
     related: tuple[str, ...]
     surface: Literal["public", "bootstrap"]
     parser_commands: tuple[str, ...] = ()
-    aliases: tuple[str, ...] = ()
 
 
 def option(usage: str, description: str, default: str) -> CommandOption:
@@ -74,9 +73,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "full",
         "agentbot full",
         "mutating",
-        "Run install, then update, in one command.",
+        "Install on a first run, then update; on an installed machine, update alone.",
         (),
-        "Runs both stages with one exit contract and restarts once if the checkout moves forward.",
+        "Update is the one converge pass, so an installed machine is not installed again. "
+        "Restarts once if the checkout moves forward.",
         # No parser_commands: `full` is sequenced by install.sh rather than
         # being a Python subcommand.
         ("agentbot full",),
@@ -85,7 +85,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "update",
-        "agentbot update|upgrade [--dry-run] [--yes]",
+        "agentbot update [--dry-run] [--yes]",
         "mutating",
         "Run the repository-first update transaction.",
         (
@@ -94,12 +94,14 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "--yes", "Pre-approve source-owned additions, removals, and manifest edits.", "off"
             ),
         ),
-        "May fast-forward the checkout, reconcile source-owned skills, and refresh registered workspaces and global outputs.",
+        "May fast-forward the checkout, reconcile source-owned skills, refresh Graphify, MCP, "
+        "registered workspaces, global outputs, and CLI config, and, after Doctor passes, "
+        "Boost, VS Code, the Cursor statusline, Codex Remote Control, and a recorded "
+        "memory backup.",
         ("agentbot update --dry-run", "agentbot update --yes"),
         ("install", "status"),
         "public",
-        ("update", "upgrade"),
-        ("upgrade",),
+        ("update",),
     ),
     CommandSpec(
         "token",
@@ -114,17 +116,24 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "boot",
-        "agentbot boot [SELECTORS] [--profile NAME] [TARGET]",
+        "agentbot boot [SELECTORS] [--profile NAME] [--no-memory] [TARGET]",
         "mutating",
-        "Create or preserve Agentbot policy outputs in one target and register it.",
+        "Create or preserve Agentbot policy outputs in one target, register it, "
+        "and give it project memory.",
         (
             option("--agents | --codex", "Include canonical AGENTS.md.", "always"),
             option("--claude", "Include generated Claude output.", "profile default"),
             option("--cursor", "Include generated Cursor rules.", "profile default"),
             option("--profile NAME", "Select a workspace profile.", "active profile"),
+            option(
+                "--no-memory",
+                "Skip project memory. Otherwise a repository gets it on a schema 3 vault.",
+                "memory on",
+            ),
             option("TARGET", "Target directory.", "current directory"),
         ),
-        "May write selected Agentbot-managed policy outputs and update the private workspace registry.",
+        "May write selected Agentbot-managed policy outputs, update the private workspace registry, "
+        "and register the repository's project memory in the vault (synced).",
         ("agentbot boot", "agentbot boot --cursor /path/to/repo"),
         ("workspace", "workspaces"),
         "public",
@@ -134,7 +143,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "workspace",
         "agentbot workspace [--profile NAME] [--targets LIST] [--yes] PATH",
         "mutating",
-        "Preview or apply one workspace render.",
+        "Preview one workspace render; boot is the usual way to apply it with project memory.",
         (
             option("--profile NAME", "Select a workspace profile.", "active profile"),
             option(
@@ -301,6 +310,164 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
+        "memory",
+        "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|reject|due|hook|backup|restore",
+        "mutating",
+        "The private memory vault: setup, sync, project memory, core proposals, and recall.",
+        (
+            option(
+                "sync",
+                "Sync now; --status shows mode, pending, and conflicts; --mode auto|manual and "
+                "--interval SECONDS set how writes push and how often reads fetch.",
+                "auto, 300s",
+            ),
+            option(
+                "conflict [ACTION]",
+                "list open conflicts; show OP (both versions); resolve OP --keep mine|theirs. "
+                "Core conflicts are for the human.",
+                "list",
+            ),
+            option(
+                "project [ACTION]",
+                "status (default) shows how this repo resolves; add --kind K --title T, "
+                "edit PATH, context, move PATH NEW, delete PATH, retire PATH, forget --yes write this "
+                "project's memory without approval (bodies via --stdin or "
+                "--from-file); register, attach PROJECT, link URL PROJECT --yes manage identity; "
+                "maintain reports what the project needs; promote PATH proposes it for core.",
+                "status",
+            ),
+            option(
+                "setup",
+                "Show this machine's vault, or choose one: --path PATH, --clone URL --dest PATH, "
+                "--new PATH [--remote URL]; --remove forgets it (the vault is untouched). "
+                "Preview first; --yes applies.",
+                "shows",
+            ),
+            option(
+                "status", "Show vault path, schema, Git state, and validation totals.", "read-only"
+            ),
+            option(
+                "validate",
+                "Check every vault file; findings name paths and rules only.",
+                "read-only",
+            ),
+            option(
+                "search [QUERY]",
+                "Accepted records within scope, quota-balanced, with provenance and excerpts; "
+                "without QUERY, record headers only, newest first (the index; 30 by default). "
+                "--type, --tag, --limit N (8, max 100), --history.",
+                "read-only",
+            ),
+            option("show PATH", "One accepted record's provenance and bounded body.", "read-only"),
+            option(
+                "brief [--tokens N]",
+                "A disposable session brief within a hard token ceiling.",
+                "800, max 1200",
+            ),
+            option(
+                "backup",
+                "Preview, then with --yes build a verified local mirror and manifest at "
+                "--destination PATH. "
+                "Committed history only. The destination is recorded, and every update "
+                "refreshes it; without --destination the recorded one is used.",
+                "preview",
+            ),
+            option(
+                "restore --source",
+                "Preview, then with --yes clone BACKUP into a new --destination with no remote.",
+                "preview",
+            ),
+            option(
+                "--project SLUG",
+                "Add this project's records. Without it, only global and shared records.",
+                "none",
+            ),
+            option(
+                "--cross-project",
+                "Add every project's records, one per project before any repeats.",
+                "off",
+            ),
+            option(
+                "propose",
+                "Propose one core record under proposals/core/ from --from-file PATH or "
+                "--stdin; needs --type, --title, --scope, and optional --project, --tag, "
+                "--supersedes ID.",
+                "commits and syncs",
+            ),
+            option("review [PATH]", "List open proposals, or show one with its text.", "read-only"),
+            option(
+                "approve PATH [--yes]",
+                "Preview, then with --yes move one proposal into core; a superseding proposal "
+                "marks its targets superseded. Human-only: --yes needs a terminal and the "
+                "typed short code.",
+                "preview",
+            ),
+            option(
+                "reject PATH [--yes]",
+                "Preview, then with --yes remove a proposal without installing it. Human-only, "
+                "like approve.",
+                "preview",
+            ),
+            option(
+                "due [--limit N]",
+                "List accepted records whose review date arrived or whose validity ended (UTC).",
+                "read-only; 20, max 100",
+            ),
+            option(
+                "hook [ACTION] [--yes]",
+                "Show, install, or remove the owned pre-commit and pre-push vault scan.",
+                "status; preview",
+            ),
+            option("--json", "Emit machine-readable output.", "off"),
+            option(
+                "--acknowledge-warning",
+                "validate only: accept one warning rule ID for this run; blocking rules cannot "
+                "be acknowledged.",
+                "none",
+            ),
+        ),
+        "Every vault write (project writes, propose, approve, reject, register) is "
+        "committed and synced; hook --yes writes only Agentbot-marked hooks; backup and "
+        "restore --yes write only their destination. "
+        "Exit 2 means no vault is configured.",
+        ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
+        ("status", "doctor"),
+        "public",
+        (
+            "memory setup",
+            "memory sync",
+            "memory conflict list",
+            "memory conflict show",
+            "memory conflict resolve",
+            "memory project status",
+            "memory project add",
+            "memory project edit",
+            "memory project context",
+            "memory project move",
+            "memory project delete",
+            "memory project retire",
+            "memory project promote",
+            "memory project maintain",
+            "memory project forget",
+            "memory project register",
+            "memory project attach",
+            "memory project link",
+            "memory status",
+            "memory validate",
+            "memory search",
+            "memory show",
+            "memory brief",
+            "memory propose",
+            "memory review",
+            "memory approve",
+            "memory reject",
+            "memory due",
+            "memory hook",
+            "memory backup",
+            "memory restore",
+        ),
+    ),
+    CommandSpec(
         "cli-config",
         "agentbot cli-config status|apply",
         "mutating",
@@ -378,16 +545,33 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "skills update",
-        "./install.sh skills update|upgrade",
+        "./install.sh skills update [--yes --plan-sha256 REVIEW_ID]",
         "mutating",
-        "Refresh globally installed skills from the lock.",
-        (),
-        "May update source-owned global skills and managed assistant links.",
-        ("./install.sh skills update",),
-        ("update", "skills prune", "skills list"),
+        "Preview source revisions, then apply the exact reviewed plan.",
+        (
+            option("--yes", "Apply the reviewed plan.", "preview only"),
+            option("--plan-sha256 REVIEW_ID", "Require the exact preview ID before apply.", "none"),
+        ),
+        "Preview clones sources into temporary directories; apply updates managed skills and links.",
+        ("./install.sh skills update", "./install.sh skills update --yes --plan-sha256 REVIEW_ID"),
+        ("update", "skills restore", "skills prune", "skills list"),
         "bootstrap",
-        ("skills update", "skills upgrade"),
-        ("skills upgrade",),
+        ("skills update",),
+    ),
+    CommandSpec(
+        "skills restore",
+        "./install.sh skills restore [--previous] [--yes]",
+        "mutating",
+        "Preview or restore exact reviewed source revisions from the global lock.",
+        (
+            option("--previous", "Select the prior reviewed source selection.", "current pins"),
+            option("--yes", "Install pinned revisions and refresh managed links.", "preview only"),
+        ),
+        "Apply clones pinned commits; it does not remove manual skills.",
+        ("./install.sh skills restore", "./install.sh skills restore --previous --yes"),
+        ("skills update", "skills doctor"),
+        "bootstrap",
+        ("skills restore",),
     ),
     CommandSpec(
         "skills list",
@@ -484,7 +668,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
 def command_by_name(name: str) -> CommandSpec:
     normalized = " ".join(name.strip().split())
     for command in COMMANDS:
-        if normalized == command.name or normalized in command.aliases:
+        if normalized == command.name:
             return command
     raise KeyError(name)
 

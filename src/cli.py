@@ -9,14 +9,22 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from .boost import BoostIntegration
 from .commands import CommandSpec, command_by_name
 from .diagnostics import Diagnostics
 from .graphify import GraphifyIntegration
 from .lifecycle import Lifecycle
+from .memory import WARNING_RULES
 from .paths import AgentbotPaths, default_paths
-from .skills_installer import SkillsInstallError, parse_update_output
+from .skills_installer import (
+    SkillsInstallError,
+    apply_skill_update,
+    parse_update_output,
+    plan_skill_update,
+    restore_skills,
+)
 from .ui import (
     format_shortcuts,
     print_boost_status,
@@ -31,6 +39,19 @@ from .ui import (
     print_mcp_catalog,
     print_mcp_plan,
     print_mcp_status,
+    print_memory_backup,
+    print_memory_due,
+    print_memory_hooks,
+    print_memory_project,
+    print_memory_project_write,
+    print_memory_record,
+    print_memory_restore,
+    print_memory_result,
+    print_memory_search,
+    print_memory_setup,
+    print_memory_status,
+    print_memory_sync,
+    print_memory_validation,
     print_output_refresh_report,
     print_rollup,
     print_skill_prune_report,
@@ -116,10 +137,7 @@ def _run() -> int:
     command = args.command or "install"
     if command == "help":
         help_topic = " ".join(getattr(args, "help_topic", ())) or None
-        return print_help_command(
-            help_topic,
-            output_format=getattr(args, "help_format", "plain"),
-        )
+        return print_help_command(help_topic)
 
     paths = default_paths(Path(args.root))
     diagnostics = Diagnostics(paths)
@@ -205,6 +223,9 @@ def _handle_cli_config(context: CommandContext) -> int:
             rows.append((name, plan.skipped, "skipped"))
         elif plan.is_noop:
             rows.append((name, "current", "ok"))
+        elif report.applied:
+            summary = f"{len(plan.additions)} added, {len(plan.changes)} changed"
+            rows.append((name, f"{summary} in {plan.path}", "applied"))
         else:
             summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
             rows.append((name, f"{summary} in {plan.path}", "check"))
@@ -284,6 +305,639 @@ def _handle_boost(context: CommandContext) -> int:
     return 1 if status.state in {"broken", "forbidden", "unsafe-config"} else 0
 
 
+def _print_memory_state(status, *, as_json: bool) -> int:
+    from . import memory
+
+    if as_json:
+        print(json.dumps(memory.status_json(status), indent=2))
+    else:
+        print_memory_status(status)
+    # Dirty or invalid are reported states, not a failure to report them.
+    return {"unconfigured": 2, "broken": 1}.get(status.state, 0)
+
+
+def _confirm_by_hand(code: str, action: str, command: str) -> None:
+    """A human-only action needs a person at a terminal typing its short code.
+
+    Agent shells run commands without a terminal, so an agent cannot confirm
+    even when asked to: in Ticket 12 run 4, Codex ran `approve --yes` itself
+    after the user said "approve it now". This is a deterrent, not a security
+    boundary; an agent driving a real terminal on purpose is not stopped.
+    """
+    if not sys.stdin.isatty():
+        raise ValueError(
+            f"{action} is human-only and needs a terminal. Run it yourself in your own "
+            f"terminal: {command}"
+        )
+    print(f"  Type {code} to {action}: ", end="", file=sys.stderr, flush=True)
+    if input().strip() != code:
+        raise ValueError(f"{action} cancelled: the code did not match")
+
+
+def _handle_memory_hook(context: CommandContext) -> int:
+    from . import memory, memory_hook
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    try:
+        action = args.hook_action
+        if action == "status" or not args.confirm:
+            state = memory_hook.inspect(root, context.paths.root)
+        elif action == "install":
+            memory.read_marker(root)
+            state = memory_hook.install(root, context.paths.root)
+        else:
+            state = memory_hook.remove(root, context.paths.root)
+        if as_json:
+            print(json.dumps(memory_hook.hook_json(state), indent=2))
+        else:
+            print_memory_hooks(state, action=action, applied=args.confirm)
+        return 1 if state.problem or "unowned" in state.states.values() else 0
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+
+
+def _handle_memory_due(context: CommandContext) -> int:
+    from . import memory
+
+    as_json = bool(getattr(context.args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    today = memory.utc_today()
+    try:
+        items, total, schema = memory.due_queue(root, today=today, limit=context.args.limit)
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+    if as_json:
+        print(json.dumps(memory.due_json(items, total, schema, today), indent=2))
+    else:
+        print_memory_due(items, total=total, today=today)
+    return 0
+
+
+def _handle_memory_retrieve(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_retrieve as retrieve
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    project, source = args.project, "explicit" if args.project else None
+    if project is None and not args.cross_project and not getattr(args, "no_auto_project", False):
+        from . import memory_projects
+
+        # cwd -> Git top level -> origin -> registry. Unresolved, colliding, or
+        # outside a repository: global and shared only, never a guess.
+        resolution = memory_projects.resolve(root, caller_path("."), context.paths.config_home)
+        if resolution.state == "resolved" and resolution.entry is not None:
+            project, source = resolution.entry["folder"], "auto"
+    scope = {"project": project, "project_source": source}
+    request = retrieve.Request(
+        project=project,
+        cross_project=args.cross_project,
+        history=bool(getattr(args, "history", False)),
+        kind=getattr(args, "memory_type", None),
+        tag=getattr(args, "tag", None),
+    )
+    try:
+        if args.memory_command == "search":
+            default = retrieve.SEARCH_DEFAULT if args.query.strip() else retrieve.INDEX_DEFAULT
+            result = retrieve.search(root, args.query, request, limit=args.limit or default)
+            if as_json:
+                print(json.dumps({**retrieve.search_json(result), **scope}, indent=2))
+            else:
+                print_memory_search(result)
+        elif args.memory_command == "show":
+            hit, body = retrieve.show(root, args.record_path, request, max_bytes=args.max_bytes)
+            if as_json:
+                print(json.dumps({**retrieve.show_json(hit, body), **scope}, indent=2))
+            else:
+                print_memory_record(hit, body)
+        else:
+            summary = retrieve.brief(root, request, tokens=args.tokens)
+            if as_json:
+                print(json.dumps({**retrieve.brief_json(summary), **scope}, indent=2))
+            else:
+                print(summary.text, end="")
+    except memory.MemoryRequestError as error:
+        # The vault is fine; this request is not. Never report it as broken.
+        if as_json:
+            print(json.dumps({"state": "refused", "problem": str(error), **scope}, indent=2))
+        else:
+            print(f"  {error}", file=sys.stderr)
+        return 1
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+    return 0
+
+
+def _handle_memory_backup(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_backup as backups
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    try:
+        if args.memory_command == "backup":
+            if root is None:
+                return _print_memory_state(
+                    memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+                )
+            from . import memory_setup
+
+            recorded = memory_setup.recorded_backup(context.paths.config_home)
+            if args.destination:
+                destination = caller_path(args.destination)
+            elif recorded is not None:
+                destination = Path(recorded["destination"])
+            else:
+                raise ValueError("no backup is recorded yet; name one with --destination PATH")
+            assurance = args.assurance or (recorded or {}).get("assurance", "unknown")
+            result = backups.backup(root, destination, apply=args.confirm, assurance=assurance)
+            if result.state != "preview":
+                memory_setup.record_backup(context.paths.config_home, destination, assurance)
+            if as_json:
+                print(json.dumps(backups.backup_json(result), indent=2))
+            else:
+                print_memory_backup(result)
+            return 0
+        restored = backups.restore(
+            caller_path(args.source),
+            caller_path(args.destination),
+            active=root,
+            apply=args.confirm,
+        )
+        if as_json:
+            print(json.dumps(backups.restore_json(restored), indent=2))
+        else:
+            print_memory_restore(restored)
+        return 1 if restored.state == "restored-with-findings" else 0
+    except memory.MemoryVaultError as error:
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=looked, root=root, problem=str(error)),
+            as_json=as_json,
+        )
+
+
+def _add_retrieval_scope(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--project", metavar="SLUG", help="Include this project's records")
+    group.add_argument(
+        "--no-auto-project",
+        action="store_true",
+        dest="no_auto_project",
+        help="Do not detect the project from the current repository",
+    )
+    group.add_argument(
+        "--cross-project",
+        action="store_true",
+        dest="cross_project",
+        help="Include every project's records, one per project first",
+    )
+    parser.add_argument("--json", action="store_true", dest="memory_json")
+
+
+def _handle_memory_setup(context: CommandContext) -> int:
+    from . import memory_setup as setup
+
+    args = context.args
+    config_home = context.paths.config_home
+    if args.setup_path:
+        result = setup.setup_path(caller_path(args.setup_path), config_home, apply=args.confirm)
+    elif args.setup_clone:
+        if not args.dest:
+            raise ValueError("--clone needs --dest PATH for the new checkout")
+        result = setup.setup_clone(
+            args.setup_clone, caller_path(args.dest), config_home, apply=args.confirm
+        )
+    elif args.setup_new:
+        result = setup.setup_new(
+            caller_path(args.setup_new), config_home, remote=args.remote, apply=args.confirm
+        )
+    elif args.setup_remove:
+        result = setup.remove(config_home, apply=args.confirm)
+    else:
+        result = setup.show(config_home)
+    if result.state == "configured" and result.vault.get("path"):
+        result.notes.insert(0, _install_vault_hooks(context, Path(result.vault["path"])))
+    if getattr(args, "memory_json", False):
+        print(json.dumps(setup.result_json(result), indent=2))
+    else:
+        print_memory_setup(result)
+    return 0
+
+
+def _install_vault_hooks(context: CommandContext, vault: Path) -> str:
+    """Setup installs the vault's commit and push checks too: one step, not two."""
+    from . import memory, memory_hook
+
+    retry = "install them with: agentbot memory hook install --yes"
+    try:
+        state = memory_hook.install(vault, context.paths.root)
+    except memory.MemoryVaultError as error:
+        return f"Vault checks not installed ({error}); {retry}"
+    if state.problem or "unowned" in state.states.values():
+        return f"Vault checks not installed: {state.problem or 'a hook exists that Agentbot does not own'}; {retry}"
+    return "Installed the vault's pre-commit and pre-push checks."
+
+
+def _handle_memory_project(context: CommandContext) -> int:
+    from . import memory
+    from . import memory_project_writes as writes
+    from . import memory_projects as projects
+    from . import memory_proposals as proposals
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    cwd = caller_path(".")
+    config_home = context.paths.config_home
+    action = getattr(args, "project_action", None) or "status"
+    if action == "status":
+        resolution = projects.resolve(root, cwd, config_home)
+        if as_json:
+            print(json.dumps(projects.resolution_json(resolution), indent=2))
+        else:
+            print_memory_project(resolution)
+        return 1 if resolution.state == "collision" else 0
+
+    def body() -> str:
+        source = caller_path(args.from_file) if args.from_file else None
+        return proposals.read_body(source, sys.stdin.buffer)
+
+    result: dict = {}
+    if action == "add":
+        result = writes.add(
+            root,
+            cwd,
+            config_home,
+            kind=args.kind,
+            title=args.title,
+            body=body(),
+            tags=args.tag or [],
+            supersedes=args.supersedes,
+        )
+    elif action == "edit":
+        text = body() if (args.stdin or args.from_file) else None
+        result = writes.edit(
+            root, cwd, config_home, args.path, body=text, title=args.title, tags=args.tag
+        )
+    elif action == "context":
+        result = writes.set_context(root, cwd, config_home, body())
+    elif action == "move":
+        result = writes.move(root, cwd, config_home, args.path, args.new_path)
+    elif action == "delete":
+        result = writes.delete(root, cwd, config_home, args.path)
+    elif action == "retire":
+        result = writes.retire(root, cwd, config_home, args.path)
+    elif action == "promote":
+        result = writes.promote(root, cwd, config_home, args.path, scope=args.scope)
+    elif action == "maintain":
+        result = writes.maintain(root, cwd, config_home)
+    elif action == "forget":
+        if not args.confirm:
+            folder = projects.require_project(root, cwd, config_home)["folder"]
+            result = {"state": "preview", "path": f"projects/{folder}"}
+        else:
+            result = writes.forget(root, cwd, config_home)
+    elif action == "register":
+        result = {"state": "registered", **projects.register(root, cwd, config_home)}
+    elif action == "attach":
+        result = {"state": "attached", **projects.attach(root, cwd, config_home, args.project)}
+    elif action == "link":
+        if not args.confirm:
+            result = {"state": "preview", "origin": args.origin, "project": args.project}
+        else:
+            result = {"state": "linked", **projects.link(root, args.origin, args.project)}
+    if result.get("state") not in {"preview", "attached", "report"}:
+        from . import memory_autosync
+
+        result["sync"] = memory_autosync.after_write(root, config_home)
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print_memory_project_write(result, action=action)
+    return 0
+
+
+def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
+    """Tracked core proposals. Approve and reject are the user's."""
+    from . import memory, memory_autosync
+    from . import memory_proposals as proposals
+    from .memory_retrieve import DATA_NOTICE
+
+    memory.read_marker(root)
+
+    args = context.args
+    command = args.memory_command
+    result: dict[str, Any]
+    if command == "propose":
+        source = caller_path(args.from_file) if args.from_file else None
+        result = proposals.propose(
+            root,
+            kind=args.memory_type,
+            title=args.title,
+            body=proposals.read_body(source, sys.stdin.buffer),
+            scope=args.scope,
+            projects=list(args.project or []),
+            tags=list(args.tag or []),
+            supersedes=list(args.supersedes or []) or None,
+        )
+    elif command == "review":
+        items = proposals.queue(root)
+        as_json = getattr(args, "memory_json", False)
+        if not args.draft_path and items and not as_json and _at_a_terminal():
+            return _walk_proposals(context, root, items)
+        if args.draft_path:
+            match = [item for item in items if item["path"] == args.draft_path]
+            if not match:
+                raise ValueError(f"no open proposal at {args.draft_path}")
+            # The text too: reading it is how the user decides to approve.
+            result = {
+                "state": "open",
+                **match[0],
+                "notice": DATA_NOTICE,
+                "body": proposals.body(root, args.draft_path),
+            }
+        else:
+            result = {
+                "state": "queue",
+                "open": len(items),
+                "notice": DATA_NOTICE,
+                "proposals": items,
+            }
+    else:
+        waiting = {item["path"]: item for item in proposals.queue(root)}
+        if args.draft_path not in waiting:
+            raise ValueError(f"no open proposal at {args.draft_path}")
+        if not args.confirm:
+            result = {"state": "preview", "notice": DATA_NOTICE, **waiting[args.draft_path]}
+        else:
+            _confirm_by_hand(
+                str(waiting[args.draft_path]["id"])[:8],
+                f"{command} {args.draft_path}",
+                f"agentbot memory {command} {args.draft_path} --yes",
+            )
+            if command == "approve":
+                result = proposals.approve(root, args.draft_path)
+            else:
+                result = proposals.reject(root, args.draft_path)
+    if result["state"] in {"proposed", "approved", "rejected"}:
+        result["sync"] = memory_autosync.after_write(root, context.paths.config_home)
+    if getattr(args, "memory_json", False):
+        print(json.dumps(result, indent=2))
+    else:
+        print_memory_result(result, title=command)
+    return 0
+
+
+def _at_a_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _ask_review_choice() -> str:
+    """The keys lit the way the menus light theirs, on a line of their own."""
+    from .ui.table import BOLD, CYAN, DIM, RESET, use_color
+
+    lit, dim, bold, reset = (CYAN, DIM, BOLD, RESET) if use_color() else ("", "", "", "")
+    keys = "   ".join(
+        f"{reset}{lit}{key}{reset}{dim} {word}"
+        for key, word in (("a", "approve"), ("r", "reject"), ("s", "skip"), ("q", "stop"))
+    )
+    print(f"\n  {dim}{keys}{reset}", file=sys.stderr)
+    print(f"  {bold}Choice:{reset} ", end="", file=sys.stderr, flush=True)
+    return input().strip().lower()
+
+
+def _walk_proposals(context: CommandContext, root: Path, items: list[dict[str, Any]]) -> int:
+    """Each open proposal in turn: its text, then approve, reject, skip or stop.
+
+    A person at a terminal reviews the queue here without copying any path.
+    Approve and reject still ask for the short code, as their own commands do.
+    """
+    from . import memory_autosync
+    from . import memory_proposals as proposals
+    from .memory_retrieve import DATA_NOTICE
+
+    rc = 0
+    for number, item in enumerate(items, 1):
+        path = item["path"]
+        print_memory_result(
+            {"state": "open", **item, "notice": DATA_NOTICE, "body": proposals.body(root, path)},
+            title=f"review {number} of {len(items)}",
+        )
+        choice = _ask_review_choice()
+        if choice == "q":
+            print("  Stopped; the rest are left for later.")
+            break
+        if choice not in {"a", "r"}:
+            print("  Left for later.")
+            continue
+        command = "approve" if choice == "a" else "reject"
+        print(file=sys.stderr)
+        try:
+            _confirm_by_hand(
+                str(item["id"])[:8], f"{command} {path}", f"agentbot memory {command} {path} --yes"
+            )
+        except ValueError as error:
+            print(f"  {error}; left for later.")
+            rc = 1
+            continue
+        result = (
+            proposals.approve(root, path) if command == "approve" else proposals.reject(root, path)
+        )
+        result["sync"] = memory_autosync.after_write(root, context.paths.config_home)
+        print_memory_result(result, title=command)
+    return rc
+
+
+# Retrieval refreshes first. Not validate: hooks run it mid-commit and mid-push.
+READ_COMMANDS = frozenset({"status", "search", "show", "brief", "due", "project"})
+
+
+def _refresh_before_read(context: CommandContext) -> None:
+    """Fetch the shared vault first, at most once per interval; never block the read."""
+    from . import memory, memory_autosync
+
+    if context.args.memory_command == "project" and getattr(context.args, "project_action", None):
+        return
+    try:
+        root, _ = memory.find_vault(context.paths.root)
+        if root is not None:
+            memory_autosync.before_read(root, context.paths.config_home)
+    except memory.MemoryVaultError:
+        return
+
+
+def _handle_memory_sync(context: CommandContext) -> int:
+    from . import memory, memory_autosync
+
+    args = context.args
+    as_json = bool(getattr(args, "memory_json", False))
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
+        )
+    config_home = context.paths.config_home
+    payload: Any
+    if args.memory_command == "sync":
+        if args.mode or args.interval is not None:
+            memory_autosync.set_settings(config_home, mode=args.mode, fetch_interval=args.interval)
+            payload = memory_autosync.status(root, config_home)
+            title = "settings"
+        elif args.status_only:
+            payload = memory_autosync.status(root, config_home)
+            title = "status"
+        else:
+            payload = {
+                **memory_autosync.run(root),
+                "settings": memory_autosync.status(root, config_home),
+            }
+            title = "run"
+        code = 0 if payload.get("state", "synced") in {"synced", "offline"} or title != "run" else 1
+    else:
+        action = args.conflict_action or "list"
+        if action == "list":
+            payload = {"conflicts": memory_autosync.open_conflicts(root)}
+        elif action == "show":
+            payload = memory_autosync.show(root, args.op)
+        else:
+            conflict = next(
+                (c for c in memory_autosync.open_conflicts(root) if c["op"] == args.op), None
+            )
+            if conflict is not None and conflict.get("resolver") == "human":
+                _confirm_by_hand(
+                    args.op[:8],
+                    f"resolve core conflict {args.op} keeping {args.keep}",
+                    f"agentbot memory conflict resolve {args.op} --keep {args.keep}",
+                )
+            payload = memory_autosync.resolve(
+                root, config_home, args.op, args.keep, cwd=caller_path(".")
+            )
+        title = f"conflict {action}"
+        code = 0
+    if as_json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print_memory_sync(payload, title=title)
+    return code
+
+
+def _handle_memory(context: CommandContext) -> int:
+    from . import memory
+
+    as_json = bool(getattr(context.args, "memory_json", False))
+    try:
+        return _dispatch_memory(context)
+    except memory.MemoryVaultError as error:
+        if _vault_usable(context):
+            # A sound vault refused this one request (not a registered project,
+            # a write that would break the vault, ...): say so as this command,
+            # not as a broken-vault status screen.
+            result = {"state": "refused", "detail": str(error)}
+            if as_json:
+                print(json.dumps(result, indent=2))
+            else:
+                print_memory_result(result, title=context.args.memory_command)
+            return 1
+        # One place for a configured vault that is missing or not the one
+        # recorded: every memory command reports it the same way.
+        return _print_memory_state(
+            memory.VaultStatus(state="broken", looked_in=(), problem=str(error)),
+            as_json=as_json,
+        )
+
+
+def _vault_usable(context: CommandContext) -> bool:
+    from . import memory
+
+    try:
+        root, _ = memory.find_vault(context.paths.root)
+        if root is None:
+            return False
+        memory.read_marker(root)
+    except memory.MemoryVaultError:
+        return False
+    return True
+
+
+def _dispatch_memory(context: CommandContext) -> int:
+    from . import memory
+
+    if context.args.memory_command == "setup":
+        return _handle_memory_setup(context)
+    if context.args.memory_command in {"sync", "conflict"}:
+        return _handle_memory_sync(context)
+    if context.args.memory_command in {"propose", "review", "approve", "reject"}:
+        root, looked = memory.find_vault(context.paths.root)
+        if root is None:
+            return _print_memory_state(
+                memory.VaultStatus(state="unconfigured", looked_in=looked),
+                as_json=bool(getattr(context.args, "memory_json", False)),
+            )
+        return _handle_memory_proposals(context, root)
+    if context.args.memory_command in READ_COMMANDS:
+        _refresh_before_read(context)
+    if context.args.memory_command == "project":
+        return _handle_memory_project(context)
+    if context.args.memory_command == "hook":
+        return _handle_memory_hook(context)
+    if context.args.memory_command == "due":
+        return _handle_memory_due(context)
+    if context.args.memory_command in {"search", "show", "brief"}:
+        return _handle_memory_retrieve(context)
+    if context.args.memory_command in {"backup", "restore"}:
+        return _handle_memory_backup(context)
+    as_json = bool(getattr(context.args, "memory_json", False))
+    if context.args.memory_command == "status":
+        status = memory.status(context.paths.root)
+    else:
+        root, looked = memory.find_vault(context.paths.root)
+        if root is None:
+            status = memory.VaultStatus(state="unconfigured", looked_in=looked)
+        else:
+            try:
+                report = memory.validate(root, acknowledge=context.args.acknowledge_warning or ())
+            except memory.MemoryVaultError as error:
+                status = memory.VaultStatus(
+                    state="broken", looked_in=looked, root=root, problem=str(error)
+                )
+            else:
+                if as_json:
+                    print(json.dumps(memory.report_json(report), indent=2))
+                else:
+                    print_memory_validation(report)
+                return 0 if report.valid else 1
+    return _print_memory_state(status, as_json=as_json)
+
+
 def _gitlab_token_verify_only(store: ModuleType) -> int:
     """Check a candidate token without storing it.
 
@@ -314,8 +968,7 @@ def _gitlab_token_verify_only(store: ModuleType) -> int:
         return 2
     if result.write_capable:
         print(
-            f"  This token can write ({', '.join(result.scopes)}); "
-            "read_api is the contract.",
+            f"  This token can write ({', '.join(result.scopes)}); read_api is the contract.",
             file=sys.stderr,
         )
         return 3
@@ -515,12 +1168,8 @@ def _handle_update(context: CommandContext) -> int:
     # The work phase opens with its own heading and legend, and is named the
     # same thing the sibling product names it. The [STEP] lines used to start
     # directly under the plan table, so the table the operator had just
-    # approved and the run that followed it read as one block.
-    #
-    # Not built from `command`: this handler also serves the `upgrade` alias,
-    # which spelled a heading "Applying upgrade" under an "Upgrade" crumb --
-    # the one word the lexicon reserves for apt. A built title is also invisible
-    # to the lexicon check, which can only read literal ones.
+    # approved and the run that followed it read as one block. A literal
+    # title, so the lexicon check can read it.
     print_header("Updating", "Agentbot › Update › Updating")
     log_legend()
     print()
@@ -604,8 +1253,40 @@ def _handle_boot(context: CommandContext) -> int:
         targets=targets,
         register=True,
     )
-    print_workspace_report(result)
-    return 1 if result.status in {"conflict", "failed"} else 0
+    failed = result.status in {"conflict", "failed"}
+    rows = [] if failed or args.no_memory else [_boot_project_memory(context, target)]
+    print_workspace_report(result, extra_rows=rows)
+    return 1 if failed else 0
+
+
+def _boot_project_memory(context: CommandContext, target: Path) -> tuple[str, str, str]:
+    """Give the booted repository project memory, so one command sets it all up.
+
+    Memory is optional: no vault, an older schema, or a directory that is not a
+    repository is a skipped row, and nothing here can fail the boot.
+    """
+    from . import memory, memory_autosync, memory_projects
+
+    label = "Project memory"
+    config_home = context.paths.config_home
+    if memory_projects.repo_identity(target) is None:
+        return (label, "not a Git repository", "skipped")
+    try:
+        root, _ = memory.find_vault(context.paths.root)
+        if root is None:
+            return (label, "no memory vault configured", "skipped")
+        memory.read_marker(root)
+        memory_autosync.before_read(root, config_home)
+        found = memory_projects.resolve(root, target, config_home)
+        if found.state == "resolved" and found.entry is not None:
+            return (label, f"{found.entry['folder']} (already registered)", "ok")
+        if found.state == "collision":
+            return (label, "; ".join(found.problems) or "registry collision", "conflict")
+        entry = memory_projects.register(root, target, config_home)
+        outcome = memory_autosync.after_write(root, config_home)
+        return (label, f"{entry['folder']} registered; sync {outcome['state']}", "applied")
+    except (memory.MemoryVaultError, OSError) as error:
+        return (label, str(error), "warn")
 
 
 def _handle_workspaces(context: CommandContext) -> int:
@@ -656,6 +1337,49 @@ def _handle_install(context: CommandContext) -> int:
 
 
 def _handle_skills(context: CommandContext) -> int:
+    if context.args.skills_command == "update":
+        plan = plan_skill_update(context.paths)
+        previous = dict(plan.previous)
+        print_header("Skills update", "Agentbot › Skills update")
+        for catalog in plan.catalogs:
+            old = previous.get(catalog.source_id)
+            old_label = old[:12] if old else "unrecorded"
+            print(
+                f"  {catalog.source_id}: {old_label} -> {catalog.revision[:12]} "
+                f"({len(catalog.skills)} candidate skill(s))"
+            )
+        print(f"  Review ID: {plan.review_id}")
+        if context.args.confirm:
+            if context.args.plan_sha256 != plan.review_id:
+                raise SkillsInstallError(
+                    "skills update requires the exact --plan-sha256 from a reviewed preview"
+                )
+            apply_skill_update(context.paths, plan)
+            context.lifecycle.refresh_outputs()
+            print("  Installed the reviewed source revisions.")
+        else:
+            print("  Preview only; use --yes --plan-sha256 REVIEW_ID to apply.")
+        return 0
+    if context.args.skills_command == "restore":
+        snapshots = restore_skills(
+            context.paths,
+            apply=bool(getattr(context.args, "confirm", False)),
+            previous=bool(getattr(context.args, "previous", False)),
+        )
+        if context.args.confirm:
+            context.lifecycle.refresh_outputs()
+        print_header("Skills restore", "Agentbot › Skills restore")
+        for snapshot in snapshots:
+            print(
+                f"  {snapshot.source_id}: {snapshot.revision[:12]} "
+                f"({len(snapshot.installed)} skill(s))"
+            )
+        print(
+            "  Restored reviewed revisions."
+            if context.args.confirm
+            else "  Preview only; use --yes to apply."
+        )
+        return 0
     if context.args.skills_command == "prune":
         return handle_skills_prune(
             context.lifecycle,
@@ -682,11 +1406,11 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "boost": _handle_boost,
     "mcp": _handle_mcp,
     "gitlab-token": _handle_gitlab_token,
+    "memory": _handle_memory,
     "cli-config": _handle_cli_config,
     "cursor": _handle_cursor,
     "vscode": _handle_vscode,
     "update": _handle_update,
-    "upgrade": _handle_update,
     "workspace": _handle_workspace,
     "boot": _handle_boot,
     "workspaces": _handle_workspaces,
@@ -716,6 +1440,208 @@ def _add_gitlab_token_parser(subparsers: argparse._SubParsersAction) -> None:
     gitlab_token_sub.add_parser("remove", help="Delete the saved token")
 
 
+def _add_memory_setup_parser(memory_sub: argparse._SubParsersAction) -> None:
+    setup = memory_sub.add_parser("setup", help="Show, choose, or remove this machine's vault")
+    mode = setup.add_mutually_exclusive_group()
+    mode.add_argument("--path", dest="setup_path", metavar="PATH", help="Use an existing checkout")
+    mode.add_argument(
+        "--clone", dest="setup_clone", metavar="URL", help="Clone a vault (with --dest)"
+    )
+    mode.add_argument("--new", dest="setup_new", metavar="PATH", help="Create a new empty vault")
+    mode.add_argument(
+        "--remove", dest="setup_remove", action="store_true", help="Forget the configured vault"
+    )
+    setup.add_argument("--dest", metavar="PATH", help="Destination for --clone")
+    setup.add_argument("--remote", metavar="URL", help="Origin to record for --new")
+    setup.add_argument("--yes", action="store_true", dest="confirm")
+    setup.add_argument("--json", action="store_true", dest="memory_json")
+
+
+def _add_memory_project_parser(memory_sub: argparse._SubParsersAction) -> None:
+    project = memory_sub.add_parser(
+        "project", help="Show or write the current repo's project memory"
+    )
+    project.add_argument("--json", action="store_true", dest="memory_json")
+    actions = project.add_subparsers(dest="project_action")
+
+    def with_body(parser: argparse.ArgumentParser, *, required: bool) -> None:
+        source = parser.add_mutually_exclusive_group(required=required)
+        source.add_argument("--stdin", action="store_true")
+        source.add_argument("--from-file", dest="from_file", metavar="PATH")
+
+    status = actions.add_parser("status", help="Show which project memory this repo resolves to")
+    add = actions.add_parser("add", help="Add a decision, lesson, or note to this project")
+    add.add_argument("--kind", required=True, choices=("decision", "lesson", "note"))
+    add.add_argument("--title", required=True)
+    add.add_argument("--tag", action="append", metavar="TAG")
+    add.add_argument("--supersedes", metavar="ID", help="A record in this project it replaces")
+    with_body(add, required=True)
+    edit = actions.add_parser("edit", help="Change a record's body, title, or tags")
+    edit.add_argument("path", metavar="PATH")
+    edit.add_argument("--title")
+    edit.add_argument("--tag", action="append", metavar="TAG")
+    with_body(edit, required=False)
+    context = actions.add_parser("context", help="Replace this project's active context")
+    with_body(context, required=True)
+    move = actions.add_parser("move", help="Move a record within this project")
+    move.add_argument("path", metavar="PATH")
+    move.add_argument("new_path", metavar="NEW_PATH")
+    delete = actions.add_parser("delete", help="Delete a record from this project")
+    delete.add_argument("path", metavar="PATH")
+    retire = actions.add_parser("retire", help="Take a record out of retrieval without deleting it")
+    retire.add_argument("path", metavar="PATH")
+    promote = actions.add_parser("promote", help="Propose a project lesson or decision for core")
+    promote.add_argument("path", metavar="PATH")
+    promote.add_argument("--scope", choices=("global", "shared"), default="shared")
+    maintain = actions.add_parser("maintain", help="Report what this project's memory needs")
+    forget = actions.add_parser("forget", help="Remove this project's memory folder")
+    forget.add_argument("--yes", action="store_true", dest="confirm")
+    actions.add_parser("register", help="Give this repository project memory")
+    attach = actions.add_parser("attach", help="Bind this no-remote checkout to a project")
+    attach.add_argument("project", metavar="PROJECT")
+    link = actions.add_parser("link", help="Human-only: add an origin as a project alias")
+    link.add_argument("origin", metavar="ORIGIN_URL")
+    link.add_argument("project", metavar="PROJECT")
+    link.add_argument("--yes", action="store_true", dest="confirm")
+    for parser in (
+        status,
+        add,
+        edit,
+        context,
+        move,
+        delete,
+        retire,
+        promote,
+        maintain,
+        forget,
+        attach,
+        link,
+    ):
+        parser.add_argument("--json", action="store_true", dest="memory_json")
+
+
+def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
+    memory = subparsers.add_parser("memory", help="Inspect and validate the private memory vault")
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    _add_memory_setup_parser(memory_sub)
+    _add_memory_project_parser(memory_sub)
+    sync = memory_sub.add_parser("sync", help="Sync the vault now, or show or set sync settings")
+    sync.add_argument("--mode", choices=("auto", "manual"))
+    sync.add_argument(
+        "--interval", type=int, metavar="SECONDS", help="Minimum time between fetches"
+    )
+    sync.add_argument("--status", action="store_true", dest="status_only")
+    sync.add_argument("--json", action="store_true", dest="memory_json")
+    conflict = memory_sub.add_parser("conflict", help="List, show, or resolve sync conflicts")
+    conflict.add_argument("--json", action="store_true", dest="memory_json")
+    conflict_actions = conflict.add_subparsers(dest="conflict_action")
+    conflict_list = conflict_actions.add_parser("list", help="List open conflicts")
+    conflict_show = conflict_actions.add_parser("show", help="Show both versions of one conflict")
+    conflict_show.add_argument("op", metavar="OP")
+    conflict_resolve = conflict_actions.add_parser("resolve", help="Keep mine or theirs")
+    conflict_resolve.add_argument("op", metavar="OP")
+    conflict_resolve.add_argument("--keep", required=True, choices=("mine", "theirs"))
+    for parser in (conflict_list, conflict_show, conflict_resolve):
+        parser.add_argument("--json", action="store_true", dest="memory_json")
+    memory_status = memory_sub.add_parser("status", help="Show vault location, schema, and state")
+    memory_status.add_argument("--json", action="store_true", dest="memory_json")
+    memory_validate = memory_sub.add_parser(
+        "validate", help="Validate every vault file against its schema version"
+    )
+    memory_validate.add_argument("--json", action="store_true", dest="memory_json")
+    memory_validate.add_argument(
+        "--acknowledge-warning",
+        action="append",
+        choices=sorted(WARNING_RULES),
+        dest="acknowledge_warning",
+        metavar="RULE_ID",
+        help="Accept one warning rule for this run only; blocking rules cannot be acknowledged",
+    )
+    propose = memory_sub.add_parser(
+        "propose", help="Propose one core record for the user to review"
+    )
+    propose.add_argument(
+        "--type",
+        required=True,
+        choices=("decision", "lesson", "preference", "profile"),
+        dest="memory_type",
+    )
+    propose.add_argument(
+        "--supersedes", action="append", metavar="ID", help="Core records it replaces"
+    )
+    propose.add_argument("--title", required=True)
+    propose.add_argument("--scope", required=True, choices=("global", "shared", "project"))
+    propose.add_argument("--project", action="append", metavar="SLUG")
+    propose.add_argument("--tag", action="append", metavar="TAG")
+    source = propose.add_mutually_exclusive_group(required=True)
+    source.add_argument("--from-file", dest="from_file", metavar="PATH")
+    source.add_argument("--stdin", action="store_true", help="Read the body from standard input")
+    propose.add_argument("--json", action="store_true", dest="memory_json")
+    review = memory_sub.add_parser("review", help="List open proposals, or show one")
+    review.add_argument("draft_path", nargs="?", metavar="proposals/core/FILE.md")
+    review.add_argument("--json", action="store_true", dest="memory_json")
+    approve = memory_sub.add_parser("approve", help="Human-only: promote one proposal into core")
+    approve.add_argument("draft_path", metavar="proposals/core/FILE.md")
+    approve.add_argument("--yes", action="store_true", dest="confirm")
+    approve.add_argument("--json", action="store_true", dest="memory_json")
+    reject = memory_sub.add_parser("reject", help="Human-only: remove a proposal")
+    reject.add_argument("draft_path", metavar="proposals/core/FILE.md")
+    reject.add_argument("--yes", action="store_true", dest="confirm")
+    reject.add_argument("--json", action="store_true", dest="memory_json")
+    search = memory_sub.add_parser("search", help="Search accepted records within scope")
+    search.add_argument(
+        "query",
+        nargs="?",
+        default="",
+        help="Words to find; omit to list record headers (the index)",
+    )
+    search.add_argument(
+        "--type",
+        choices=("context", "preference", "decision", "lesson", "project"),
+        dest="memory_type",
+    )
+    search.add_argument("--tag", metavar="TAG")
+    search.add_argument("--limit", type=int, default=None, metavar="N")
+    search.add_argument(
+        "--history",
+        action="store_true",
+        help="Include superseded, retired, expired, and cold records, labelled",
+    )
+    _add_retrieval_scope(search)
+    show = memory_sub.add_parser("show", help="Show one accepted record within scope")
+    show.add_argument("record_path", metavar="PATH")
+    show.add_argument("--max-bytes", type=int, default=65536, dest="max_bytes", metavar="N")
+    _add_retrieval_scope(show)
+    brief = memory_sub.add_parser("brief", help="Print a bounded, disposable session brief")
+    brief.add_argument("--tokens", type=int, default=800, metavar="N")
+    _add_retrieval_scope(brief)
+    backup = memory_sub.add_parser("backup", help="Preview or refresh a verified local mirror")
+    backup.add_argument(
+        "--destination", metavar="PATH", help="Default: the backup this machine recorded"
+    )
+    backup.add_argument(
+        "--encryption-assurance",
+        choices=("unknown", "user-attested"),
+        dest="assurance",
+    )
+    backup.add_argument("--yes", action="store_true", dest="confirm")
+    backup.add_argument("--json", action="store_true", dest="memory_json")
+    restore = memory_sub.add_parser("restore", help="Preview or restore into a new directory")
+    restore.add_argument("--source", required=True, metavar="BACKUP")
+    restore.add_argument("--destination", required=True, metavar="PATH")
+    restore.add_argument("--yes", action="store_true", dest="confirm")
+    restore.add_argument("--json", action="store_true", dest="memory_json")
+    due = memory_sub.add_parser("due", help="List accepted records due for review or expired")
+    due.add_argument("--limit", type=int, default=20, metavar="N")
+    due.add_argument("--json", action="store_true", dest="memory_json")
+    hook = memory_sub.add_parser("hook", help="Inspect or manage the vault's owned Git hooks")
+    hook.add_argument(
+        "hook_action", nargs="?", default="status", choices=("status", "install", "remove")
+    )
+    hook.add_argument("--yes", action="store_true", dest="confirm")
+    hook.add_argument("--json", action="store_true", dest="memory_json")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentbot")
     parser.add_argument(
@@ -727,16 +1653,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     help_parser = subparsers.add_parser("help", help="Show the command reference")
     help_parser.add_argument("help_topic", nargs="*", metavar="COMMAND")
-    help_parser.add_argument(
-        "--format",
-        # `menu` was the tab-separated dump the Command lib used to parse into
-        # Bash arrays before src/ui/menus.py built the menu directly. Nothing
-        # has called for it since; it outlived its only caller.
-        choices=("plain", "tui"),
-        default="plain",
-        dest="help_format",
-        help=argparse.SUPPRESS,
-    )
 
     install_parser = subparsers.add_parser(
         "install", help="Install Agentbot into this machine's agent homes"
@@ -780,6 +1696,8 @@ def build_parser() -> argparse.ArgumentParser:
     # here so the secret never crosses a shell argument vector.
     _add_gitlab_token_parser(subparsers)
 
+    _add_memory_parser(subparsers)
+
     mcp = subparsers.add_parser("mcp", help="Manage explicitly selected MCP servers")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_catalog = mcp_sub.add_parser("catalog", help="List validated MCP candidates")
@@ -818,27 +1736,26 @@ def build_parser() -> argparse.ArgumentParser:
     vscode_sub.add_parser("status", help="Preview VS Code changes without writing")
     vscode_sub.add_parser("seed", help="Record installed extensions into vscode.yaml")
     vscode_sub.add_parser("apply", help="Install extensions and merge owned settings")
-    for command in ("update", "upgrade"):
-        update = subparsers.add_parser(
-            command,
-            help="Refresh upstream skills and managed workspace/global outputs",
-        )
-        update.add_argument(
-            "--dry-run",
-            action="store_true",
-            help="Preview reconciliation and managed-surface changes without writing",
-        )
-        update.add_argument(
-            "--yes",
-            dest="confirm",
-            action="store_true",
-            help="Pre-approve source-owned skill and manifest changes",
-        )
-        update.add_argument(
-            "--interactive",
-            action="store_true",
-            help="Preview, confirm, and apply one update plan in this process",
-        )
+    update = subparsers.add_parser(
+        "update",
+        help="Refresh upstream skills and managed workspace/global outputs",
+    )
+    update.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview reconciliation and managed-surface changes without writing",
+    )
+    update.add_argument(
+        "--yes",
+        dest="confirm",
+        action="store_true",
+        help="Pre-approve source-owned skill and manifest changes",
+    )
+    update.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Preview, confirm, and apply one update plan in this process",
+    )
 
     workspace = subparsers.add_parser("workspace", help="Preview or render one workspace")
     workspace.add_argument("--profile", help="Workspace profile name")
@@ -867,6 +1784,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--cursor",
         action="store_true",
         help="Include generated Cursor rules (overrides the profile defaults)",
+    )
+    boot.add_argument(
+        "--no-memory",
+        action="store_true",
+        dest="no_memory",
+        help="Do not register this repository's project memory",
     )
     boot.add_argument("path", nargs="?", default=".", help="Workspace directory")
 
@@ -897,13 +1820,20 @@ def build_parser() -> argparse.ArgumentParser:
     skills = subparsers.add_parser("skills", help="Install and manage curated skills")
     skills_sub = skills.add_subparsers(dest="skills_command", required=True)
     skills_sub.add_parser("install", help="Install skills from skills.sources.yaml")
-    skills_sub.add_parser(
-        "update",
-        help="Refresh globally installed skills from ~/.agents/.skill-lock.json",
+    for name, help_text in (("update", "Preview or install current reviewed source revisions"),):
+        update_parser = skills_sub.add_parser(name, help=help_text)
+        update_parser.add_argument(
+            "--yes", dest="confirm", action="store_true", help="Apply the reviewed update"
+        )
+        update_parser.add_argument(
+            "--plan-sha256", help="Exact review ID printed by a prior preview"
+        )
+    restore = skills_sub.add_parser(
+        "restore", help="Preview or restore exact reviewed source revisions"
     )
-    skills_sub.add_parser(
-        "upgrade",
-        help="Alias for updating globally installed skills",
+    restore.add_argument("--yes", dest="confirm", action="store_true", help="Apply the restore")
+    restore.add_argument(
+        "--previous", action="store_true", help="Select the prior reviewed source snapshot"
     )
     skills_sub.add_parser("list", help="List installed skills under ~/.agents/skills")
     skills_sub.add_parser("doctor", help="Validate skills sources and tooling")
@@ -1162,7 +2092,7 @@ def handle_skills_command(lifecycle: Lifecycle, skills_command: str) -> int:
         # on a table.
         print_rollup(ok=ok + refreshed[0], check=check + refreshed[1], miss=miss + refreshed[2])
         return install_rc
-    if skills_command in {"update", "upgrade"}:
+    if skills_command == "update":
         title = skills_command.capitalize()
         result = lifecycle.update_skills()
         update_report = parse_update_output(result.stdout, result.stderr)
@@ -1276,7 +2206,10 @@ def run_agentbot_install(
     # prints the same one. The result still decides the exit code: this is a
     # quieter surface, not a dropped check.
     if os.environ.get("AGENTBOT_INSTALL_SHOW_DOCTOR", "1") == "0":
-        doctor_rc = 1 if outcome.diagnostics.issues else 0
+        # The same verdict print_doctor_summary gives: errors fail, warnings
+        # do not. Failing on any issue here exited 1 on a single warning the
+        # operator had no table to see.
+        doctor_rc = 1 if any(i.level.lower() == "error" for i in outcome.diagnostics.issues) else 0
     else:
         doctor_rc = print_doctor_summary(list(outcome.diagnostics.issues))
     # Last, after the report it describes -- the same place the sibling
@@ -1364,7 +2297,7 @@ def print_doctor(diagnostics: Diagnostics) -> int:
     return print_doctor_summary(list(diagnostics.collect().issues))
 
 
-def print_help_command(topic: str | None, *, output_format: str = "plain") -> int:
+def print_help_command(topic: str | None) -> int:
     spec: CommandSpec | None
     try:
         spec = command_by_name(topic) if topic else None

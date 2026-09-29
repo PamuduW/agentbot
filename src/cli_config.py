@@ -15,11 +15,13 @@ and VS Code settings.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from .atomic_io import write_text_atomic
 from .paths import AgentbotPaths
@@ -119,12 +121,18 @@ def read_desired(root: Path, cli: ManagedCli) -> tuple[dict[str, object], str | 
             parsed = tomllib.loads(text)
         except tomllib.TOMLDecodeError as error:
             return {}, f"cannot parse {source}: {error}"
-        nested = sorted(key for key, value in parsed.items() if isinstance(value, dict))
+        nested = sorted(
+            f"{key}.{inner}"
+            for key, value in parsed.items()
+            if isinstance(value, dict)
+            for inner, item in value.items()
+            if isinstance(item, dict)
+        )
         if nested:
-            # Merging a TOML table means rewriting a whole section without
-            # disturbing the rest of it, which this does not attempt. Refusing
-            # is better than half-writing somebody's [hooks] block.
-            return {}, f"{source}: tables are not supported yet ({', '.join(nested)})"
+            # One table level is merged key by key. Deeper nesting would mean
+            # rewriting sections such as [hooks.state] without disturbing the
+            # rest of them, which this does not attempt.
+            return {}, f"{source}: nested tables are not supported ({', '.join(nested)})"
 
     secrets = _secret_keys(parsed)
     if secrets:
@@ -166,12 +174,36 @@ def plan_cli(root: Path, cli: ManagedCli) -> CliConfigPlan:
     if error:
         plan.error = error
         return plan
-    for key, value in desired.items():
-        if key not in current:
+    for key, value in _owned(cli, desired):
+        present, existing = _lookup(current, key)
+        if not present:
             plan.additions[key] = value
-        elif current[key] != value:
-            plan.changes[key] = (current[key], value)
+        elif existing != value:
+            plan.changes[key] = (existing, value)
     return plan
+
+
+def _owned(cli: ManagedCli, desired: dict[str, object]) -> list[tuple[str, object]]:
+    """Owned keys, with a TOML table's keys named `table.key`."""
+    if cli.fmt == "json":
+        return list(desired.items())
+    owned: list[tuple[str, object]] = []
+    for key, value in desired.items():
+        if isinstance(value, dict):
+            owned.extend((f"{key}.{inner}", item) for inner, item in value.items())
+        else:
+            owned.append((key, value))
+    return owned
+
+
+def _lookup(current: dict[str, object], key: str) -> tuple[bool, object]:
+    if key in current:
+        return True, current[key]
+    table, _, inner = key.partition(".")
+    section = current.get(table)
+    if inner and isinstance(section, dict) and inner in section:
+        return True, section[inner]
+    return False, None
 
 
 def _render_toml_scalar(value: object) -> str:
@@ -187,45 +219,178 @@ def _render_toml_scalar(value: object) -> str:
 
 
 def merge_toml_text(text: str, desired: dict[str, object]) -> str:
-    """Set top-level keys in TOML text, leaving tables and comments alone.
+    """Set owned keys in TOML text, leaving everything else and comments alone.
 
-    Only the region before the first table header is rewritten, because a bare
-    `key = value` after a `[table]` header belongs to that table, not to the
-    document root.
+    Top-level keys are set only in the region before the first table header,
+    because a bare `key = value` after a `[table]` header belongs to that
+    table, not to the document root. A declared table's keys are set inside
+    that table's own region, and a missing table is appended.
+
+    Only lines that start a statement count as headers or keys: a line inside
+    a multiline string or array can look like `[features]` without being one.
+    An owned key or table already written in a form this merge does not edit
+    (an inline table, a dotted or quoted key) is refused before any change.
     """
     lines = text.splitlines(keepends=True)
-    first_table = len(lines)
-    for index, line in enumerate(lines):
-        if line.lstrip().startswith("["):
-            first_table = index
-            break
+    starts = _statement_starts(lines)
+    _refuse_unsupported(text, lines, starts, desired)
+    first_table = next(
+        (i for i, line in enumerate(lines) if starts[i] and line.lstrip().startswith("[")),
+        len(lines),
+    )
+    head, head_starts = lines[:first_table], starts[:first_table]
+    tail, tail_starts = lines[first_table:], starts[first_table:]
+    scalars = {key: value for key, value in desired.items() if not isinstance(value, dict)}
+    _set_keys(head, head_starts, scalars)
+    for table, values in desired.items():
+        if isinstance(values, dict):
+            tail, tail_starts = _set_table(tail, tail_starts, table, values)
+    return "".join(head) + "".join(tail)
 
-    head = lines[:first_table]
-    tail = lines[first_table:]
+
+def _statement_starts(lines: list[str]) -> list[bool]:
+    """For each line, whether it starts outside a multiline string, array, or inline table."""
+    starts: list[bool] = []
+    depth = 0
+    multiline: str | None = None
+    for line in lines:
+        starts.append(depth == 0 and multiline is None)
+        index = 0
+        while index < len(line):
+            if multiline:
+                if line.startswith(multiline, index):
+                    multiline = None
+                    index += 3
+                elif multiline == '"""' and line[index] == "\\":
+                    index += 2
+                else:
+                    index += 1
+                continue
+            character = line[index]
+            if character == "#":
+                break
+            if line.startswith('"""', index) or line.startswith("'''", index):
+                multiline = line[index : index + 3]
+                index += 3
+                continue
+            if character in "\"'":
+                index += 1
+                while index < len(line) and line[index] != character:
+                    index += 2 if character == '"' and line[index] == "\\" else 1
+                index += 1
+                continue
+            if character in "[{":
+                depth += 1
+            elif character in "]}":
+                depth = max(0, depth - 1)
+            index += 1
+    return starts
+
+
+def _key_line(key: str) -> re.Pattern[str]:
+    return re.compile(rf"^\s*{re.escape(key)}\s*=")
+
+
+def _table_header(table: str) -> re.Pattern[str]:
+    return re.compile(rf"^\s*\[\s*{re.escape(table)}\s*\]\s*(#.*)?$")
+
+
+def _refuse_unsupported(
+    text: str, lines: list[str], starts: list[bool], desired: dict[str, object]
+) -> None:
+    """Stop before editing a key or table written in a form this merge cannot edit safely."""
+    current = tomllib.loads(text) if text.strip() else {}
+    first_table = next(
+        (i for i, line in enumerate(lines) if starts[i] and line.lstrip().startswith("[")),
+        len(lines),
+    )
+    for key, value in desired.items():
+        if key not in current:
+            continue
+        if isinstance(value, dict):
+            found = any(
+                starts[i] and _table_header(key).match(line.rstrip("\n"))
+                for i, line in enumerate(lines)
+            )
+            form = f"[{key}] is written as an inline table or with dotted keys"
+        else:
+            found = any(starts[i] and _key_line(key).match(lines[i]) for i in range(first_table))
+            form = f"{key} is written as a quoted or dotted key"
+        if not found:
+            raise ValueError(f"{form}, which Agentbot does not edit; set it by hand")
+
+
+def _set_keys(region: list[str], starts: list[bool], desired: dict[str, object]) -> None:
+    """Set keys within one region: the document root or one table's body."""
     try:
-        current = tomllib.loads("".join(head))
+        current = tomllib.loads("".join(region))
     except tomllib.TOMLDecodeError:
         current = {}
     for key, value in desired.items():
-        pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
-        for index, line in enumerate(head):
-            if not pattern.match(line):
+        pattern = _key_line(key)
+        for index, line in enumerate(region):
+            if not starts[index] or not pattern.match(line):
                 continue
             # A key already holding the declared value is left alone: rewriting
             # it would drop the operator's note for no change in meaning.
             if key in current and current[key] == value:
                 break
-            head[index] = f"{key} = {_render_toml_scalar(value)}{_trailing_comment(line)}\n"
+            region[index] = f"{key} = {_render_toml_scalar(value)}{_trailing_comment(line)}\n"
             break
         else:
             # Appending to a file whose last line has no newline produced
             # `model = "gpt-5"effort = "low"`, which is not TOML at all. The
             # merge was rejected by the verify step, so apply failed outright on
             # any config that did not end in a newline.
-            if head and not head[-1].endswith("\n"):
-                head[-1] += "\n"
-            head.append(f"{key} = {_render_toml_scalar(value)}\n")
-    return "".join(head) + "".join(tail)
+            if region and not region[-1].endswith("\n"):
+                region[-1] += "\n"
+            region.append(f"{key} = {_render_toml_scalar(value)}\n")
+            starts.append(True)
+
+
+def _set_table(
+    lines: list[str], starts: list[bool], table: str, values: dict[str, object]
+) -> tuple[list[str], list[bool]]:
+    header = _table_header(table)
+    start = next(
+        (i for i, line in enumerate(lines) if starts[i] and header.match(line.rstrip("\n"))),
+        None,
+    )
+    if start is None:
+        if lines and not lines[-1].endswith("\n"):
+            lines = [*lines[:-1], lines[-1] + "\n"]
+        body: list[str] = []
+        body_starts: list[bool] = []
+        _set_keys(body, body_starts, values)
+        separator = ["\n"] if lines and lines[-1].strip() else []
+        added = [*separator, f"[{table}]\n", *body]
+        return [*lines, *added], [*starts, *([True] * len(added))]
+    end = next(
+        (
+            i
+            for i in range(start + 1, len(lines))
+            if starts[i] and lines[i].lstrip().startswith("[")
+        ),
+        len(lines),
+    )
+    region = lines[start + 1 : end]
+    region_starts = starts[start + 1 : end]
+    # Blank lines before the next header stay after any key appended here.
+    trailing = 0
+    while trailing < len(region) and not region[len(region) - 1 - trailing].strip():
+        trailing += 1
+    body = region[: len(region) - trailing]
+    body_starts = region_starts[: len(region) - trailing]
+    _set_keys(body, body_starts, values)
+    kept = region[len(region) - trailing :]
+    merged = [*lines[: start + 1], *body, *kept, *lines[end:]]
+    merged_starts = [
+        *starts[: start + 1],
+        *body_starts,
+        *region_starts[len(region) - trailing :],
+        *starts[end:],
+    ]
+    return merged, merged_starts
 
 
 def _trailing_comment(line: str) -> str:
@@ -253,19 +418,43 @@ def _merged_text(cli: ManagedCli, original: str, desired: dict[str, object]) -> 
     return merge_toml_text(original, desired)
 
 
-def _verify(cli: ManagedCli, text: str, desired: dict[str, object]) -> None:
-    """Re-parse what we produced and confirm the owned keys actually landed.
-
-    The input parsed a moment ago, so an unparseable result is this code's
-    fault, not the operator's file.
-    """
+def _parse(cli: ManagedCli, text: str) -> dict[str, Any]:
     if cli.fmt == "json":
-        parsed = json.loads(strip_jsonc(text))
-    else:
-        parsed = tomllib.loads(text)
-    for key, value in desired.items():
-        if parsed.get(key) != value:
+        return dict(json.loads(strip_jsonc(text or "{}")))
+    return tomllib.loads(text)
+
+
+def _verify(cli: ManagedCli, text: str, desired: dict[str, object], original: str = "") -> None:
+    """Re-parse what we produced: the owned keys landed, and nothing else changed.
+
+    The input parsed a moment ago, so an unparseable result, or any other
+    value that moved, is this code's fault, not the operator's file.
+    """
+    parsed = _parse(cli, text)
+    owned = _owned(cli, desired)
+    for key, value in owned:
+        present, landed = _lookup(parsed, key)
+        if not present or landed != value:
             raise ValueError(f"{cli.name}: {key} did not survive the merge")
+    keys = [key for key, _ in owned]
+    if _without(parsed, keys) != _without(_parse(cli, original), keys):
+        raise ValueError(f"{cli.name}: the merge would change settings Agentbot does not own")
+
+
+def _without(document: dict[str, Any], keys: list[str]) -> dict[str, Any]:
+    """A copy without the owned keys; a table left empty by that goes too."""
+    rest = copy.deepcopy(document)
+    for key in keys:
+        if key in rest:
+            del rest[key]
+            continue
+        table, _, inner = key.partition(".")
+        section = rest.get(table)
+        if inner and isinstance(section, dict):
+            section.pop(inner, None)
+            if not section:
+                del rest[table]
+    return rest
 
 
 @dataclass
@@ -313,15 +502,18 @@ def apply(paths: AgentbotPaths) -> CliConfigReport:
                 cli.config_path.read_text(encoding="utf-8") if cli.config_path.is_file() else None
             )
             merged = _merged_text(cli, original or "", desired)
-            _verify(cli, merged, desired)
-            write_text_atomic(cli.config_path, merged, backup=cli.config_path.is_file())
-            # Recorded only after the write succeeds: a target that was never
-            # written needs no undoing, and trying to undo it is how a rollback
-            # turns one failure into two.
+            _verify(cli, merged, desired, original or "")
+            # Recorded before the write: the replacement can succeed and the
+            # directory sync after it fail, and that target must still be
+            # rolled back. One that was never changed is skipped below.
             originals[cli.config_path] = original
+            write_text_atomic(cli.config_path, merged, backup=cli.config_path.is_file())
     except (ValueError, OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
         restored = []
         for path, original in originals.items():
+            now = path.read_text(encoding="utf-8") if path.is_file() else None
+            if now == original:
+                continue  # never replaced: nothing to undo
             if original is None:
                 path.unlink(missing_ok=True)
             else:

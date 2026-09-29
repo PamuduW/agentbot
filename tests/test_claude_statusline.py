@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -15,6 +16,10 @@ class ClaudeStatuslineTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
+        # The directory the statusline shows. Short on purpose: the statusline
+        # abbreviates a long path, and TMPDIR can be long.
+        self.workdir = Path(tempfile.mkdtemp(prefix="sl-", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, self.workdir, True)
         self.claude_home = self.root / "home" / ".claude"
         source_dir = self.root / "global" / "claude"
         source_dir.mkdir(parents=True)
@@ -53,7 +58,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
     def test_real_statusline_preserves_sparse_fields(self) -> None:
         result = self._run_real_statusline(
             {
-                "workspace": {"current_dir": str(self.root)},
+                "workspace": {"current_dir": str(self.workdir)},
                 "model": {"display_name": "High"},
                 "context_window": {"used_percentage": 42},
             }
@@ -68,7 +73,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
     def test_real_statusline_accepts_null_pre_response_fields(self) -> None:
         result = self._run_real_statusline(
             {
-                "workspace": {"current_dir": str(self.root)},
+                "workspace": {"current_dir": str(self.workdir)},
                 "model": {"display_name": "Opus"},
                 "output_style": None,
                 "context_window": None,
@@ -91,7 +96,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
     def test_real_statusline_renders_complete_high_effort_payload(self) -> None:
         result = self._run_real_statusline(
             {
-                "workspace": {"current_dir": str(self.root)},
+                "workspace": {"current_dir": str(self.workdir)},
                 "model": {"display_name": "Opus 4.1 (1M context)"},
                 "output_style": {"name": "default"},
                 "context_window": {
@@ -120,7 +125,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertEqual("", result.stderr)
         self.assertEqual(
-            f"Opus 4.1 High (1M context) · {self.root} · "
+            f"Opus 4.1 High (1M context) · {self.workdir} · "
             "Context 42% used · 5h 76% left (reset Jan 1 00:00) · "
             "7d 59% left (reset Jan 1 00:00)",
             self._plain_output(result),
@@ -131,7 +136,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
     ) -> None:
         result = self._run_real_statusline(
             {
-                "workspace": {"current_dir": str(self.root)},
+                "workspace": {"current_dir": str(self.workdir)},
                 "model": {"display_name": "Opus 4.1 (1M context)"},
                 "context_window": {
                     "used_percentage": 42,
@@ -161,7 +166,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
         combined = " · ".join(lines)
         for expected in (
             "Opus 4.1",
-            self.root.name,
+            self.workdir.name,
             "Context 42%",
             "5h 76%",
             "7d 59%",
@@ -171,7 +176,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
     def test_real_statusline_ignores_invalid_columns(self) -> None:
         result = self._run_real_statusline(
             {
-                "workspace": {"current_dir": str(self.root)},
+                "workspace": {"current_dir": str(self.workdir)},
                 "model": {"display_name": "Opus"},
                 "context_window": {"used_percentage": 10},
             },
@@ -180,14 +185,14 @@ class ClaudeStatuslineTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            f"Opus · {self.root} · Context 10% used",
+            f"Opus · {self.workdir} · Context 10% used",
             self._plain_output(result),
         )
 
     def test_real_statusline_hides_unavailable_rate_limits(self) -> None:
         result = self._run_real_statusline(
             {
-                "workspace": {"current_dir": str(self.root)},
+                "workspace": {"current_dir": str(self.workdir)},
                 "model": {"display_name": "Opus"},
                 "context_window": {
                     "used_percentage": 10,
@@ -199,7 +204,7 @@ class ClaudeStatuslineTests(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertEqual("", result.stderr)
         self.assertEqual(
-            f"Opus · {self.root} · Context 10% used",
+            f"Opus · {self.workdir} · Context 10% used",
             self._plain_output(result),
         )
 

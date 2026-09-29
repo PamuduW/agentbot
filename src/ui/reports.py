@@ -12,6 +12,7 @@ from typing import Literal
 
 from ..commands import CommandSpec, commands_for_surface
 from ..mcp_models import McpCatalog, McpPlan, McpStatusReport
+from ..memory_retrieve import DATA_NOTICE
 from ..models import Table, TableSection
 from .table import (
     DIM,
@@ -616,6 +617,430 @@ def print_boost_status(status) -> None:
     print_rollup(ok=ok, check=check, miss=miss)
 
 
+def _memory_upstream(status) -> tuple[str, str, str]:
+    if status.ahead is None or status.behind is None:
+        return ("Upstream", "no upstream", "info")
+    if status.ahead == status.behind == 0:
+        return ("Upstream", "up to date", "ok")
+    return ("Upstream", f"{status.ahead} ahead, {status.behind} behind", "check")
+
+
+def print_memory_status(status) -> None:
+    """Render where the vault is, its schema, Git state, and validation totals."""
+    print_header("Memory", "Agentbot › Memory › Status")
+    if status.state == "unconfigured":
+        print_table([("Vault", "not configured", "skipped")])
+        print()
+        print_note(
+            "No memory vault is configured on this machine. Memory is optional; nothing else "
+            "depends on it. Set one up with agentbot memory setup --path, --clone, or --new."
+        )
+        print_rollup(ok=0, check=0, miss=0)
+        return
+    rows = [("Vault", str(status.root), "ok")]
+    if status.state == "broken":
+        rows.append(("State", status.problem or "unreadable", "error"))
+    else:
+        changed = status.changed_paths
+        records = ", ".join(f"{count} {name}" for name, count in status.statuses.items())
+        rows += [
+            ("Schema", f"v{status.schema}", "ok"),
+            ("Branch", f"{status.branch or 'detached'} @ {status.commit or 'no commits'}", "info"),
+            (
+                "Working tree",
+                "clean" if changed == 0 else f"{changed} changed path(s)",
+                "ok" if changed == 0 else "check",
+            ),
+            _memory_upstream(status),
+            ("Records", records, "info"),
+            ("Proposals", f"{status.drafts} open", "info"),
+            (
+                "Review queue",
+                f"{status.due} due, {status.expired} expired",
+                "check" if status.due or status.expired else "ok",
+            ),
+            (
+                "Validation",
+                "valid"
+                if status.state == "ready"
+                else f"{status.errors} error(s), "
+                f"{status.warnings} warning(s); run agentbot memory validate",
+                "ok" if status.state == "ready" else "error" if status.errors else "warn",
+            ),
+        ]
+    ok, check, miss = print_table(rows)
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_validation(report) -> None:
+    """Render findings by relative path and rule. Never a value or a note body."""
+    print_header("Memory validation", "Agentbot › Memory › Validate")
+    records = sum(1 for record in report.records if not record.draft)
+    drafts = len(report.records) - records
+    rows = [
+        ("Vault", str(report.root), "ok"),
+        ("Schema", f"v{report.schema}", "ok"),
+        ("Records", f"{records} record(s), {drafts} proposal(s)", "info"),
+    ]
+    for item in report.findings:
+        location = item.path if item.line is None else f"{item.path}:{item.line}"
+        acknowledged = item.severity == "warning" and item.rule in report.acknowledged
+        result = "skipped (acknowledged)" if acknowledged else item.severity
+        rows.append((location, f"{item.rule}: {item.message}", result))
+    if not report.findings:
+        rows.append(("Findings", "none", "ok"))
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_due(items, *, total: int, today) -> None:
+    """Accepted records due for review or past validity. Status stays as written."""
+    print_header("Memory review queue", "Agentbot › Memory › Due")
+    if not items:
+        print_table([("Review queue", "nothing due or expired", "ok")])
+        print_rollup(ok=1, check=0, miss=0)
+        return
+    # Titles are record text.
+    print_note(DATA_NOTICE)
+    print()
+    rows = []
+    for item in items:
+        record = item.record
+        flags = [
+            f"review since {record.review_after}" if item.due else "",
+            f"expired after {record.valid_until}" if item.expired else "",
+        ]
+        detail = " · ".join(part for part in (record.path, record.title, *flags) if part)
+        rows.append((record.id or record.date, detail, "stale" if item.expired else "check"))
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    if total > len(items):
+        print_note(f"Showing {len(items)} of {total}. Use --limit to see more (at most 100).")
+    print_note(
+        f"UTC date {today.isoformat()}. Due and expired are derived: no record's status "
+        "or file changed. Expired records drop out of default retrieval."
+    )
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def _pointer(hit) -> str:
+    record = hit.record
+    where = record.scope
+    projects = f" {','.join(record.projects)}" if record.projects else ""
+    labels = f" [{', '.join(hit.labels)}]" if hit.labels else ""
+    return f"{record.path} · {record.status} · {record.date} · {where}{projects}{labels}"
+
+
+def print_memory_search(result) -> None:
+    """Results with provenance first and a bounded excerpt."""
+    print_header("Memory search", "Agentbot › Memory › Search")
+    if not result.hits:
+        print_table([("Results", "no accepted record matched within scope", "info")])
+        print_rollup(ok=1, check=0, miss=0)
+        return
+    # Agents read this screen too: excerpts are record text.
+    print_note(DATA_NOTICE)
+    print()
+    rows = []
+    for hit in result.hits:
+        excerpt = f" — line {hit.line}: {hit.excerpt}" if hit.excerpt else ""
+        rows.append(
+            (
+                hit.record.id or hit.record.type,
+                f"{hit.record.title} · {_pointer(hit)}{excerpt}",
+                "info",
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    if result.excluded:
+        print()
+        print_note(
+            "Not offered: "
+            + ", ".join(f"{count} {reason}" for reason, count in sorted(result.excluded.items()))
+            + ". Scope is never guessed; --history reaches lifecycle-excluded records."
+        )
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_record(hit, body: str) -> None:
+    """One record's provenance, then its body as written."""
+    print_header(hit.record.title, "Agentbot › Memory › Show")
+    print_table(
+        [
+            ("ID", hit.record.id, "info"),
+            ("Source", _pointer(hit), "info"),
+        ],
+        wrap_details=True,
+    )
+    print()
+    print_note(DATA_NOTICE)
+    print()
+    print(body.rstrip("\n"))
+
+
+def print_memory_backup(result) -> None:
+    """What a backup captured, or would capture, and what Git never carries."""
+    print_header("Memory backup", "Agentbot › Memory › Backup")
+    word = {"preview": "preview", "completed": "ok"}.get(result.state, "warn")
+    rows = [
+        ("Destination", str(result.destination), word),
+        ("HEAD", result.head or "—", "info"),
+        ("Refs", f"{len(result.refs)} branch(es) and tag(s)", "info"),
+        (
+            "Working tree",
+            "clean" if not result.changed_paths else f"{result.changed_paths} uncommitted path(s)",
+            "ok" if not result.changed_paths else "check",
+        ),
+    ]
+    if result.state != "preview":
+        rows.append(
+            (
+                "Trial restore",
+                "validates clean" if not result.findings else f"{result.findings} finding(s)",
+                "ok" if not result.findings else "check",
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    for note in result.notes:
+        print_note(note)
+    if result.state == "preview":
+        print_note("Preview only. Rerun with --yes to write the mirror and manifest.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_restore(result) -> None:
+    """The restore target and its validation, or the preview of both."""
+    print_header("Memory restore", "Agentbot › Memory › Restore")
+    rows = [
+        ("Destination", str(result.destination), "preview" if result.state == "preview" else "ok"),
+        ("HEAD", f"{result.branch or 'detached'} @ {result.head or '—'}", "info"),
+    ]
+    if result.state != "preview":
+        rows.append(
+            (
+                "Validation",
+                "valid" if not result.findings else f"{result.findings} finding(s)",
+                "ok" if not result.findings else "error",
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    for note in result.notes:
+        print_note(note)
+    if result.state == "preview":
+        print_note("Preview only. Rerun with --yes to clone into the destination.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_setup(result) -> None:
+    """This machine's vault choice: preview, outcome, or current setting."""
+    print_header("Memory setup", "Agentbot › Memory › Setup")
+    if result.state == "unconfigured":
+        print_table([("Vault", "not configured", "skipped")])
+    else:
+        word = {"preview": "preview", "configured": "applied", "removed": "applied"}.get(
+            result.state, "info"
+        )
+        vault = result.vault
+        rows = [("Vault", vault.get("path") or "—", word)]
+        rows.append(("Remote", vault.get("remote") or "none", "info"))
+        if vault.get("branch"):
+            rows.append(("Branch", vault["branch"], "info"))
+        if vault.get("identity"):
+            rows.append(("Identity", ", ".join(c[:12] for c in vault["identity"]), "info"))
+        if result.config:
+            rows.append(("Config", result.config, "info"))
+        print_table(rows, wrap_details=True)
+    print()
+    if result.state == "preview":
+        print_note("Preview only. Rerun with --yes to apply.")
+    for note in result.notes:
+        print_note(note)
+    print_rollup(ok=1 if result.state in {"configured", "removed", "shown"} else 0, check=0, miss=0)
+
+
+def print_memory_project(result) -> None:
+    """How the current directory resolves to project memory."""
+    print_header("Memory project", "Agentbot › Memory › Project")
+    identity = result.identity
+    rows = []
+    if identity is None:
+        rows.append(("Repository", "not inside a Git repository", "skipped"))
+    else:
+        rows.append(("Repository", str(identity.toplevel), "info"))
+        rows.append(("Origin", identity.canonical or "no remote (local repository)", "info"))
+        word = {"resolved": "ok", "unregistered": "skipped", "collision": "conflict"}[result.state]
+        detail = (
+            f"{result.entry['folder']} ({result.entry['id']})"
+            if result.entry
+            else "no project memory yet"
+        )
+        rows.append(("Project", detail, word))
+        rows += [("Problem", problem, "error") for problem in result.problems]
+    ok, check, miss = print_table(rows, wrap_details=True)
+    if result.state == "collision":
+        print()
+        print_note("Project writes stop until the registry collision is fixed.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_project_write(result, *, action: str) -> None:
+    """One project-memory write: where it landed, and that it awaits sync."""
+    print_header("Memory project", f"Agentbot › Memory › Project › {action}")
+    state = result.get("state", "")
+    word = "preview" if state == "preview" else "applied"
+    rows = [
+        (key.replace("_", " ").capitalize(), str(value), "info")
+        for key, value in result.items()
+        if key != "state"
+    ]
+    rows.insert(0, ("Result", state, word))
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    if state == "preview":
+        print_note("Preview only. Rerun with --yes to apply.")
+    elif state == "committed-locally":
+        print_note("Committed to the vault locally; it is pushed on the next sync.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_sync(payload, *, title: str) -> None:
+    """Sync outcome, settings, or conflicts, as label/value rows."""
+    print_header("Memory sync", f"Agentbot › Memory › {title.capitalize()}")
+    rows = []
+    state = payload.get("state")
+    if state:
+        word = {"synced": "ok", "offline": "warn", "paused": "warn", "manual": "info"}.get(
+            state, "error"
+        )
+        rows.append(("State", state, word))
+    for key, value in payload.items():
+        if key in {"state", "settings", "conflicts", "files"}:
+            continue
+        rows.append(
+            (
+                key.replace("_", " ").capitalize(),
+                json.dumps(value) if isinstance(value, dict) else str(value),
+                "info",
+            )
+        )
+    for key, value in (payload.get("settings") or {}).items():
+        rows.append(
+            (
+                key.replace("_", " ").capitalize(),
+                json.dumps(value) if isinstance(value, dict) else str(value),
+                "info",
+            )
+        )
+    for conflict in (
+        payload.get("conflicts", []) if isinstance(payload.get("conflicts"), list) else []
+    ):
+        rows.append(
+            (
+                conflict["op"][:8],
+                f"{conflict['tier']} {conflict['kind']} {conflict['path']}: {conflict['reason']}",
+                "conflict",
+            )
+        )
+    for item in payload.get("files", []):
+        rows.append(
+            (
+                item["path"],
+                "current and mine differ" if item["current"] != item["mine"] else "same",
+                "check",
+            )
+        )
+    ok, check, miss = print_table(
+        rows or [("Sync", "nothing to report", "info")], wrap_details=True
+    )
+    if state == "offline":
+        print()
+        print_note("Offline: writes stay committed locally and are pushed on the next sync.")
+    elif state == "paused":
+        print()
+        print_note("Paused: commit or revert the vault's manual edits, then sync again.")
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_result(result, *, title: str) -> None:
+    """A generic memory action result, as label/value rows."""
+    print_header("Memory", f"Agentbot › Memory › {title.capitalize()}")
+    state = result.get("state", "")
+    rows = [("Result", state, "preview" if state == "preview" else "info")]
+    for key, value in result.items():
+        if key in {"state", "body", "notice"}:
+            continue
+        if key == "proposals":
+            # The path in the wrapping column: it is what approve and reject
+            # take, and the first column cut it short.
+            rows += [
+                (item["type"], f"{item['title']} · {item['date']} · {item['path']}", "check")
+                for item in value
+            ]
+            continue
+        text = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+        rows.append(
+            (key.replace("_", " ").capitalize(), text, "warn" if key == "warning" else "info")
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    # Titles and bodies are record text.
+    if result.get("notice") or result.get("body"):
+        print()
+        print_note(DATA_NOTICE)
+    if result.get("body"):
+        print()
+        for line in str(result["body"]).splitlines():
+            print(f"  {line}")
+    if state == "preview":
+        print()
+        print_note("Preview only. Rerun with --yes to apply.")
+    if state == "open":
+        return  # one proposal's text: nothing here is a health check
+    if state == "queue":
+        # Not a health rollup: the Result and Open rows are not "ok" items.
+        waiting = len(result.get("proposals") or [])
+        print()
+        print_note(
+            f"{waiting} proposal(s) wait for your review. Run agentbot memory review in "
+            "your terminal to go through them."
+            if waiting
+            else "No proposals are waiting."
+        )
+        return
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
+def print_memory_hooks(state, *, action: str, applied: bool) -> None:
+    """Render the owned vault hooks, and what an install or remove did or would do."""
+    from ..memory_hook import SCANNER_GAP
+
+    print_header("Memory hooks", "Agentbot › Memory › Hooks")
+    if state.problem:
+        print_table([("Hooks", state.problem, "error")], wrap_details=True)
+        print_rollup(ok=0, check=0, miss=1)
+        return
+    words = {"owned": "ok", "absent": "missing", "stale": "stale", "unowned": "conflict"}
+    rows = [("Directory", str(state.hooks_dir), "info")]
+    for name, current in state.states.items():
+        changed = name in state.applied
+        rows.append(
+            (
+                name,
+                current + (" (changed)" if changed else ""),
+                "applied" if changed else words[current],
+            )
+        )
+    ok, check, miss = print_table(rows, wrap_details=True)
+    print()
+    if action != "status" and not applied:
+        print_note(f"Preview only. Rerun with --yes to {action} the Agentbot-owned hooks.")
+    if "unowned" in state.states.values():
+        print_note("A hook without the Agentbot marker is never replaced or removed.")
+    print_note(SCANNER_GAP)
+    print_rollup(ok=ok, check=check, miss=miss)
+
+
 def print_skills_report(
     results: list, *, title: str, include_header: bool = True, include_rollup: bool = True
 ) -> tuple[int, tuple[int, int, int]]:
@@ -743,7 +1168,7 @@ def print_reconciliation_report(result) -> tuple[int, int, int]:
     )
 
 
-def print_workspace_report(result) -> None:
+def print_workspace_report(result, extra_rows: list[tuple[str, str, str]] | None = None) -> None:
     from ..workspace_service import WorkspaceResult
 
     if not isinstance(result, WorkspaceResult):
@@ -762,6 +1187,7 @@ def print_workspace_report(result) -> None:
     ]
     if not rows:
         rows.append((str(result.path), result.message, result.status))
+    rows.extend(extra_rows or [])
     ok, check, miss = print_table(rows, wrap_details=True)
     print()
     print(f"  {result.message}")
@@ -952,6 +1378,9 @@ def print_update_result(outcome) -> tuple[int, int, int]:
                 "check" if cli_config.failures else ("applied" if cli_changed else "unchanged"),
             )
         )
+
+    for surface in getattr(outcome, "platform", ()):
+        rows.append((surface.label, surface.detail, surface.result))
 
     if not rows:
         rows.append(("Update", outcome.message or outcome.status, "ok"))

@@ -7,7 +7,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from src import cli_config
 from src.cli_config import (
     apply,
     desired_source,
@@ -153,13 +155,91 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(parsed["model"], "root")
         self.assertEqual(parsed["tui"]["model"], "table-scoped")
 
-    def test_a_declared_toml_table_is_refused_not_half_written(self) -> None:
-        self._declare("codex", '[hooks]\nbefore = "x"\n')
+    def test_a_nested_toml_table_is_refused_not_half_written(self) -> None:
+        self._declare("codex", '[hooks.state]\nbefore = "x"\n')
 
         plan = plan_cli(self.paths.root, self.clis["codex"])
 
         self.assertIsNotNone(plan.error)
-        self.assertIn("tables are not supported", plan.error)
+        self.assertIn("nested tables are not supported", plan.error)
+
+    def test_a_declared_table_key_merges_and_its_neighbours_survive(self) -> None:
+        """Codex's native memory switch lives in [features]; only that key is owned."""
+        self._write_config(
+            "codex",
+            'model = "m"\n\n[features]\napps = true\nmemories = true # native\n\n'
+            "[hooks]\n[hooks.state]\nx = 1\n",
+        )
+        self._declare("codex", 'model = "m"\n\n[features]\nmemories = false\n')
+
+        plan = plan_cli(self.paths.root, self.clis["codex"])
+        self.assertEqual({"features.memories": (True, False)}, plan.changes)
+        apply(self.paths)
+
+        text = self.clis["codex"].config_path.read_text(encoding="utf-8")
+        self.assertIn("memories = false # native\n", text)
+        config = self._read_config("codex")
+        self.assertEqual({"apps": True, "memories": False}, config["features"])
+        self.assertEqual({"state": {"x": 1}}, config["hooks"])
+        self.assertTrue(plan_cli(self.paths.root, self.clis["codex"]).is_noop)
+
+    def test_a_missing_table_and_key_are_added(self) -> None:
+        for original in (
+            'model = "m"\n',
+            'model = "m"\n\n[features]\napps = true\n\n[tui]\nt = 1\n',
+        ):
+            with self.subTest(original=original):
+                merged = merge_toml_text(original, {"features": {"memories": False}})
+                parsed = tomllib.loads(merged)
+                self.assertFalse(parsed["features"]["memories"])
+                self.assertEqual("m", parsed["model"])
+                if "[tui]" in original:
+                    self.assertEqual({"t": 1}, parsed["tui"])
+                    self.assertTrue(parsed["features"]["apps"])
+
+    def test_lines_inside_a_multiline_string_are_never_edited(self) -> None:
+        """Review 1, M-R7: a string can hold lines that look like TOML."""
+        original = 'notes = """\n[features]\nmemories = true\n"""\n\n[features]\nmemories = true\n'
+        merged = merge_toml_text(original, {"features": {"memories": False}})
+        parsed = tomllib.loads(merged)
+        self.assertFalse(parsed["features"]["memories"])
+        self.assertEqual(tomllib.loads(original)["notes"], parsed["notes"])
+
+    def test_a_table_written_inline_or_dotted_is_refused_untouched(self) -> None:
+        for original in (
+            "features = { memories = true }\n",
+            "features.memories = true\n",
+        ):
+            with self.subTest(original=original), self.assertRaises(ValueError) as raised:
+                merge_toml_text(original, {"features": {"memories": False}})
+            self.assertIn("set it by hand", str(raised.exception))
+
+    def test_arrays_of_tables_and_other_settings_survive(self) -> None:
+        original = (
+            'model = "x"\n\n[[profiles]]\nname = "a"\n\n[[profiles]]\nname = "b"\n'
+            "\n[features]  # the operator's note\nother = 1\n"
+        )
+        merged = merge_toml_text(original, {"features": {"memories": False}})
+        parsed = tomllib.loads(merged)
+        self.assertEqual(["a", "b"], [p["name"] for p in parsed["profiles"]])
+        self.assertEqual({"other": 1, "memories": False}, parsed["features"])
+        self.assertIn("[features]  # the operator's note", merged)
+
+    def test_a_target_replaced_before_a_later_failure_is_rolled_back(self) -> None:
+        """Review 1, M-R7: the write can replace the file and then fail."""
+        self._write_config("claude", '{"model": "old"}')
+        self._declare("claude", '{"model": "new"}')
+        real = cli_config.write_text_atomic
+
+        def replace_then_fail(path, text, **kwargs):
+            real(path, text, **kwargs)
+            if path == self.clis["claude"].config_path and '"new"' in text:
+                raise OSError("directory sync failed")
+
+        with patch.object(cli_config, "write_text_atomic", side_effect=replace_then_fail):
+            report = apply(self.paths)
+        self.assertFalse(report.applied)
+        self.assertEqual("old", self._read_config("claude")["model"])
 
     def test_credential_shaped_values_are_refused(self) -> None:
         """The desired-state files are committed, so a literal here would be a
@@ -277,6 +357,49 @@ class CliConfigTests(unittest.TestCase):
 
         self.assertEqual(
             [row[0] for row in rows], ["claude config", "codex config", "cursor config"]
+        )
+
+    def test_install_reports_a_merge_it_just_made_as_applied(self) -> None:
+        """Break caught: install printed "1 to merge; run cli-config apply" after merging it."""
+        from unittest.mock import patch
+
+        from src import platform_surfaces
+
+        self._write_config("codex", 'model = "old"\n')
+        self._declare("codex", 'model = "new"\n')
+        with (
+            patch("src.codex_remote_control.ensure", return_value=("on", "ok")),
+            patch("src.codex_remote_control.inspect", return_value=("on", "ok")),
+        ):
+            self.assertEqual(
+                ("1 to merge; run `agentbot cli-config apply`", "check"),
+                platform_surfaces._cli_config(self.paths, None, apply=False),
+            )
+            self.assertEqual(
+                ("1 merged", "applied"), platform_surfaces._cli_config(self.paths, None, apply=True)
+            )
+            self.assertEqual(
+                ("1 CLI(s) current", "ok"),
+                platform_surfaces._cli_config(self.paths, None, apply=True),
+            )
+
+
+class ShippedDesiredStateTests(unittest.TestCase):
+    """The desired-state files this repository ships, not fixtures."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_claude_skill_overrides_use_only_documented_states(self) -> None:
+        """A typo in a state would silently leave the skill listed (2026-09-27 skill review)."""
+        desired = json.loads((self.ROOT / "cli" / "claude.settings.json").read_text())
+        overrides = desired["skillOverrides"]
+        states = {"on", "name-only", "user-invocable-only", "off"}
+        self.assertEqual({}, {k: v for k, v in overrides.items() if v not in states})
+        self.assertNotIn("agent-memory", overrides)
+        # Measured with /context on Claude Code 2.1.283: `plugin:skill` keys do
+        # not reach plugins synced from claude.ai; only `anthropic-skills:` does.
+        self.assertEqual(
+            [], [k for k in overrides if ":" in k and not k.startswith("anthropic-skills:")]
         )
 
 

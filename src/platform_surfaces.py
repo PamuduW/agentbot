@@ -38,6 +38,10 @@ def _vscode(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> tupl
     if report.failures:
         return f"{len(report.failures)} host(s) need attention", "check"
     if report.has_work:
+        # An applied report still carries the plan it applied, so work it lists
+        # is work just done, not work waiting.
+        if apply and report.applied:
+            return "changes applied", "applied"
         return "changes pending; run `agentbot vscode apply`", "check"
     return "extensions and settings current", "ok"
 
@@ -65,6 +69,8 @@ def _cli_config(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> 
         return f"codex {remote_detail}", "check"
     pending = [name for name, plan in report.plans.items() if not plan.is_noop and not plan.skipped]
     if pending:
+        if apply and report.applied:
+            return f"{len(pending)} merged", "applied"
         return f"{len(pending)} to merge; run `agentbot cli-config apply`", "check"
     declared = [name for name, plan in report.plans.items() if not plan.skipped]
     if not declared:

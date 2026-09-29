@@ -204,26 +204,6 @@ class GraphifyIntegrationTests(unittest.TestCase):
         self.assertEqual("ready", status.state)
         refresh.assert_called_once_with()
 
-    def test_lifecycle_sync_enables_graphify_when_cli_exists(self) -> None:
-        from src.lifecycle import Lifecycle
-
-        self._write_graphify()
-        log = self.root / "graphify-sync.log"
-        service = Lifecycle(self._paths())
-        with (
-            patch.dict(
-                os.environ,
-                {**self._env(), "GRAPHIFY_TEST_LOG": str(log)},
-                clear=False,
-            ),
-            patch.object(service, "refresh_outputs") as refresh,
-        ):
-            status = service.sync_graphify_if_cli_available()
-
-        self.assertEqual("ready", status.state)
-        self.assertEqual("install --platform agents", log.read_text(encoding="utf-8").strip())
-        refresh.assert_called_once_with()
-
 
 if __name__ == "__main__":
     unittest.main()
