@@ -288,6 +288,14 @@ def _require_owner(vault: Path, config_home: Path, conflict: dict[str, Any], cwd
             f"this conflict belongs to project {conflict.get('project')}, not {entry['folder']}; "
             f"{elsewhere}"
         )
+    # After a folder-name collision the folder matches but the project does
+    # not: the lost operation carries the ID of the project that wrote it.
+    written_by = (conflict.get("op_data") or {}).get("project_id")
+    if written_by is not None and written_by != entry["id"]:
+        raise MemoryVaultError(
+            f"this conflict was written by another project that shares the folder "
+            f"{entry['folder']}; {elsewhere}"
+        )
 
 
 def _reapply(vault: Path, conflict: dict[str, Any]) -> memory_sync.Op:

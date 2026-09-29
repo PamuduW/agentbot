@@ -242,6 +242,29 @@ class ProjectIdentityTests(SafetyTestCase):
         self.assertIn(winner, hub)
         self.assertEqual([], [f for f in validate(self.b).findings if f.severity == "error"])
 
+    def test_the_winner_cannot_resolve_the_losers_note_as_its_own(self) -> None:
+        winner, loser = (
+            "a0a0a0a0-0000-4000-8000-000000000001",
+            "b0b0b0b0-0000-4000-8000-000000000002",
+        )
+        self.register(self.a, "https://github.com/me/app", winner)
+        self.register(self.b, "https://github.com/other/app", loser)
+        note = self.put(self.b, "app", "lessons/secret-plan.md", "the other repository's note")
+        sync.sync(self.a)
+        sync.sync(self.b)
+        repo = Path(self._tmp.name) / "app"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "remote", "add", "origin", "https://github.com/me/app"],
+            check=True,
+        )
+        config = Path(self._tmp.name) / "config"
+        for keep in ("mine", "theirs"):
+            with self.subTest(keep=keep), self.assertRaises(MemoryVaultError) as raised:
+                autosync.resolve(self.b, config, note.id, keep, cwd=repo)
+            self.assertIn("another project", str(raised.exception))
+        self.assertFalse((self.b / "projects/app/lessons/secret-plan.md").exists())
+
 
 class ConflictScopeTests(SafetyTestCase):
     def repo(self, origin: str) -> Path:
