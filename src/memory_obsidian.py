@@ -183,9 +183,15 @@ def device_changes(root: Path) -> dict[str, bytes]:
         wanted[CORE_PLUGINS] = _dumped({**plugins, "bases": True})
 
     app = _read_json(root, APP)
-    if app is not None:
+    excluded = (app.get("userIgnoreFilters") or []) if app is not None else None
+    # A value Obsidian would not have written is the user's to fix: leave the
+    # whole file alone rather than fail the memory command that got here.
+    if (
+        app is not None
+        and isinstance(excluded, list)
+        and all(isinstance(item, str) for item in excluded)
+    ):
         updated = {**app, **APP_SETTINGS}
-        excluded = list(app.get("userIgnoreFilters") or [])
         updated["userIgnoreFilters"] = excluded + [
             item for item in EXCLUDED if item not in excluded
         ]

@@ -202,6 +202,15 @@ class ObsidianKitTests(AutosyncTestCase):
         self.assertEqual("{not json", (self.a / ".obsidian/app.json").read_text())
         self.assertTrue(self.json(".obsidian/core-plugins.json")["bases"])
 
+    def test_a_setting_of_the_wrong_type_is_left_alone(self) -> None:
+        # Review 2, R2-5: valid JSON, but not a list; it used to raise TypeError.
+        (self.a / ".obsidian/app.json").write_text('{"userIgnoreFilters": 5}')
+        git(self.a, "commit", "-q", "-am", "odd")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        self.assertEqual("synced", autosync.run(self.a)["state"])
+        self.assertEqual('{"userIgnoreFilters": 5}', (self.a / ".obsidian/app.json").read_text())
+        self.assertTrue(self.json(".obsidian/core-plugins.json")["bases"])
+
     def test_a_vault_never_opened_in_obsidian_is_untouched(self) -> None:
         head = git(self.b, "rev-parse", "HEAD")
         self.assertIsNone(sync.setup_obsidian(self.b))
