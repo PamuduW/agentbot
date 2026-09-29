@@ -724,6 +724,20 @@ def _at_a_terminal() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
+def _ask_review_choice() -> str:
+    """The keys lit the way the menus light theirs, on a line of their own."""
+    from .ui.table import BOLD, CYAN, DIM, RESET, use_color
+
+    lit, dim, bold, reset = (CYAN, DIM, BOLD, RESET) if use_color() else ("", "", "", "")
+    keys = "   ".join(
+        f"{reset}{lit}{key}{reset}{dim} {word}"
+        for key, word in (("a", "approve"), ("r", "reject"), ("s", "skip"), ("q", "stop"))
+    )
+    print(f"\n  {dim}{keys}{reset}", file=sys.stderr)
+    print(f"  {bold}Choice:{reset} ", end="", file=sys.stderr, flush=True)
+    return input().strip().lower()
+
+
 def _walk_proposals(context: CommandContext, root: Path, items: list[dict[str, Any]]) -> int:
     """Each open proposal in turn: its text, then approve, reject, skip or stop.
 
@@ -741,8 +755,7 @@ def _walk_proposals(context: CommandContext, root: Path, items: list[dict[str, A
             {"state": "open", **item, "notice": DATA_NOTICE, "body": proposals.body(root, path)},
             title=f"review {number} of {len(items)}",
         )
-        print("  a approve, r reject, s skip, q stop: ", end="", file=sys.stderr, flush=True)
-        choice = input().strip().lower()
+        choice = _ask_review_choice()
         if choice == "q":
             print("  Stopped; the rest are left for later.")
             break
@@ -750,6 +763,7 @@ def _walk_proposals(context: CommandContext, root: Path, items: list[dict[str, A
             print("  Left for later.")
             continue
         command = "approve" if choice == "a" else "reject"
+        print(file=sys.stderr)
         try:
             _confirm_by_hand(
                 str(item["id"])[:8], f"{command} {path}", f"agentbot memory {command} {path} --yes"
