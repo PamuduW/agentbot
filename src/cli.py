@@ -674,6 +674,9 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
         )
     elif command == "review":
         items = proposals.queue(root)
+        as_json = getattr(args, "memory_json", False)
+        if not args.draft_path and items and not as_json and _at_a_terminal():
+            return _walk_proposals(context, root, items)
         if args.draft_path:
             match = [item for item in items if item["path"] == args.draft_path]
             if not match:
@@ -715,6 +718,52 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
     else:
         print_memory_result(result, title=command)
     return 0
+
+
+def _at_a_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _walk_proposals(context: CommandContext, root: Path, items: list[dict[str, Any]]) -> int:
+    """Each open proposal in turn: its text, then approve, reject, skip or stop.
+
+    A person at a terminal reviews the queue here without copying any path.
+    Approve and reject still ask for the short code, as their own commands do.
+    """
+    from . import memory_autosync
+    from . import memory_proposals as proposals
+    from .memory_retrieve import DATA_NOTICE
+
+    rc = 0
+    for number, item in enumerate(items, 1):
+        path = item["path"]
+        print_memory_result(
+            {"state": "open", **item, "notice": DATA_NOTICE, "body": proposals.body(root, path)},
+            title=f"review {number} of {len(items)}",
+        )
+        print("  a approve, r reject, s skip, q stop: ", end="", file=sys.stderr, flush=True)
+        choice = input().strip().lower()
+        if choice == "q":
+            print("  Stopped; the rest are left for later.")
+            break
+        if choice not in {"a", "r"}:
+            print("  Left for later.")
+            continue
+        command = "approve" if choice == "a" else "reject"
+        try:
+            _confirm_by_hand(
+                str(item["id"])[:8], f"{command} {path}", f"agentbot memory {command} {path} --yes"
+            )
+        except ValueError as error:
+            print(f"  {error}; left for later.")
+            rc = 1
+            continue
+        result = (
+            proposals.approve(root, path) if command == "approve" else proposals.reject(root, path)
+        )
+        result["sync"] = memory_autosync.after_write(root, context.paths.config_home)
+        print_memory_result(result, title=command)
+    return rc
 
 
 # Retrieval refreshes first. Not validate: hooks run it mid-commit and mid-push.

@@ -983,8 +983,10 @@ def print_memory_result(result, *, title: str) -> None:
         if key in {"state", "body", "notice"}:
             continue
         if key == "proposals":
+            # The path in the wrapping column: it is what approve and reject
+            # take, and the first column cut it short.
             rows += [
-                (item["path"], f"{item['type']} · {item['title']} · {item['date']}", "check")
+                (item["type"], f"{item['title']} · {item['date']} · {item['path']}", "check")
                 for item in value
             ]
             continue
@@ -1004,6 +1006,19 @@ def print_memory_result(result, *, title: str) -> None:
     if state == "preview":
         print()
         print_note("Preview only. Rerun with --yes to apply.")
+    if state == "open":
+        return  # one proposal's text: nothing here is a health check
+    if state == "queue":
+        # Not a health rollup: the Result and Open rows are not "ok" items.
+        waiting = len(result.get("proposals") or [])
+        print()
+        print_note(
+            f"{waiting} proposal(s) wait for your review. Run agentbot memory review in "
+            "your terminal to go through them."
+            if waiting
+            else "No proposals are waiting."
+        )
+        return
     print_rollup(ok=ok, check=check, miss=miss)
 
 

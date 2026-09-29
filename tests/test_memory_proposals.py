@@ -243,6 +243,54 @@ class ProposalCliTests(ProposalCase):
         rc, _missing = self._cli("memory", "reject", "proposals/core/lessons/x.md")
         self.assertEqual(1, rc)
 
+    def test_review_at_a_terminal_walks_the_queue(self) -> None:
+        # Plain `memory review` only listed the queue, with its paths cut short;
+        # at a terminal it now goes through each proposal.
+        from src import cli
+
+        proposed = [
+            self._cli(
+                "memory",
+                "propose",
+                "--type",
+                "lesson",
+                "--title",
+                title,
+                "--scope",
+                "global",
+                "--stdin",
+                stdin=f"{title} body\n".encode(),
+            )[1]
+            for title in ("Walked first", "Walked second")
+        ]
+        _rc, listed = self._cli("memory", "review")
+        order = [item["path"] for item in listed["proposals"]]
+        first, second = sorted(proposed, key=lambda item: order.index(item["path"]))
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")}
+        env.update(
+            HOME=str(self.tmp / "home"),
+            NO_COLOR="1",
+            XDG_CONFIG_HOME=str(self.tmp / "xdg"),
+            AGENTBOT_CALLER_PWD=str(self.tmp),
+        )
+        typed = TerminalInput(f"a\n{first['id'][:8]}\ns\n")
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("sys.stdin", typed),
+            patch.object(cli, "_at_a_terminal", return_value=True),
+        ):
+            rc, stdout, _stderr = run_cli_main(
+                ["agentbot", "--root", str(self.tmp / "agentbot"), "memory", "review"]
+            )
+        self.assertEqual(0, rc)
+        titles = {item["path"]: item["title"] for item in listed["proposals"]}
+        self.assertIn(f"{titles[first['path']]} body", stdout)  # shown before the choice
+        self.assertIn("Left for later.", stdout)
+        self.assertFalse((self.a / first["path"]).exists())
+        self.assertTrue((self.a / second["path"]).exists())
+        _rc, queue = self._cli("memory", "review")
+        self.assertEqual([second["path"]], [item["path"] for item in queue["proposals"]])
+
     def test_approve_and_reject_need_a_person_at_a_terminal(self) -> None:
         """Ticket 12 run 4: Codex ran approve --yes itself when told to approve."""
         _rc, proposed = self._cli(
