@@ -540,13 +540,15 @@ class EnforceExclusionsTests(PruneTests):
     def test_an_excluded_skill_the_source_installed_is_removed_but_a_namesake_is_kept(self):
         """Skills CLI installs every skill of a `skills: all` source; the excluded
         ones used to stay behind unpinned. The install now pins the copies it can
-        prove are the source's (SKILL.md byte for byte), so they are removed; a
-        same-name skill with different content is the user's and stays."""
+        prove are the source's (every file byte for byte), so they are removed; a
+        same-name skill with different content is the user's and stays, and so
+        does a copy with the source's SKILL.md but its own supporting files
+        (Review 2, R2-7)."""
         from src.skill_prune import enforce_exclusions
         from src.skills_installer import _record_checkout_lock
 
         checkout = self.root / "checkout"
-        for name in ("keeper", "stray", "namesake"):
+        for name in ("keeper", "stray", "namesake", "customized"):
             skill = checkout / "skills" / name / "SKILL.md"
             skill.parent.mkdir(parents=True)
             skill.write_text(f"---\nname: {name}\n---\nfrom the source\n", encoding="utf-8")
@@ -555,8 +557,12 @@ class EnforceExclusionsTests(PruneTests):
         (self.store / "namesake" / "SKILL.md").write_text(
             "---\nname: namesake\n---\nmy own skill\n", encoding="utf-8"
         )
+        (self.store / "customized" / "scripts").mkdir()
+        (self.store / "customized" / "scripts" / "mine.sh").write_text("echo mine\n")
         self._lock({})
-        config = self._manifest(self.BASE + "    exclude:\n      - stray\n      - namesake\n")
+        config = self._manifest(
+            self.BASE + "    exclude:\n      - stray\n      - namesake\n      - customized\n"
+        )
         (source,) = config.active_sources()
 
         _record_checkout_lock(source, checkout, self.paths.global_skill_lock)
@@ -565,6 +571,7 @@ class EnforceExclusionsTests(PruneTests):
         self.assertTrue((self.store / "keeper").is_dir())
         self.assertFalse((self.store / "stray").exists())
         self.assertTrue((self.store / "namesake").is_dir())
+        self.assertTrue((self.store / "customized" / "scripts" / "mine.sh").is_file())
         lock = json.loads(self.paths.global_skill_lock.read_text(encoding="utf-8"))
         self.assertEqual(["keeper"], sorted(lock["skills"]))
 

@@ -299,9 +299,12 @@ def _require_global_lock(global_lock_file: Path | None) -> Path:
     return global_lock_file
 
 
-def _same_skill_file(source_file: Path, installed_file: Path) -> bool:
+def _same_skill_folder(source_dir: Path, installed_dir: Path) -> bool:
+    """Every file byte for byte: one matching SKILL.md is not proof of a copy."""
     try:
-        return installed_file.is_file() and installed_file.read_bytes() == source_file.read_bytes()
+        return installed_dir.is_dir() and _skill_folder_hash(installed_dir) == _skill_folder_hash(
+            source_dir
+        )
     except OSError:
         return False
 
@@ -351,8 +354,8 @@ def _record_checkout_lock(
 
     checkout_skills: dict[str, Path] = {}
     # Excluded skills `skills add` installed anyway (it has no exclusion flag).
-    # Pinned so the clean-up that follows can prove Agentbot put them there and
-    # remove them; a same-name skill whose SKILL.md differs is someone else's.
+    # Pinned so the clean-up that follows can remove them, but only a folder
+    # identical to the source's in every file; any difference is the user's.
     excluded_copies: dict[str, Path] = {}
     for skill_file in sorted(
         checkout.rglob("SKILL.md"),
@@ -365,7 +368,7 @@ def _record_checkout_lock(
         if (wanted is None or name in wanted) and name in installed_names:
             if not source.excludes(name):
                 checkout_skills.setdefault(name, skill_file)
-            elif _same_skill_file(skill_file, installed_skills_home / name / "SKILL.md"):
+            elif _same_skill_folder(skill_file.parent, installed_skills_home / name):
                 excluded_copies.setdefault(name, skill_file)
 
     # A wildcard checkout can contain SKILL.md fixtures that npx deliberately

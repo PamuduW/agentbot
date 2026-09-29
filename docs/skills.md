@@ -60,7 +60,8 @@ separate prune: a skill a source `exclude`s is removed when the lock pins it to
 that source, and so is a skill the lock pins to a manifest source set to
 `enabled: false`. The Skills CLI installs every skill a `skills: all` source
 publishes, so the install pins each excluded skill it can prove it put there
-(its `SKILL.md` is byte-identical to the source's) for that removal. A skill pinned to a repository the manifest never names is
+(the whole folder is byte-identical to the source's, not just `SKILL.md`) for
+that removal; a copy with any changed or added file is the user's and stays. A skill pinned to a repository the manifest never names is
 left alone, because the user installed it, and so is an unpinned directory that
 only shares an excluded name: nothing shows Agentbot installed it, so it is a
 `manual` candidate, removed only by name.
