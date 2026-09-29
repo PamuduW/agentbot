@@ -161,6 +161,7 @@ class DueCliTests(DueTestCase):
         self.assertEqual(0, rc)
         payload = json.loads(stdout)
         self.assertEqual("2026-09-30", payload["today"])
+        self.assertIn("notice", payload)  # titles are record text
         # The fixture's lesson is valid until 2026-09-25, so it has expired.
         self.assertEqual(
             {

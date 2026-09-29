@@ -387,7 +387,7 @@ def _handle_memory_due(context: CommandContext) -> int:
     if as_json:
         print(json.dumps(memory.due_json(items, total, schema, today), indent=2))
     else:
-        print_memory_due(items, total=total, schema=schema, today=today)
+        print_memory_due(items, total=total, today=today)
     return 0
 
 
@@ -685,13 +685,18 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
                 "body": proposals.body(root, args.draft_path),
             }
         else:
-            result = {"state": "queue", "open": len(items), "proposals": items}
+            result = {
+                "state": "queue",
+                "open": len(items),
+                "notice": DATA_NOTICE,
+                "proposals": items,
+            }
     else:
         waiting = {item["path"]: item for item in proposals.queue(root)}
         if args.draft_path not in waiting:
             raise ValueError(f"no open proposal at {args.draft_path}")
         if not args.confirm:
-            result = {"state": "preview", **waiting[args.draft_path]}
+            result = {"state": "preview", "notice": DATA_NOTICE, **waiting[args.draft_path]}
         else:
             _confirm_by_hand(
                 str(waiting[args.draft_path]["id"])[:8],

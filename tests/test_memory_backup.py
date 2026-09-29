@@ -113,6 +113,24 @@ class BackupTests(BackupTestCase):
         self.assertEqual("completed", result.state)
         self.assertEqual(str(moved.resolve()), backups.read_manifest(self.dest)["source"]["path"])
 
+    def test_a_fork_with_the_same_history_but_its_own_id_is_refused(self) -> None:
+        backups.backup(self.vault.root, self.dest, apply=True)
+        fork = self.tmp / "fork"
+        subprocess.run(["git", "clone", "--quiet", str(self.vault.root), str(fork)], check=True)
+        marker = fork / ".meta" / "vault.json"
+        marker.write_text(
+            json.dumps(
+                {"agentbot_memory_schema": 3, "vault_id": "0d7c4b1e-2a3f-4c5d-8e9f-a0b1c2d3e4f5"}
+            )
+            + "\n"
+        )
+        self.git(
+            fork, "-c", "user.name=T", "-c", "user.email=t@e.invalid", "commit", "-qam", "fork"
+        )
+        with self.assertRaises(memory.MemoryVaultError) as raised:
+            backups.backup(fork, self.dest, apply=True)
+        self.assertIn("different source", str(raised.exception))
+
     def test_unsafe_destinations_are_refused(self) -> None:
         link = self.tmp / "link"
         link.symlink_to(self.tmp / "elsewhere")

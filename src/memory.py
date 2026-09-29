@@ -311,6 +311,16 @@ def _decode(data: bytes) -> str:
 
 def read_marker(root: Path) -> int:
     """The schema version the vault marker declares."""
+    return int(_marker(root)[MARKER_KEY])
+
+
+def vault_id(root: Path) -> str:
+    """The vault's own identity, which every clone of it shares."""
+    return str(_marker(root)["vault_id"])
+
+
+def _marker(root: Path) -> dict[str, Any]:
+    """The validated marker."""
     try:
         text = _decode(read_bounded(root, MARKER, MAX_MARKER_BYTES))
     except _Unsafe as error:
@@ -340,7 +350,7 @@ def read_marker(root: Path) -> int:
         raise MemoryVaultError(f"{MARKER}: schema 3 needs exactly the keys {sorted(expected)}")
     if not (isinstance(payload["vault_id"], str) and UUID4.match(payload["vault_id"])):
         raise MemoryVaultError(f"{MARKER}: vault_id must be a lowercase UUID version 4")
-    return int(version)
+    return payload
 
 
 # --- Git ---------------------------------------------------------------------
@@ -1046,7 +1056,10 @@ def due_queue(
 
 
 def due_json(items: list[DueItem], total: int, schema: int, today: date) -> dict[str, Any]:
+    from .memory_retrieve import DATA_NOTICE
+
     return {
+        "notice": DATA_NOTICE,
         "today": today.isoformat(),
         "schema": schema,
         "total": total,

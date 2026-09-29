@@ -704,16 +704,16 @@ def _finding_rows(findings) -> list[tuple[str, str, str]]:
     ]
 
 
-def print_memory_due(items, *, total: int, schema: int, today) -> None:
+def print_memory_due(items, *, total: int, today) -> None:
     """Accepted records due for review or past validity. Status stays as written."""
     print_header("Memory review queue", "Agentbot › Memory › Due")
     if not items:
-        detail = (
-            "schema 1 records carry no review dates" if schema == 1 else "nothing due or expired"
-        )
-        print_table([("Review queue", detail, "ok")])
+        print_table([("Review queue", "nothing due or expired", "ok")])
         print_rollup(ok=1, check=0, miss=0)
         return
+    # Titles are record text.
+    print_note(DATA_NOTICE)
+    print()
     rows = []
     for item in items:
         record = item.record
@@ -736,7 +736,7 @@ def print_memory_due(items, *, total: int, schema: int, today) -> None:
 
 def _pointer(hit) -> str:
     record = hit.record
-    where = record.scope or "v1"
+    where = record.scope
     projects = f" {','.join(record.projects)}" if record.projects else ""
     labels = f" [{', '.join(hit.labels)}]" if hit.labels else ""
     return f"{record.path} · {record.status} · {record.date} · {where}{projects}{labels}"
@@ -778,7 +778,7 @@ def print_memory_record(hit, body: str) -> None:
     print_header(hit.record.title, "Agentbot › Memory › Show")
     print_table(
         [
-            ("ID", hit.record.id or "— (schema 1)", "info"),
+            ("ID", hit.record.id, "info"),
             ("Source", _pointer(hit), "info"),
         ],
         wrap_details=True,
@@ -993,9 +993,11 @@ def print_memory_result(result, *, title: str) -> None:
             (key.replace("_", " ").capitalize(), text, "warn" if key == "warning" else "info")
         )
     ok, check, miss = print_table(rows, wrap_details=True)
-    if result.get("body"):
+    # Titles and bodies are record text.
+    if result.get("notice") or result.get("body"):
         print()
         print_note(DATA_NOTICE)
+    if result.get("body"):
         print()
         for line in str(result["body"]).splitlines():
             print(f"  {line}")

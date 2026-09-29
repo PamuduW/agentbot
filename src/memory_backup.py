@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .memory import SCANNER, MemoryVaultError, read_marker, validate
+from .memory import SCANNER, MemoryVaultError, read_marker, validate, vault_id
 
 MANIFEST_VERSION = 1
 MIRROR = "local.git"
@@ -79,7 +79,11 @@ def _refs(repo: Path) -> dict[str, str]:
 
 def source_identity(vault: Path) -> dict[str, Any]:
     roots = _git(vault, "rev-list", "--max-parents=0", "HEAD").split()
-    return {"path": str(vault.resolve()), "root_commits": sorted(roots)}
+    return {
+        "path": str(vault.resolve()),
+        "root_commits": sorted(roots),
+        "vault_id": vault_id(vault),
+    }
 
 
 def _inside(child: Path, parent: Path) -> bool:
@@ -161,11 +165,13 @@ def backup(
     identity = source_identity(vault)
     if destination.exists() and any(destination.iterdir()):
         previous = read_manifest(destination).get("source")
-        # The vault is its history, not its folder: a clone moved to a new path
-        # (the workspace copy to ~/agent-memory) keeps refreshing the same backup.
+        # The vault is its history and its ID, not its folder: a clone moved to
+        # a new path (the workspace copy to ~/agent-memory) keeps refreshing the
+        # same backup. A backup from before the ID was recorded has only history.
         if (
             not isinstance(previous, dict)
             or previous.get("root_commits") != identity["root_commits"]
+            or previous.get("vault_id", identity["vault_id"]) != identity["vault_id"]
         ):
             raise MemoryVaultError(
                 "this backup belongs to a different source vault; choose a new destination"
