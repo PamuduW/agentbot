@@ -56,18 +56,22 @@ agentbot_menu_memory_setup() {
 # or stop. No path to type. Approve and reject still ask for the proposal's
 # short code, the guard that keeps them a person's action.
 agentbot_menu_memory_review() {
-	local json='' path='' action='' rc=0 index=0
+	local json='' listed='' path='' action='' rc=0 index=0
 	local -a paths=()
 	if ! json="$(agentbot_run_backend memory review --json)"; then
 		# No vault, or a broken one: the ordinary screen says which.
 		agentbot_run_backend memory review
-		return 0
+		return $?
 	fi
-	mapfile -t paths < <("${AGENTBOT_PYTHON:-python3}" -c '
+	if ! listed="$("${AGENTBOT_PYTHON:-python3}" -c '
 import json, sys
 for item in json.loads(sys.argv[1]).get("proposals", []):
     print(item["path"])
-' "$json")
+' "$json" 2>/dev/null)"; then
+		printf '  Could not read the proposal queue; run agentbot memory review.\n' >&2
+		return 1
+	fi
+	[[ -z "$listed" ]] || mapfile -t paths <<<"$listed"
 	if ((${#paths[@]} == 0)); then
 		printf '  No proposals are waiting for your review.\n'
 		return 0
@@ -75,7 +79,12 @@ for item in json.loads(sys.argv[1]).get("proposals", []):
 	for path in "${paths[@]}"; do
 		index=$((index + 1))
 		printf '\n  %sProposal %d of %d%s\n' "$C_BOLD" "$index" "${#paths[@]}" "$C_RESET"
-		agentbot_run_backend memory review "$path" || rc=$?
+		# Nothing is approved or rejected unseen.
+		if ! agentbot_run_backend memory review "$path"; then
+			rc=1
+			printf '  %sCould not show this proposal; left for later.%s\n' "$C_DIM" "$C_RESET"
+			continue
+		fi
 		agentbot_menu_memory_ask action 'a approve, r reject, s skip, q stop: ' || return "$rc"
 		case "$action" in
 		a | A) agentbot_run_backend memory approve "$path" --yes || rc=$? ;;

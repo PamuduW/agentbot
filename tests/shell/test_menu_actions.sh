@@ -452,6 +452,35 @@ test_memory_menu_review_with_nothing_waiting_or_no_vault() (
 	[[ "$(<"$calls")" == $'backend:memory review --json\nbackend:memory review' ]]
 )
 
+test_memory_menu_review_offers_nothing_it_could_not_show() (
+	# Review 2: a queue it cannot read, or a proposal it cannot display, is a
+	# failure, and no approve or reject is offered for it.
+	local calls="$TEST_ROOT/memory-review-fail.calls" status=0
+	: >"$calls"
+	read_tty_line() { printf -v "$1" '%s' 'a'; }
+	agentbot_run_backend() {
+		printf 'backend:%s\n' "$*" >>"$calls"
+		[[ "$*" == 'memory review --json' ]] && printf '%s\n' 'not json'
+		return 0
+	}
+	agentbot_menu_memory_dispatch review >/dev/null 2>&1 || status=$?
+	[[ "$status" -ne 0 ]] || return 1
+	[[ "$(<"$calls")" == 'backend:memory review --json' ]] || return 1
+	: >"$calls"
+	status=0
+	agentbot_run_backend() {
+		printf 'backend:%s\n' "$*" >>"$calls"
+		if [[ "$*" == 'memory review --json' ]]; then
+			printf '%s\n' '{"proposals": [{"path": "proposals/core/lessons/p.md"}, {"path": "proposals/core/lessons/q.md"}]}'
+			return 0
+		fi
+		[[ "$*" != 'memory review proposals/core/lessons/p.md' ]]
+	}
+	agentbot_menu_memory_dispatch review >/dev/null || status=$?
+	[[ "$status" -ne 0 ]] || return 1
+	[[ "$(<"$calls")" == $'backend:memory review --json\nbackend:memory review proposals/core/lessons/p.md\nbackend:memory review proposals/core/lessons/q.md\nbackend:memory approve proposals/core/lessons/q.md --yes' ]]
+)
+
 test_memory_menu_clone_and_new_collect_their_inputs() (
 	local calls="$TEST_ROOT/memory-clone.calls"
 	: >"$calls"
@@ -673,6 +702,7 @@ check 'Memory setup previews and applies only when confirmed' test_memory_menu_p
 check 'Memory clone and new collect their inputs' test_memory_menu_clone_and_new_collect_their_inputs
 check 'memory menu reviews proposals and settles conflicts' test_memory_menu_reviews_proposals_and_settles_conflicts
 check 'memory review with nothing waiting, or no vault' test_memory_menu_review_with_nothing_waiting_or_no_vault
+check 'memory review offers nothing it could not show' test_memory_menu_review_offers_nothing_it_could_not_show
 check 'Memory status without a vault is not a failure' test_memory_status_without_a_vault_is_not_a_failure
 check 'declined workspace apply performs no backend write' test_declined_workspace_apply_is_non_destructive
 check 'workspace removal prompts use the shared TTY adapter' test_workspace_removal_prompt_uses_the_shared_tty_adapter
