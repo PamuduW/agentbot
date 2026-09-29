@@ -1,11 +1,15 @@
 """Back the vault up to a local mirror, and restore it into a fresh directory.
 
-A backup destination holds ``local.git`` (a bare mirror of the vault's
-committed refs) and ``manifest.json``. Each backup builds a new mirror beside
-the old one, verifies it (object integrity, refs against the source, and a
-trial clone that passes the vault validator), and only then replaces the
-previous snapshot and writes the manifest atomically. A failed backup leaves
-the previous snapshot as it was.
+A backup destination holds generations, each a ``gen-*`` folder with
+``local.git`` (a bare mirror of the vault's committed refs) and its
+``manifest.json``, and a ``current`` symlink naming the live one. Each backup
+builds a whole new generation, verifies it (object integrity, refs against the
+source, and a trial clone that passes the vault validator), writes its
+manifest, and only then switches ``current`` in one atomic rename. A backup
+that fails or is interrupted at any point before that leaves the previous
+generation as it was; older generations are removed after the switch. A
+destination from before generations (``local.git`` and ``manifest.json`` at
+its top) is read as is and converted by its next backup.
 
 A successful backup records its destination in the machine's memory
 configuration, and every ``agentbot update`` refreshes that backup
@@ -24,9 +28,11 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,6 +42,8 @@ from .memory import SCANNER, MemoryVaultError, read_marker, validate, vault_id
 MANIFEST_VERSION = 1
 MIRROR = "local.git"
 MANIFEST = "manifest.json"
+CURRENT = "current"
+GENERATION = re.compile(r"gen-[0-9a-f]{32}")
 ASSURANCES = ("unknown", "user-attested")
 LIMITATIONS = (
     "uncommitted edits, ignored exports, and per-device Obsidian files are not in a Git snapshot",
@@ -122,16 +130,29 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def current_generation(backup: Path) -> Path:
+    """The folder holding the live mirror and manifest."""
+    link = backup / CURRENT
+    if not link.is_symlink():
+        return backup  # the layout from before generations
+    name = os.readlink(link)
+    generation = backup / name
+    if not GENERATION.fullmatch(name) or generation.is_symlink() or not generation.is_dir():
+        raise MemoryVaultError(f"{backup} is not an Agentbot memory backup")
+    return generation
+
+
 def read_manifest(backup: Path) -> dict[str, Any]:
-    path = backup / MANIFEST
-    if path.is_symlink() or not path.is_file() or not (backup / MIRROR).is_dir():
+    generation = current_generation(backup)
+    path = generation / MANIFEST
+    if path.is_symlink() or not path.is_file() or not (generation / MIRROR).is_dir():
         raise MemoryVaultError(f"{backup} is not an Agentbot memory backup")
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        raise MemoryVaultError(f"{backup / MANIFEST} is unreadable") from error
+        raise MemoryVaultError(f"{path} is unreadable") from error
     if not isinstance(manifest, dict) or manifest.get("version") != MANIFEST_VERSION:
-        raise MemoryVaultError(f"{backup / MANIFEST} has an unsupported version")
+        raise MemoryVaultError(f"{path} has an unsupported version")
     return manifest
 
 
@@ -163,7 +184,12 @@ def backup(
     read_marker(vault)
     _check_destination(vault, destination)
     identity = source_identity(vault)
-    if destination.exists() and any(destination.iterdir()):
+    # A first backup interrupted before its switch leaves only its own
+    # generation behind: that is still an empty destination.
+    if destination.exists() and any(
+        not GENERATION.fullmatch(child.name) and child.name != f".{CURRENT}.new"
+        for child in destination.iterdir()
+    ):
         previous = read_manifest(destination).get("source")
         # The vault is its history and its ID, not its folder: a clone moved to
         # a new path (the workspace copy to ~/agent-memory) keeps refreshing the
@@ -187,37 +213,43 @@ def backup(
         return result
 
     _private_dir(destination)
-    staging = destination / f".{MIRROR}.new"
-    shutil.rmtree(staging, ignore_errors=True)
+    generation = destination / f"gen-{uuid.uuid4().hex}"
+    _private_dir(generation)
+    published = False
     try:
-        clone = _run("clone", "--quiet", "--mirror", "--no-hardlinks", str(vault), str(staging))
+        mirror = generation / MIRROR
+        clone = _run("clone", "--quiet", "--mirror", "--no-hardlinks", str(vault), str(mirror))
         if clone.returncode != 0:
             raise MemoryVaultError("git clone --mirror failed")
-        result.findings = _verify(staging, result.refs)
-        _swap(destination, staging)
+        result.findings = _verify(mirror, result.refs)
+        _write_json(generation / MANIFEST, _manifest(result, identity, assurance))
+        _publish(destination, generation)
+        published = True
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    _write_json(
-        destination / MANIFEST,
-        {
-            "version": MANIFEST_VERSION,
-            "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "encryption_assurance": assurance,
-            "source": identity,
-            "head": result.head,
-            "refs": result.refs,
-            "dirty": result.changed_paths > 0,
-            "excluded_uncommitted_paths": result.changed_paths,
-            "verification": "fsck, refs, trial clone",
-            "validation_findings": result.findings,
-            "scanner": SCANNER,
-            "remote": "not implemented",
-        },
-    )
+        if not published:
+            shutil.rmtree(generation, ignore_errors=True)
+    _retire(destination, keep=generation)
     result.state = (
         "completed-with-warnings" if result.changed_paths or result.findings else "completed"
     )
     return result
+
+
+def _manifest(result: BackupResult, identity: dict[str, Any], assurance: str) -> dict[str, Any]:
+    return {
+        "version": MANIFEST_VERSION,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "encryption_assurance": assurance,
+        "source": identity,
+        "head": result.head,
+        "refs": result.refs,
+        "dirty": result.changed_paths > 0,
+        "excluded_uncommitted_paths": result.changed_paths,
+        "verification": "fsck, refs, trial clone",
+        "validation_findings": result.findings,
+        "scanner": SCANNER,
+        "remote": "not implemented",
+    }
 
 
 def _verify(mirror: Path, expected: dict[str, str]) -> int:
@@ -238,13 +270,31 @@ def _verify(mirror: Path, expected: dict[str, str]) -> int:
         shutil.rmtree(trial, ignore_errors=True)
 
 
-def _swap(destination: Path, staging: Path) -> None:
-    current, retired = destination / MIRROR, destination / f".{MIRROR}.old"
-    shutil.rmtree(retired, ignore_errors=True)
-    if current.exists():
-        os.replace(current, retired)
-    os.replace(staging, current)
-    shutil.rmtree(retired, ignore_errors=True)
+def _publish(destination: Path, generation: Path) -> None:
+    """Point ``current`` at a complete generation: one rename, never half done."""
+    link = destination / f".{CURRENT}.new"
+    with contextlib.suppress(FileNotFoundError):
+        link.unlink()
+    os.symlink(generation.name, link)
+    os.replace(link, destination / CURRENT)
+
+
+def _retire(destination: Path, *, keep: Path) -> None:
+    """Remove every generation but the live one, and the old flat layout."""
+    for child in destination.iterdir():
+        stale = (GENERATION.fullmatch(child.name) and child != keep) or child.name in {
+            MIRROR,
+            MANIFEST,
+            f".{MIRROR}.new",
+            f".{MIRROR}.old",
+        }
+        if not stale:
+            continue
+        with contextlib.suppress(OSError):
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
 
 
 # --- Restore -----------------------------------------------------------------
@@ -275,7 +325,7 @@ def restore(
         _inside(resolved, active.resolve()) or _inside(active.resolve(), resolved)
     ):
         raise MemoryVaultError("the destination must be outside the active vault")
-    mirror = source / MIRROR
+    mirror = current_generation(source) / MIRROR
     head_ref = _run("-C", str(mirror), "symbolic-ref", "--short", "HEAD").stdout.strip() or None
     result = RestoreResult(
         state="preview", destination=destination, head=manifest.get("head"), branch=head_ref

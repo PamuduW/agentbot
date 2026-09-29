@@ -311,19 +311,21 @@ at 65%.
 
 `agentbot memory backup --destination PATH` previews, and with `--yes` writes,
 a private (`0700`) backup: a bare mirror of the vault's committed refs plus a
-manifest. Each run builds a new mirror, verifies it with `git fsck`, compares
-refs with the source, and trial-restores it through the validator before it
-replaces the previous snapshot; a failed backup leaves the old one intact. A
-destination inside the vault, containing it, symlinked, or holding another
-vault's backup is refused. A dirty tree is reported, not blocking.
+manifest, together one generation. Each run builds a new generation, verifies
+it with `git fsck`, compares refs with the source, trial-restores it through
+the validator, writes its manifest, and only then switches the destination's
+`current` link to it in one rename; a backup that fails or is interrupted
+before that switch leaves the previous generation intact. A destination inside
+the vault, containing it, symlinked, or holding another vault's backup (other
+history or vault ID) is refused. A dirty tree is reported, not blocking.
 `agentbot memory restore --source BACKUP --destination PATH` clones into a new
 or empty directory, removes the backup `origin`, validates the result, and
 never touches the active checkout, Agentbot's configuration, or a remote.
 Git snapshots hold committed history only: uncommitted edits and exports are
 never included. Remote snapshots are not implemented. A completed backup
 records its destination (and assurance) in this machine's `memory.json`;
-every `agentbot update`, and so `agentbot full` and `dotfiles fu`, refreshes
-it and shows a "Memory backup" row, and `memory backup --yes` without
+each `agentbot update`, and so `agentbot full` and `dotfiles fu`, refreshes it
+once its earlier steps have run, and shows a "Memory backup" row, and `memory backup --yes` without
 `--destination` refreshes it by hand. A refresh that fails is reported and
 leaves the previous snapshot in place.
 

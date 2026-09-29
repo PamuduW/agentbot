@@ -47,7 +47,10 @@ class BackupTests(BackupTestCase):
         self.assertEqual("completed", result.state)
         self.assertEqual(before, _tree_digest(self.vault.root))
         self.assertEqual(0o700, stat.S_IMODE(os.stat(self.dest).st_mode))
-        self.assertEqual(0o600, stat.S_IMODE(os.stat(self.dest / "manifest.json").st_mode))
+        self.assertEqual(
+            0o600,
+            stat.S_IMODE(os.stat(backups.current_generation(self.dest) / "manifest.json").st_mode),
+        )
         manifest = backups.read_manifest(self.dest)
         self.assertEqual(self.git(self.vault.root, "rev-parse", "HEAD"), manifest["head"])
         self.assertEqual("unknown", manifest["encryption_assurance"])
@@ -93,8 +96,63 @@ class BackupTests(BackupTestCase):
             with self.assertRaises(memory.MemoryVaultError):
                 backups.backup(self.vault.root, self.dest, apply=True)
         self.assertEqual(second.head, backups.read_manifest(self.dest)["head"])
-        self.assertEqual(second.head, self.git(self.dest / "local.git", "rev-parse", "HEAD"))
+        self.assertEqual(
+            second.head,
+            self.git(backups.current_generation(self.dest) / "local.git", "rev-parse", "HEAD"),
+        )
         self.assertEqual([], [p.name for p in self.dest.iterdir() if p.name.startswith(".")])
+
+    def test_a_refresh_that_fails_at_any_step_keeps_the_last_backup(self) -> None:
+        # Review 2, R2-6: the old mirror was deleted before the new manifest was
+        # written, so a failure there left no complete backup.
+        backups.backup(self.vault.root, self.dest, apply=True)
+        first = backups.read_manifest(self.dest)["head"]
+        self.vault.write("core/lessons/2026-09-28-later.md", "---\n")
+        self.vault.commit()
+        real_replace = os.replace
+
+        def fail_the_switch(source, target):
+            if Path(target).name == "current":
+                raise OSError("disk full")
+            real_replace(source, target)
+
+        failures = {
+            "manifest": patch.object(backups, "_write_json", side_effect=OSError("disk full")),
+            "switch": patch.object(backups.os, "replace", side_effect=fail_the_switch),
+        }
+        for step, failing in failures.items():
+            with self.subTest(step=step), failing, self.assertRaises(OSError):
+                backups.backup(self.vault.root, self.dest, apply=True)
+            self.assertEqual(first, backups.read_manifest(self.dest)["head"])
+            self.assertEqual(
+                first,
+                self.git(backups.current_generation(self.dest) / "local.git", "rev-parse", "HEAD"),
+            )
+            self.assertEqual(1, len(list(self.dest.glob("gen-*"))))
+        restored = backups.restore(self.dest, self.tmp / "restored", apply=True)
+        self.assertEqual(first, restored.head)
+
+    def test_an_interrupted_first_backup_is_not_a_foreign_destination(self) -> None:
+        (self.dest / ("gen-" + "0" * 32)).mkdir(parents=True)
+        result = backups.backup(self.vault.root, self.dest, apply=True)
+        self.assertEqual("completed", result.state)
+        self.assertEqual(1, len(list(self.dest.glob("gen-*"))))
+
+    def test_a_backup_from_before_generations_is_read_and_converted(self) -> None:
+        backups.backup(self.vault.root, self.dest, apply=True)
+        generation = backups.current_generation(self.dest)
+        for name in ("local.git", "manifest.json"):
+            os.replace(generation / name, self.dest / name)
+        (self.dest / "current").unlink()
+        generation.rmdir()
+        head = backups.read_manifest(self.dest)["head"]
+        self.assertEqual(self.dest, backups.current_generation(self.dest))
+        backups.backup(self.vault.root, self.dest, apply=True)
+        self.assertEqual(head, backups.read_manifest(self.dest)["head"])
+        self.assertEqual(
+            {"current", backups.current_generation(self.dest).name},
+            {p.name for p in self.dest.iterdir()},
+        )
 
     def test_a_backup_of_another_vault_is_refused(self) -> None:
         backups.backup(self.vault.root, self.dest, apply=True)
@@ -174,7 +232,7 @@ class RestoreTests(BackupTestCase):
         for source in (self.tmp / "nowhere", self.vault.root):
             with self.subTest(source=source.name), self.assertRaises(memory.MemoryVaultError):
                 backups.restore(source, self.tmp / "r", apply=True)
-        (self.dest / "manifest.json").write_text('{"version": 99}')
+        (backups.current_generation(self.dest) / "manifest.json").write_text('{"version": 99}')
         with self.assertRaises(memory.MemoryVaultError):
             backups.restore(self.dest, self.tmp / "r", apply=True)
         self.assertFalse((self.tmp / "r").exists())
