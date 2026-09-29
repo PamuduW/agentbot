@@ -313,6 +313,33 @@ class BriefTests(RetrieveTestCase):
         self.assertIn("the files are the authority", result.text)
 
 
+class BriefLeadTests(unittest.TestCase):
+    def test_the_brief_reads_past_a_one_line_preamble(self) -> None:
+        # 2026-09-29: the preferences record opens with one sentence, and the
+        # brief showed that sentence and none of the preferences under it.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = VaultFixture(Path(tmp) / "v")
+            body = "# Working preferences\n\nPolicy outranks this file.\n\n- Keep it simple.\n"
+            vault.write(
+                "core/lessons/prefs.md",
+                note(v3("lesson", uid(1), "global", title="Prefs"), body),
+            )
+            text = retrieve.brief(vault.root, retrieve.Request(), today=TODAY).text
+            self.assertIn("Policy outranks this file. - Keep it simple.", text)
+            self.assertNotIn("# Working preferences", text)
+
+    def test_a_long_record_is_cut_at_a_word_and_marked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = VaultFixture(Path(tmp) / "v")
+            vault.write(
+                "core/lessons/long.md",
+                note(v3("lesson", uid(2), "global", title="Long"), "word " * 400 + "\n"),
+            )
+            text = retrieve.brief(vault.root, retrieve.Request(), today=TODAY).text
+            lead = text.split("core/lessons/long.md", 1)[1]
+            self.assertTrue(lead.rstrip().endswith("word …"))
+
+
 class UnsafeRecordTests(unittest.TestCase):
     def test_a_record_with_a_secret_or_a_bad_file_is_never_returned(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

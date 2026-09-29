@@ -383,17 +383,23 @@ class Brief:
 
 
 def _lead(root: Path, record: Record, limit_tokens: int) -> str:
-    """The first paragraph of prose, without headings, bounded."""
-    paragraph: list[str] = []
-    for line in _body(root, record).split("\n"):
-        stripped = line.strip()
-        if stripped.startswith("#") or (not stripped and not paragraph):
-            continue
-        if not stripped:
-            break
-        paragraph.append(stripped)
-    text = " ".join(paragraph)
-    return text[: limit_tokens * 4].rstrip()
+    """The record's prose from the top, without headings, up to the limit.
+
+    Not only the first paragraph: a record that opens with a one-line
+    preamble, as the preferences file does, would otherwise show that line
+    and none of what follows it.
+    """
+    lines = [
+        stripped
+        for line in _body(root, record).split("\n")
+        if (stripped := line.strip()) and not stripped.startswith("#")
+    ]
+    text = " ".join(lines)
+    limit = limit_tokens * 4
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip()
+    return f"{cut} …"
 
 
 def _item_text(root: Path, hit: Hit) -> str:
