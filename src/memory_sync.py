@@ -996,13 +996,13 @@ def _sync(root: Path, remote: str) -> SyncResult:
     _require_clean(root)
     # The reset below would put back the remote's copy of a tracked layout
     # file, or of trash that older history still tracks; each machine keeps
-    # its own.
-    device_state = _device_files(root)
+    # its own. Read just before each reset, so an edit during the fetch is kept.
+    device_state: dict[str, bytes] = {}
     branch = _branch(root)
     upstream = f"{remote}/{branch}"
     reset_to: list[str] = []
     try:
-        _replay_and_push(root, remote, branch, upstream, result, reset_to)
+        _replay_and_push(root, remote, branch, upstream, result, reset_to, device_state)
     finally:
         _keep_device_state(root, device_state, ["HEAD", *reset_to])
     result.seconds = time.monotonic() - started
@@ -1016,6 +1016,7 @@ def _replay_and_push(
     upstream: str,
     result: SyncResult,
     reset_to: list[str],
+    device_state: dict[str, bytes],
 ) -> None:
     for attempt in range(1, PUSH_ATTEMPTS + 1):
         result.attempts = attempt
@@ -1032,6 +1033,10 @@ def _replay_and_push(
             )
         if has_upstream:
             tip = _git(root, "rev-parse", upstream).stdout.strip()
+            # The first reading of a file is this machine's: a later attempt
+            # would read what the previous reset wrote.
+            for path, data in _device_files(root, tip).items():
+                device_state.setdefault(path, data)
             reset_to.append(tip)
             _git(root, "reset", "-q", "--hard", tip)
         before = _snapshot(root)
@@ -1086,22 +1091,33 @@ DEVICE_FILE_LIMIT = 500
 DEVICE_BYTES_LIMIT = 16 * 1024 * 1024
 
 
-def _device_files(root: Path) -> dict[str, bytes]:
-    """This machine's per-device files, bounded: Obsidian's folders, its views, and its trash."""
+def _device_files(root: Path, tip: str) -> dict[str, bytes]:
+    """This machine's copy of every per-device file a reset to ``tip`` can touch.
+
+    Only paths Git tracks, here or at the tip: a reset leaves untracked files
+    alone, so plugin folders and the rest never count against the limits. All
+    of them or none: past the limits the sync stops before the reset, rather
+    than keep some and lose the rest.
+    """
+    tracked = set()
+    for rev in ("HEAD", tip):
+        listed = _git(
+            root, "ls-tree", "-r", "-z", "--name-only", rev, "--", *DEVICE_STATE_DIRS, check=False
+        ).stdout
+        tracked.update(path for path in listed.split("\0") if path)
     found: dict[str, bytes] = {}
     total = 0
-    candidates: list[Path] = []
-    for folder in DEVICE_STATE_DIRS:
-        base = root / folder
-        if base.is_dir() and not base.is_symlink():
-            candidates += sorted(p for p in base.rglob("*") if not p.is_symlink())
-    for path in candidates[:DEVICE_FILE_LIMIT]:
+    for relative in sorted(tracked):
+        path = root / relative
         if path.is_file() and not path.is_symlink():
             data = path.read_bytes()
             total += len(data)
-            if total > DEVICE_BYTES_LIMIT:
-                break
-            found[path.relative_to(root).as_posix()] = data
+            found[relative] = data
+    if len(found) > DEVICE_FILE_LIMIT or total > DEVICE_BYTES_LIMIT:
+        raise MemoryVaultError(
+            f"the vault's history still tracks {len(found)} Obsidian files ({total} bytes), more "
+            "than sync can keep safely; untrack .obsidian/, views/ and .trash/ by hand first"
+        )
     return found
 
 

@@ -198,7 +198,11 @@ they are committed or reverted; neither fails the command. Obsidian's own folder
 Bases dashboards, and `.trash/`) are per machine and not manual edits:
 Obsidian rewrites them itself (on open, as you zoom the graph, as you resize a
 table), so they never pause sync, and the first sync adds them to a managed block in the vault's
-`.gitignore` and stops tracking them, keeping each machine's copy. `agentbot memory sync` syncs now;
+`.gitignore` and stops tracking them, keeping each machine's copy. While
+history still tracks some, sync reads them just before each reset and puts
+this machine's copy back; if there are more than it can hold (500 files or
+16 MiB), it stops before the reset instead of keeping only some.
+`agentbot memory sync` syncs now;
 `--status` shows the mode, pending operations, open conflicts, and last sync;
 `--mode manual` stops automatic pushing and fetching (writes are still
 committed locally), and `--interval SECONDS` sets the fetch interval. When two

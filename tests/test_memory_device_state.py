@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from src import memory
 from src import memory_autosync as autosync
@@ -86,6 +87,55 @@ class DeviceStateTests(AutosyncTestCase):
         self.assertEqual(
             1, git(self.b, "cat-file", "-p", "HEAD:.gitignore").count(sync.DEVICE_STATE_BLOCK)
         )
+
+    def track_trash(self) -> Path:
+        """History that still tracks a device file, as the live vault's once did."""
+        git(self.a, "pull", "-q", "--ff-only", "origin", "main")
+        (self.a / ".trash").mkdir()
+        (self.a / ".trash/old.md").write_text("committed trash\n")
+        git(self.a, "add", "-f", ".trash/old.md")
+        git(self.a, "commit", "-q", "-m", "Trash committed by hand")
+        git(self.a, "push", "-q", "origin", "HEAD:main")
+        git(self.b, "pull", "-q", "--ff-only", "origin", "main")
+        return self.b / ".trash/old.md"
+
+    def test_untracked_plugin_files_do_not_crowd_out_a_tracked_one(self) -> None:
+        # Review 2, R2-4: the snapshot took the first 500 files of the folders,
+        # so plugin assets could push a tracked file out of it.
+        trash = self.track_trash()
+        plugins = self.b / ".obsidian" / "plugins" / "big"
+        plugins.mkdir(parents=True)
+        for n in range(5):
+            (plugins / f"asset-{n}.js").write_text("x\n")
+        trash.write_text("this machine's trash\n")
+        with patch.object(sync, "DEVICE_FILE_LIMIT", 2):
+            self.assertEqual("synced", autosync.run(self.b)["state"])
+        self.assertEqual("this machine's trash\n", trash.read_text())
+
+    def test_too_many_tracked_device_files_stop_before_the_reset(self) -> None:
+        trash = self.track_trash()
+        trash.write_text("this machine's trash\n")
+        with patch.object(sync, "DEVICE_FILE_LIMIT", 0):
+            outcome = autosync.run(self.b)
+        self.assertEqual("error", outcome["state"])
+        self.assertIn("Obsidian files", outcome["detail"])
+        # Nothing reset and nothing lost: the file and the queued work remain.
+        self.assertEqual("this machine's trash\n", trash.read_text())
+        self.assertEqual(1, outcome["pending"])
+
+    def test_an_edit_during_the_fetch_is_kept(self) -> None:
+        trash = self.track_trash()
+        real_git = sync._git
+
+        def edit_while_fetching(root, *args, **kwargs):
+            done = real_git(root, *args, **kwargs)
+            if root == self.b and args and args[0] == "fetch":
+                trash.write_text("saved mid-fetch\n")
+            return done
+
+        with patch.object(sync, "_git", side_effect=edit_while_fetching):
+            self.assertEqual("synced", autosync.run(self.b)["state"])
+        self.assertEqual("saved mid-fetch\n", trash.read_text())
 
     def test_a_real_manual_edit_still_pauses_sync(self) -> None:
         note = self.a / "projects/alpha/notes/n.md"
