@@ -796,8 +796,9 @@ class SecretRule:
     pattern: re.Pattern[str]
 
 
-# Mirrors secret-rules-v1.yaml in the memory design. A pattern or severity
-# change that is not backward compatible needs a new scanner version.
+# The canonical rule set; the design's secret-rules-v1.yaml was retired. A
+# pattern or severity change that is not backward compatible needs a new
+# scanner version.
 SECRET_RULES = (
     SecretRule(
         "SECRET_PRIVATE_KEY",
