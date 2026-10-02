@@ -224,7 +224,7 @@ class ScopeAndLifecycleTests(RetrieveTestCase):
         self.assertEqual({"decision"}, {hit.record.type for hit in result.hits})
         pointer = result.hits[0].pointer()
         self.assertEqual(
-            {"id", "path", "type", "status", "date", "scope", "projects", "tags", "labels"},
+            {"id", "path", "type", "kind", "status", "date", "scope", "projects", "tags", "labels"},
             set(pointer),
         )
         self.assertTrue(

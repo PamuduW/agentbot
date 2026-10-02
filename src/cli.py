@@ -1597,7 +1597,7 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     search.add_argument(
         "--type",
-        choices=("context", "preference", "decision", "lesson", "project"),
+        choices=("context", "preference", "decision", "lesson", "project", "note"),
         dest="memory_type",
     )
     search.add_argument("--tag", metavar="TAG")

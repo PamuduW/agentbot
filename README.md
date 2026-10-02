@@ -300,6 +300,8 @@ record's status or file, and superseded or retired records never appear.
 
 `agentbot memory search QUERY`, `memory show PATH`, and `memory brief` read
 validated records straight from the files; there is no index to go stale.
+A record under a project's `notes/` keeps the schema type `project` in its
+file but reads as kind `note` in their output, and `--type note` selects it.
 Only records with no validation or scanner finding are eligible, and proposals
 never are. Superseded, retired, and expired records, and records past each
 pool's hot limit (64 per project, 32 global, 48 shared, newest first), are

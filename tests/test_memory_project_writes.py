@@ -78,6 +78,23 @@ class AddAndEditTests(WritesTestCase):
         sync.sync(self.b)
         self.assertTrue((self.b / path).exists())
 
+    def test_a_note_reads_as_a_note_but_keeps_the_schema_type(self) -> None:
+        # The brief printed a note as "(project, ...)", the same label as the
+        # project hub, so agents took it for the project record.
+        result = writes.add(self.a, self.code, self.config, kind="note", title="Fixed", body="x")
+        self.assertEqual("note", result["kind"])
+        self.valid(self.a)
+        self.assertIn("\ntype: project\n", (self.a / result["path"]).read_text())
+        brief = retrieve.brief(self.a, retrieve.Request(project="alpha"))
+        line = next(line for line in brief.text.splitlines() if result["path"] in line)
+        self.assertIn("(note, ", line)
+        source = next(s for s in retrieve.brief_json(brief)["sources"] if s["id"] == result["id"])
+        self.assertEqual(("project", "note"), (source["type"], source["kind"]))
+        notes = retrieve.search(self.a, "", retrieve.Request(project="alpha", kind="note"))
+        paths = [hit.record.path for hit in notes.hits]
+        self.assertIn(result["path"], paths)
+        self.assertTrue(all("/notes/" in path for path in paths), paths)
+
     def test_edit_keeps_identity_and_front_matter(self) -> None:
         before = next(r for r in memory.validate(self.a).records if r.path == LESSON)
         writes.edit(
