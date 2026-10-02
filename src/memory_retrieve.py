@@ -96,6 +96,7 @@ class Hit:
             "id": record.id,
             "path": record.path,
             "type": record.type,
+            "kind": kind_of(record),
             "status": record.status,
             "date": record.date,
             "scope": scope_of(record),
@@ -114,6 +115,14 @@ class Retrieval:
 
 def scope_of(record: Record) -> str:
     return record.scope
+
+
+def kind_of(record: Record) -> str:
+    """What a record is to a reader: a note under notes/ has the schema type project."""
+    parts = record.path.split("/")
+    if record.type == "project" and parts[0] == "projects" and parts[2:3] == ["notes"]:
+        return "note"
+    return record.type
 
 
 def _check_request(request: Request) -> None:
@@ -168,7 +177,7 @@ def candidates(
         if pool is None:
             exclude("scope")
             continue
-        if request.kind and record.type != request.kind:
+        if request.kind and request.kind not in {record.type, kind_of(record)}:
             exclude("filter")
             continue
         if request.tag and request.tag not in record.tags:
@@ -407,7 +416,7 @@ def _item_text(root: Path, hit: Hit) -> str:
     where = scope_of(record) + (f" {','.join(record.projects)}" if record.projects else "")
     labels = f" [{', '.join(hit.labels)}]" if hit.labels else ""
     lead = _lead(root, record, BRIEF_ITEM_TOKENS - 40)
-    line = f"- **{record.title}** ({record.type}, {record.date}, {where}){labels} `{record.id or record.path}` {record.path}"
+    line = f"- **{record.title}** ({kind_of(record)}, {record.date}, {where}){labels} `{record.id or record.path}` {record.path}"
     return line + (f"\n  {lead}" if lead else "")
 
 

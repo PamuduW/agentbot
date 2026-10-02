@@ -243,7 +243,10 @@ ordinary agent shell has no terminal, so an agent that is told to approve
 gets the command to hand back instead. This deters; it is not a security
 boundary: a harness that gives the agent a pseudo-terminal can pass it, and
 nothing here proves a person is present. Conflict resolution (keep mine or
-theirs) is also refused outside the repository the conflict belongs to.
+theirs) is also refused outside the repository the conflict belongs to. One
+exception: when a repository was registered twice under different IDs, its
+losing registration's writes can be discarded (keep theirs) from that same
+repository, never re-applied.
 
 `search`, `show`, and `brief` detect the project from the
 directory you run them in (Git top level, origin, registry) when neither
@@ -300,6 +303,8 @@ record's status or file, and superseded or retired records never appear.
 
 `agentbot memory search QUERY`, `memory show PATH`, and `memory brief` read
 validated records straight from the files; there is no index to go stale.
+A record under a project's `notes/` keeps the schema type `project` in its
+file but reads as kind `note` in their output, and `--type note` selects it.
 Only records with no validation or scanner finding are eligible, and proposals
 never are. Superseded, retired, and expired records, and records past each
 pool's hot limit (64 per project, 32 global, 48 shared, newest first), are

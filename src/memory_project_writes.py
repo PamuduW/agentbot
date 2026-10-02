@@ -246,7 +246,7 @@ def add(
     if target:
         changes.append(target)
     op = memory_sync.change_project(vault, folder, changes, client=client)
-    return _result(op, path=relative, id=record_id, warnings=warnings)
+    return _result(op, path=relative, id=record_id, kind=kind, warnings=warnings)
 
 
 def _supersede_target(vault: Path, folder: str, target_id: str) -> tuple[str, bytes]:
