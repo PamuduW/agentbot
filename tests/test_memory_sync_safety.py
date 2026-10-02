@@ -337,6 +337,32 @@ class ProjectIdentityTests(SafetyTestCase):
             self.assertIn("another project", str(raised.exception))
         self.assertFalse((self.b / "projects/app/lessons/secret-plan.md").exists())
 
+    def test_one_repository_registered_twice_can_discard_its_losing_writes(self) -> None:
+        # Two clones registered the same repository under different IDs; the
+        # loser's project.md was left as a conflict no registered project owned.
+        winner, loser = (
+            "a0a0a0a0-0000-4000-8000-000000000001",
+            "b0b0b0b0-0000-4000-8000-000000000002",
+        )
+        self.register(self.a, "https://github.com/me/app", winner)
+        self.register(self.b, "https://github.com/me/app", loser)
+        sync.sync(self.a)
+        lost = sync.sync(self.b).conflicts
+        hub = next(c for c in lost if c["path"] == "projects/app/project.md")
+        repo = Path(self._tmp.name) / "app"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "remote", "add", "origin", "https://github.com/me/app"],
+            check=True,
+        )
+        config = Path(self._tmp.name) / "config"
+        with self.assertRaises(MemoryVaultError) as raised:
+            autosync.resolve(self.b, config, hub["op"], "mine", cwd=repo)
+        self.assertIn("another project", str(raised.exception))
+        result = autosync.resolve(self.b, config, hub["op"], "theirs", cwd=repo)
+        self.assertEqual(("theirs", None), (result["kept"], result["resolution_op"]))
+        self.assertIn(winner, (self.b / "projects/app/project.md").read_text())
+
 
 class ConflictScopeTests(SafetyTestCase):
     def repo(self, origin: str) -> Path:

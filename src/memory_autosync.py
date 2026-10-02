@@ -252,7 +252,7 @@ def resolve(
     if keep not in {"mine", "theirs"}:
         raise MemoryVaultError("keep must be mine or theirs")
     if cwd is not None:
-        _require_owner(vault, config_home, conflict, cwd)
+        _require_owner(vault, config_home, conflict, cwd, keep)
     resolution = None
     if keep == "mine":
         resolution = _reapply(vault, conflict).id
@@ -265,7 +265,9 @@ def resolve(
     }
 
 
-def _require_owner(vault: Path, config_home: Path, conflict: dict[str, Any], cwd: Path) -> None:
+def _require_owner(
+    vault: Path, config_home: Path, conflict: dict[str, Any], cwd: Path, keep: str
+) -> None:
     from . import memory_projects
 
     tier = conflict["tier"]
@@ -292,10 +294,35 @@ def _require_owner(vault: Path, config_home: Path, conflict: dict[str, Any], cwd
     # not: the lost operation carries the ID of the project that wrote it.
     written_by = (conflict.get("op_data") or {}).get("project_id")
     if written_by is not None and written_by != entry["id"]:
+        if keep == "theirs" and _lost_registration_of(vault, written_by, cwd):
+            return  # this repository's own losing registration: discarding it is safe
         raise MemoryVaultError(
             f"this conflict was written by another project that shares the folder "
             f"{entry['folder']}; {elsewhere}"
         )
+
+
+def _lost_registration_of(vault: Path, project_id: str, cwd: Path) -> bool:
+    """Whether project_id was this repository's own registration, lost to another.
+
+    Two machines can register one repository under different IDs; the loser's
+    writes are left behind as conflicts no registered project owns.
+    """
+    from . import memory_projects
+
+    identity = memory_projects.repo_identity(cwd)
+    if identity is None:
+        return False
+    if any(item.get("id") == project_id for item in memory_sync._registry(vault)["projects"]):
+        return False
+    for item in memory_sync.conflicts(vault):
+        data = item.get("op_data") or {}
+        if item.get("kind") != "register" or not data.get("content"):
+            continue
+        entry = json.loads(data["content"])
+        if entry.get("id") == project_id and entry.get("origin") == identity.canonical:
+            return True
+    return False
 
 
 def _reapply(vault: Path, conflict: dict[str, Any]) -> memory_sync.Op:
