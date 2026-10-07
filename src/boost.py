@@ -781,8 +781,9 @@ class BoostIntegration:
 
         `boostgraph init` builds its index into a repository `.boost/`, which
         the plan forbids outright. A `.boost/` holding nothing but a config file
-        is a different problem -- see `_shadowing_configs` -- so only other
-        content counts as graph evidence.
+        is a different problem -- see `_shadowing_configs` -- and `hook-meta/`
+        is where the Bash hook records each tool call, so only other content
+        counts as graph evidence.
         """
         from .workspace_state import WorkspaceStore
 
@@ -790,7 +791,7 @@ class BoostIntegration:
             records = WorkspaceStore(self.paths.workspace_state_file).load()
         except (OSError, ValueError):
             return ()
-        config_names = {"config.toml", "config.toml.lock"}
+        allowed_names = {"config.toml", "config.toml.lock", "hook-meta"}
         indexes: list[Path] = []
         for record in records:
             candidate = Path(record.path) / ".boost"
@@ -800,7 +801,7 @@ class BoostIntegration:
                 entries = {entry.name for entry in candidate.iterdir()}
             except OSError:
                 continue
-            if entries - config_names:
+            if entries - allowed_names:
                 indexes.append(candidate)
         return tuple(indexes)
 

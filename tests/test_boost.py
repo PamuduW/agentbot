@@ -1241,6 +1241,16 @@ class BoostRepositoryGraphIndexTests(BoostIntegrationTests):
         integration = self._integration_type()(self._paths())
         self.assertFalse(integration._forbidden_graph_evidence())
 
+    def test_hook_metadata_is_not_a_graph_index(self) -> None:
+        workspace = self._workspace()
+        index = workspace / ".boost"
+        (index / "hook-meta").mkdir(parents=True)
+        (index / "hook-meta" / "meta.929409625").write_text(
+            '{"hook_event_name":"PreToolUse"}', encoding="utf-8"
+        )
+        integration = self._integration_type()(self._paths())
+        self.assertFalse(integration._forbidden_graph_evidence())
+
     def test_cursor_mcp_boostgraph_config_is_forbidden(self) -> None:
         cursor = self._cursor()
         cursor.mkdir(parents=True, exist_ok=True)
