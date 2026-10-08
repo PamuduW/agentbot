@@ -419,12 +419,13 @@ class IntegrationRefreshTests(unittest.TestCase):
                 mock.patch(
                     "src.memory_backup.refresh", return_value=("refreshed /backups", "ok")
                 ) as backup,
+                mock.patch("src.memory_hook.refresh", return_value=("current", "ok")),
             ):
                 outcomes = lifecycle._refresh_integrations()
 
         self.assertEqual(["vscode", "cursor"], surfaced)  # CLI config is merged once, earlier
         self.assertEqual(
-            ["boost", "vscode", "cursor", "codex-remote", "memory-backup"],
+            ["boost", "vscode", "cursor", "codex-remote", "memory-backup", "vault-hooks"],
             [o.key for o in outcomes],
         )
         backup.assert_called_once_with(lifecycle.paths.root, lifecycle.paths.config_home)
@@ -455,6 +456,7 @@ class IntegrationRefreshTests(unittest.TestCase):
                 mock.patch("src.platform_surfaces.surface_outcome", side_effect=surface),
                 mock.patch("src.codex_remote_control.ensure", return_value=("on", "ok")),
                 mock.patch("src.memory_backup.refresh", return_value=("refreshed", "ok")),
+                mock.patch("src.memory_hook.refresh", return_value=("current", "ok")),
             ):
                 lifecycle._refresh_integrations(selected=frozenset({"vscode"}))
 

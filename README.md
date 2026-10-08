@@ -294,8 +294,10 @@ including a dirty or invalid vault.
 pre-commit and pre-push hooks, which run `memory validate` before Git proceeds:
 pre-commit with `--staged`, so it judges exactly the staged bytes the commit
 will record (the check the sync engine applies to its own commits), and
-pre-push over the whole tree. A hook installed before 2026-10-08 still checks
-the working files; `memory hook install --yes` replaces it. Only hooks carrying the `agentbot-memory-hook` marker are written or removed;
+pre-push over the whole tree. Every `agentbot update` (and so `dotfiles
+full-update`) installs the hooks when they are absent and replaces an outdated
+Agentbot hook, so a new release of the checks needs no manual step. Only hooks
+carrying the `agentbot-memory-hook` marker are written or removed;
 a `core.hooksPath` outside the vault's Git directory is refused. The hooks are
 an accident guard (`--no-verify` bypasses them), and they do not scan
 `.obsidian/`, where plugin settings are committed unscanned.
