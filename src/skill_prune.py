@@ -17,6 +17,9 @@ Classification, in order:
 ``stale-pin``  in the lock with no directory on disk
 ``manual``     a directory with no lock entry -- user-placed, never removed
                unless explicitly requested
+``modified``   pinned, but its files no longer match the install receipt
+               (``skillFolderHash``) -- edited after install, so the user's;
+               never removed unless explicitly requested
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .paths import AgentbotPaths
+from .skills_installer import _skill_folder_hash
 from .skills_sources import SkillsSourcesConfig
 
 REMOVABLE_BY_DEFAULT = frozenset({"excluded", "orphaned", "stale-pin"})
@@ -118,6 +122,21 @@ def _installed_skill_dirs(skills_home: Path) -> dict[str, Path]:
     }
 
 
+def _changed_since_install(entry: dict, directory: Path) -> bool:
+    """True when the folder no longer matches its install receipt.
+
+    A pin without a recorded hash predates receipts and cannot show a change,
+    so it is treated as unchanged, as it always was.
+    """
+    receipt = entry.get("skillFolderHash")
+    if not isinstance(receipt, str):
+        return False
+    try:
+        return _skill_folder_hash(directory) != receipt
+    except OSError:
+        return True
+
+
 def plan_prune(paths: AgentbotPaths, config: SkillsSourcesConfig) -> PruneReport:
     """Classify every installed skill and lock pin against the manifest."""
     lock_state = _read_lock(paths.global_skill_lock)
@@ -167,6 +186,17 @@ def plan_prune(paths: AgentbotPaths, config: SkillsSourcesConfig) -> PruneReport
 
         repo = entry.get("source")
         source = active_repos.get(repo) if isinstance(repo, str) else None
+        if (source is None or source.excludes(name)) and _changed_since_install(entry, directory):
+            candidates.append(
+                PruneCandidate(
+                    name=name,
+                    reason="modified",
+                    detail="changed since install; kept as yours, remove it by name if not",
+                    directory=directory,
+                    locked=True,
+                )
+            )
+            continue
         if source is None:
             candidates.append(
                 PruneCandidate(

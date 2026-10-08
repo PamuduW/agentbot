@@ -832,11 +832,12 @@ class BoostIntegration:
     def _repository_graph_indexes(self) -> tuple[Path, ...]:
         """Registered workspaces carrying a BoostGraph index.
 
-        `boostgraph init` builds its index into a repository `.boost/`, which
-        the plan forbids outright. A `.boost/` holding nothing but a config file
-        is a different problem -- see `_shadowing_configs` -- and `hook-meta/`
-        is where the Bash hook records each tool call, so only other content
-        counts as graph evidence.
+        Before v0.14 `boostgraph init` built its index into a repository
+        `.boost/`; since then `boost graph init` builds it into `.codegraph/`.
+        The plan forbids both outright. A `.boost/` holding nothing but a
+        config file is a different problem -- see `_shadowing_configs` -- and
+        `hook-meta/` is where the Bash hook records each tool call, so only
+        other content counts as graph evidence.
         """
         from .workspace_state import WorkspaceStore
 
@@ -847,6 +848,9 @@ class BoostIntegration:
         allowed_names = {"config.toml", "config.toml.lock", "hook-meta"}
         indexes: list[Path] = []
         for record in records:
+            codegraph = Path(record.path) / ".codegraph"
+            if codegraph.is_dir():
+                indexes.append(codegraph)
             candidate = Path(record.path) / ".boost"
             if not candidate.is_dir():
                 continue

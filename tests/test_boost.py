@@ -1291,6 +1291,15 @@ class BoostRepositoryGraphIndexTests(BoostIntegrationTests):
         integration = self._integration_type()(self._paths())
         self.assertTrue(integration._forbidden_graph_evidence())
 
+    def test_a_codegraph_index_is_forbidden(self) -> None:
+        # Since v0.14 `boost graph init` builds its index in <repo>/.codegraph/,
+        # not .boost/, so a hand-run init went unseen.
+        workspace = self._workspace()
+        (workspace / ".codegraph").mkdir()
+        (workspace / ".codegraph" / "graph.db").write_text("index", encoding="utf-8")
+        integration = self._integration_type()(self._paths())
+        self.assertTrue(integration._forbidden_graph_evidence())
+
     def test_a_repository_config_alone_is_not_a_graph_index(self) -> None:
         workspace = self._workspace()
         index = workspace / ".boost"

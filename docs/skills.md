@@ -49,9 +49,9 @@ repository.
 
 ## Reconciliation and removal
 
-`skills prune` classifies candidates as `excluded`, `orphaned`, `stale-pin`, or
-`manual`. It previews by default and requires `--yes` to write. Manual skills
-are preserved unless explicitly included. `skills remove-manual` accepts exact
+`skills prune` classifies candidates as `excluded`, `orphaned`, `stale-pin`,
+`manual`, or `modified`. It previews by default and requires `--yes` to write.
+Manual and modified skills are preserved unless explicitly named. `skills remove-manual` accepts exact
 names and never treats an empty selection as permission to remove everything.
 Agentbot-protected Graphify output is not a manual-removal candidate.
 
@@ -60,11 +60,26 @@ separate prune: a skill a source `exclude`s is removed when the lock pins it to
 that source, and so is a skill the lock pins to a manifest source set to
 `enabled: false`. The Skills CLI installs every skill a `skills: all` source
 publishes, so the install pins each excluded skill it can prove it put there
-(the whole folder is byte-identical to the source's, not just `SKILL.md`) for
-that removal; a copy with any changed or added file is the user's and stays. A skill pinned to a repository the manifest never names is
+(the whole folder is byte-identical to the source's, not just `SKILL.md`, and
+the folder was not already on disk before the install ran) for that removal; a
+copy with any changed or added file is the user's and stays. A skill pinned to a repository the manifest never names is
 left alone, because the user installed it, and so is an unpinned directory that
 only shares an excluded name: nothing shows Agentbot installed it, so it is a
 `manual` candidate, removed only by name.
+
+### Install receipts
+
+A customised skill belongs to the user (Review 2, answer 3, 2026-10-08). The
+lock's `skillFolderHash`, recorded at install, is the receipt:
+
+- Prune never removes an excluded or orphaned skill whose files no longer match
+  its receipt. It is classified `modified` and removed only by name.
+- Install refuses a source that would overwrite, with different files, a skill
+  folder that has no lock entry or no longer matches its receipt. The source
+  fails before the Skills CLI runs, naming the folders to move or rename.
+- An identical folder is not a conflict, and an unchanged managed skill updates
+  as before. A pin recorded without a hash predates receipts and cannot show a
+  change, so it is treated as unchanged.
 
 ## Claude listing states
 
@@ -99,7 +114,8 @@ Setup disables tracing upload and Boost auto-update, keeps BoostGraph and its
 MCP changes disabled, and writes the declared policy from
 `BOOST_FEATURE_POLICY` in `src/boost.py`. Repository `.boost/config.toml` files
 can shadow global configuration; Doctor reports registered workspaces that
-violate policy.
+violate policy, including a BoostGraph index in `.codegraph/` (v0.14 and
+later) or in `.boost/` (earlier versions).
 
 ### Feature-flag policy
 

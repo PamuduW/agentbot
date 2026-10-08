@@ -123,6 +123,12 @@ declined recovery, failed fetch, or failed backup stops downstream work.
 the documented repository recovery, restart Agentbot after a self-update, and
 run the non-interactive lifecycle update.
 
+Only `dotfiles full-update` and the bootstrap reach the complete end state
+(Review 2, answer 2, 2026-10-08). Agentbot's own entries are deliberately
+partial: **Install** sets up the selected components and the baseline, without
+the workspace refresh or backup that the update pass does, and **Update** runs
+that pass without any Dotfiles work or the full update's closing Doctors.
+
 ## Contracts a calling run may set
 
 These are for a caller sequencing Agentbot inside a longer run — `dotfiles
