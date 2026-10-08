@@ -147,6 +147,13 @@ until the policy names it.
 | `boost-share-cli-outputs` | off (fixed) | Sends command output to JFrog |
 | `boost-target-version` | off (fixed) | Remote-chosen update target |
 
+Boost would otherwise refresh the remote defaults from JFrog whenever its flag
+cache expires, from any hook, and that request carries the Git email and the
+repository name. Every flag is pinned, so the remote values change nothing:
+Dotfiles' `.bashrc` exports `BOOST_FEATURE_FLAGS_DISABLE=1`, which stops the
+fetch while the pins still apply. `boost feature-flags` then shows the pinned
+values without contacting JFrog.
+
 A lossy transform stays on only when the agent can retrieve the original with
 `boost retrieve`. Secrets and credentials are the one exemption: redaction is
 meant to be unrecoverable. "Fixed" flags are off permanently by the user's decision of 2026-10-08, and a
