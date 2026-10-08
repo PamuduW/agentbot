@@ -64,6 +64,31 @@ class McpFilterContract:
             raise ValueError("filter response limit must be a positive integer")
 
 
+_SESSION_UUID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+
+def _mask_session_values(value: Any) -> Any:
+    """Replace a server-stamped session UUID, and nothing else.
+
+    Microsoft Learn writes a fresh UUID into a schema property's `const` and
+    `default` on every session, so the descriptor would never match its pin.
+    Only that exact shape is masked: both keys present, equal, and a UUID,
+    which a client cannot change and which cannot carry an instruction. Every
+    other part of the descriptor is still fingerprinted.
+    """
+    if isinstance(value, dict):
+        masked = {key: _mask_session_values(item) for key, item in value.items()}
+        const, default = masked.get("const"), masked.get("default")
+        if isinstance(const, str) and const == default and _SESSION_UUID.match(const):
+            masked["const"] = masked["default"] = "<session-uuid>"
+        return masked
+    if isinstance(value, list):
+        return [_mask_session_values(item) for item in value]
+    return value
+
+
 def normalize_tool_descriptor(tool: Tool | dict[str, Any]) -> dict[str, Any]:
     if isinstance(tool, Tool):
         value = tool.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -71,7 +96,7 @@ def normalize_tool_descriptor(tool: Tool | dict[str, Any]) -> dict[str, Any]:
         value = tool
     else:
         raise TypeError("tool descriptor must be an MCP Tool or mapping")
-    return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    return _mask_session_values(json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True)))
 
 
 def descriptor_fingerprint(tool: Tool | dict[str, Any]) -> str:

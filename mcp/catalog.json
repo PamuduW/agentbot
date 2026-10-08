@@ -223,7 +223,7 @@
       "documentation_url": "https://learn.microsoft.com/en-us/training/support/mcp",
       "license": null,
       "terms_url": "https://learn.microsoft.com/en-us/legal/termsofuse",
-      "reviewed_on": "2026-09-14",
+      "reviewed_on": "2026-10-08",
       "eligible": true,
       "transport": "local_stdio",
       "entrypoint": [
@@ -254,9 +254,9 @@
         "microsoft_docs_fetch"
       ],
       "descriptor_fingerprints": [
-        "sha256:c51097b359ca6a9b39062c180113fca83e5ac40f33014b9ddb37f267d59fe172",
-        "sha256:d4886260c3c25d496ebafbe145d113829dff6fbec40025560b188432238a4880",
-        "sha256:7b9a414f1d7326040ba98acd713e448e4c6cde57e649585818ab20a4849fa0c6"
+        "sha256:8462ce3cd9f2a6a378cda75160dcc1518f7703955bd29030cc829a7c57f72181",
+        "sha256:c74402d46b6c8ef85e1d4cceac95d2178b5940551b73e1c70a4438693675cb0f",
+        "sha256:131729d97ebbd6fe64d938e9232ef52f3d97c12dec3a65fc849467afede85454"
       ],
       "read_only_authority": "Agentbot's local filter exposes only three descriptor-pinned Microsoft Learn search, article, and code-sample tools from the fixed Microsoft HTTPS origin",
       "limitations": [
