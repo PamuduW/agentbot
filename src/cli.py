@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from .atomic_io import write_text_atomic
 from .boost import BoostIntegration
 from .commands import CommandSpec, command_by_name
 from .diagnostics import Diagnostics
@@ -1136,6 +1137,7 @@ def _handle_mcp(context: CommandContext) -> int:
 def _handle_update(context: CommandContext) -> int:
     args = context.args
     command = args.command
+    components = _parse_components(getattr(args, "components", None))
     # No planning phase on screen. It had a heading, a legend and three
     # [STEP]/[OK] pairs before the report, which is four screens of scaffolding
     # in front of one table -- and the sibling product's update goes straight to
@@ -1174,7 +1176,11 @@ def _handle_update(context: CommandContext) -> int:
     log_legend()
     print()
     applying = InstallLog(sentinel="Update complete")
-    outcome = context.lifecycle.apply_update(plan, progress=applying.stage)
+    outcome = context.lifecycle.apply_update(
+        plan,
+        progress=applying.stage,
+        **({"components": components} if components is not None else {}),
+    )
     # One result block, closing on one rollup. The outcome, the reconciliation
     # and the resync each used to print their own, and the resync brought a
     # second `=== Workspace resync ===` heading with it -- so one update ended
@@ -1317,23 +1323,34 @@ def _handle_resync(context: CommandContext) -> int:
     return 1 if any(item.status in {"conflict", "failed"} for item in report.results) else 0
 
 
+def _parse_components(selected: str | None) -> tuple[str, ...] | None:
+    """A `--components` value as component keys; None means all of them."""
+    if not selected:
+        return None
+    wanted = tuple(part.strip() for part in selected.split(",") if part.strip())
+    # The class attribute, not the instance: which components exist is a
+    # fact about Lifecycle, and reading it off the object would make
+    # validation depend on having built one.
+    known_components = Lifecycle.SELECTABLE_COMPONENTS
+    unknown = [c for c in wanted if c not in known_components]
+    if unknown:
+        known = ", ".join(known_components)
+        raise SystemExit(f"unknown component(s): {', '.join(unknown)} (known: {known})")
+    return wanted
+
+
 def _handle_install(context: CommandContext) -> int:
-    selected = getattr(context.args, "components", None)
-    components: tuple[str, ...] | None = None
-    if selected:
-        wanted = tuple(part.strip() for part in selected.split(",") if part.strip())
-        # The class attribute, not the instance: which components exist is a
-        # fact about Lifecycle, and reading it off the object would make
-        # validation depend on having built one.
-        known_components = Lifecycle.SELECTABLE_COMPONENTS
-        unknown = [c for c in wanted if c not in known_components]
-        if unknown:
-            known = ", ".join(known_components)
-            raise SystemExit(f"unknown component(s): {', '.join(unknown)} (known: {known})")
-        components = wanted
+    components = _parse_components(getattr(context.args, "components", None))
     if bool(getattr(context.args, "plan_only", False)):
         return show_install_plan(context.lifecycle, components)
-    return run_agentbot_install(context.lifecycle, context.paths, components=components)
+    rc = run_agentbot_install(context.lifecycle, context.paths, components=components)
+    # A calling run (the Dotfiles bootstrap) cannot see the selector, so the
+    # selection is handed back for the update that follows (Review 2, answer 1).
+    selection_file = os.environ.get("AGENTBOT_INSTALL_SELECTION_FILE")
+    if rc == 0 and selection_file:
+        chosen = components if components is not None else Lifecycle.SELECTABLE_COMPONENTS
+        write_text_atomic(Path(selection_file), "".join(f"{name}\n" for name in chosen))
+    return rc
 
 
 def _handle_skills(context: CommandContext) -> int:
@@ -1755,6 +1772,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--interactive",
         action="store_true",
         help="Preview, confirm, and apply one update plan in this process",
+    )
+    update.add_argument(
+        "--components",
+        default="",
+        help="Comma-separated subset to configure, as for install; the rest are "
+        "inspected and reported, never configured. Omit for all of them.",
     )
 
     workspace = subparsers.add_parser("workspace", help="Preview or render one workspace")

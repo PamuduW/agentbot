@@ -258,6 +258,81 @@ class UpdateLifecycleTests(unittest.TestCase):
             graphify.setup.assert_called_once_with()
             diagnostics.collect.assert_called_once_with()
 
+    def test_apply_with_a_subset_configures_only_that_subset(self) -> None:
+        """Review 2, answer 1: a deselected component is inspected, never configured."""
+        from src.graphify import GraphifyStatus
+        from src.lifecycle import Lifecycle
+        from src.models import DiagnosticsSnapshot
+        from src.skill_catalog import SourceCatalog
+        from src.skill_reconcile import ReconcileResult
+        from src.workspace_service import WorkspaceReport
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root, home, paths = self._fixture(temporary)
+            (root / "cli").mkdir()
+            (root / "cli" / "codex.config.toml").write_text('model = "new"\n')
+            paths.codex_home.mkdir()
+            codex_config = paths.codex_home / "config.toml"
+            codex_config.write_text('model = "old"\n')
+            skill_path = home / ".agents/skills/graphify/SKILL.md"
+            skill_path.parent.mkdir(parents=True)
+            skill_path.write_text("# graphify\n", encoding="utf-8")
+            graphify = mock.Mock()
+            graphify.status.return_value = GraphifyStatus(
+                "ready", Path("/bin/graphify"), "1", skill_path, "1", "linked", "linked", "ready"
+            )
+            diagnostics = mock.Mock()
+            diagnostics.collect.return_value = DiagnosticsSnapshot(
+                (), 1, True, True, True, 1, 1, 0, 1, "ok", ()
+            )
+            catalog = SourceCatalog("source", "owner/repo", "abc123", ("alpha", "beta"))
+            events: list[str] = []
+            reconciled = []
+
+            @contextmanager
+            def checkouts(_config, _expected):
+                yield {"source": root / "checkout"}
+
+            def reconcile(_paths, _config, plan, **kwargs):
+                reconciled.append(plan)
+                kwargs["validate"]()
+                return ReconcileResult("applied", (), (), ())
+
+            def install(_paths, _checkouts):
+                events.append("install")
+                return []
+
+            lifecycle = Lifecycle(
+                paths,
+                diagnostics=diagnostics,
+                graphify=graphify,
+                catalog_discoverer=lambda _config: (catalog,),
+                repository_head=lambda _root: "head123",
+                workspace_preview=lambda: WorkspaceReport(()),
+                checkout_provider=checkouts,
+                reconcile_applier=reconcile,
+                planned_installer=install,
+                integration_refresher=lambda selected=None: events.append(
+                    ("integrations", selected)
+                ) or (),
+            )
+            lifecycle.resync_workspaces = lambda *, apply, paths=(): WorkspaceReport(())
+            mcp_applied: list[bool] = []
+            lifecycle._mcp_install = lambda *, apply: mcp_applied.append(apply) or mock.Mock()
+
+            with mock.patch.dict(os.environ, {"HOME": str(home)}, clear=False):
+                plan = lifecycle.plan_update()
+                outcome = lifecycle.apply_update(plan, components=("boost",))
+
+            self.assertEqual("applied", outcome.status)
+            self.assertNotIn("install", events)  # skills deselected
+            self.assertEqual((), reconciled[0].wildcard_additions)
+            self.assertEqual((), reconciled[0].manifest_changes)
+            graphify.setup.assert_not_called()
+            self.assertEqual([False, False], mcp_applied)  # plan preview, then deselected
+            self.assertEqual('model = "old"\n', codex_config.read_text())  # cli-config deselected
+            self.assertIn(("integrations", frozenset({"boost"})), events)
+
     def test_apply_restores_managed_state_when_a_later_stage_fails(self) -> None:
         from src.graphify import GraphifyStatus
         from src.lifecycle import Lifecycle
@@ -358,3 +433,31 @@ class IntegrationRefreshTests(unittest.TestCase):
             print_update_result(UpdateOutcome("applied", platform=outcomes))
         self.assertIn("Codex Remote Control", out.getvalue())
         self.assertIn("Memory backup", out.getvalue())
+
+    def test_a_scoped_refresh_inspects_deselected_integrations(self) -> None:
+        from src.boost import BoostStatus
+        from src.lifecycle import Lifecycle
+        from src.models import PlatformOutcome
+        from tests.support import agentbot_paths
+
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = agentbot_paths(Path(temporary))
+            boost = mock.Mock()
+            boost.status.return_value = mock.Mock(spec=BoostStatus, state="ready")
+            lifecycle = Lifecycle(paths, boost=boost, command_runner=mock.Mock())
+            applied: dict[str, bool] = {}
+
+            def surface(key, label, *_args, apply, **_kwargs):
+                applied[key] = apply
+                return PlatformOutcome(key, label, "current", "ok")
+
+            with (
+                mock.patch("src.platform_surfaces.surface_outcome", side_effect=surface),
+                mock.patch("src.codex_remote_control.ensure", return_value=("on", "ok")),
+                mock.patch("src.memory_backup.refresh", return_value=("refreshed", "ok")),
+            ):
+                lifecycle._refresh_integrations(selected=frozenset({"vscode"}))
+
+        boost.setup_if_cli_available.assert_not_called()
+        boost.status.assert_called_once_with()
+        self.assertEqual({"vscode": True, "cursor": False}, applied)

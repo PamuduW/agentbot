@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -67,7 +68,7 @@ class Lifecycle:
         checkout_provider: Callable | None = None,
         reconcile_applier: Callable | None = None,
         planned_installer: Callable | None = None,
-        integration_refresher: Callable[[], tuple[PlatformOutcome, ...]] | None = None,
+        integration_refresher: Callable[..., tuple[PlatformOutcome, ...]] | None = None,
         command_runner: CommandRunner | None = None,
     ) -> None:
         self.paths = paths
@@ -229,16 +230,29 @@ class Lifecycle:
         stage("Install complete")
         return InstallOutcome(skills, graphify, boost, outputs, diagnostics, tuple(platform), mcp)
 
-    def _refresh_integrations(self) -> tuple[PlatformOutcome, ...]:
-        """What install sets up beyond skills, refreshed by every update."""
+    def _refresh_integrations(
+        self, selected: frozenset[str] | None = None
+    ) -> tuple[PlatformOutcome, ...]:
+        """What install sets up beyond skills, refreshed by every update.
+
+        `selected` narrows it the way install is narrowed: a deselected surface
+        is read and reported, never configured. None means all of them.
+        """
         from . import codex_remote_control, memory_backup
         from .ui.reports import integration_result
 
-        boost = self.boost.setup_if_cli_available()
+        def chosen(key: str) -> bool:
+            return selected is None or key in selected
+
+        boost = self.boost.setup_if_cli_available() if chosen("boost") else self.boost.status()
         outcomes = [PlatformOutcome("boost", "Boost", boost.state, integration_result(boost.state))]
         for key, name, _phase in self.PLATFORM_COMPONENTS:
             if key != "cli-config":  # the update already merged CLI config above
-                outcomes.append(self._apply_platform(key, name))
+                outcomes.append(
+                    self._apply_platform(key, name)
+                    if chosen(key)
+                    else self._read_platform(key, name)
+                )
         remote_detail, remote_result = codex_remote_control.ensure(self.paths, self._command_runner)
         outcomes.append(
             PlatformOutcome("codex-remote", "Codex Remote Control", remote_detail, remote_result)
@@ -349,6 +363,7 @@ class Lifecycle:
         plan: UpdatePlan,
         *,
         progress: Callable[[str, float], None] | None = None,
+        components: tuple[str, ...] | None = None,
     ) -> UpdateOutcome:
         if self._update_snapshot() != plan.snapshot:
             return UpdateOutcome(
@@ -356,7 +371,7 @@ class Lifecycle:
                 "Managed state changed after preview; preview again before applying.",
             )
         if self._update_applier is None:
-            return self._apply_planned_update(plan, progress=progress)
+            return self._apply_planned_update(plan, progress=progress, components=components)
         return self._update_applier(plan)
 
     def _apply_planned_update(
@@ -364,8 +379,28 @@ class Lifecycle:
         plan: UpdatePlan,
         *,
         progress: Callable[[str, float], None] | None = None,
+        components: tuple[str, ...] | None = None,
     ) -> UpdateOutcome:
         config = load_skills_sources(self.paths.skills_sources_file)
+        # None configures everything, as an update always has. A selection
+        # (Review 2, answer 1: the bootstrap passes on what the operator chose
+        # at install) configures only those components and inspects the rest.
+        selected = frozenset(components) if components is not None else None
+
+        def chosen(key: str) -> bool:
+            return selected is None or key in selected
+
+        reconcile_plan = plan.reconcile
+        if not chosen("skills"):
+            # The transaction still wraps the other phases; it just has no
+            # skill to add, remove or rewrite in the manifest.
+            reconcile_plan = replace(
+                plan.reconcile,
+                updates=(),
+                wildcard_additions=(),
+                wildcard_removals=(),
+                manifest_changes=(),
+            )
         # The same shape install reports: each call names the phase starting and
         # how long the one before it took. An apply was four phases of silence
         # punctuated only by the skills installer's own per-source lines, so
@@ -391,10 +426,13 @@ class Lifecycle:
                 stage: dict[str, object] = {}
 
                 def validate_transaction() -> None:
-                    stage_begins("Reconciling skill sources")
-                    self._planned_installer(self.paths, checkouts)
+                    if chosen("skills"):
+                        stage_begins("Reconciling skill sources")
+                        self._planned_installer(self.paths, checkouts)
+                    else:
+                        stage_begins("Skipping skill sources")
                     graphify = self.graphify.status()
-                    if plan.graphify_action in {"setup", "refresh"}:
+                    if plan.graphify_action in {"setup", "refresh"} and chosen("graphify"):
                         stage_begins("Refreshing Graphify integration")
                         graphify = self.graphify.setup()
                         if graphify.state == "broken":
@@ -406,8 +444,11 @@ class Lifecycle:
                     # update is how a newly reviewed server reaches a machine
                     # that was set up before it was added, so update reads the
                     # manifest too rather than only maintaining what is there.
-                    stage_begins("Registering MCP servers")
-                    stage["mcp"] = self._mcp_install(apply=True)
+                    if chosen("mcp"):
+                        stage_begins("Registering MCP servers")
+                    else:
+                        stage_begins("Skipping MCP servers")
+                    stage["mcp"] = self._mcp_install(apply=chosen("mcp"))
                     stage_begins("Refreshing managed workspaces")
                     workspace_report = self.resync_workspaces(apply=True)
                     if any(
@@ -418,10 +459,15 @@ class Lifecycle:
                     ):
                         raise RuntimeError("managed workspace or global output refresh failed")
                     stage["workspace_report"] = workspace_report
-                    stage_begins("Refreshing CLI configuration")
                     from .cli_config import apply as apply_cli_config
+                    from .cli_config import preview as preview_cli_config
 
-                    cli_config = apply_cli_config(self.paths)
+                    if chosen("cli-config"):
+                        stage_begins("Refreshing CLI configuration")
+                        cli_config = apply_cli_config(self.paths)
+                    else:
+                        stage_begins("Skipping CLI configuration")
+                        cli_config = preview_cli_config(self.paths)
                     stage["cli_config"] = cli_config
                     if cli_config.failures:
                         raise RuntimeError(
@@ -442,13 +488,17 @@ class Lifecycle:
                     # these half-changed. Each surface reports its own state and
                     # none of them can fail the update.
                     stage_begins("Refreshing editor and shell integrations")
-                    stage["platform"] = self._integration_refresher()
+                    stage["platform"] = (
+                        self._integration_refresher()
+                        if selected is None
+                        else self._integration_refresher(selected=selected)
+                    )
                     stage_begins("Update complete")
 
                 reconcile = self._reconcile_applier(
                     self.paths,
                     config,
-                    plan.reconcile,
+                    reconcile_plan,
                     checkouts=checkouts,
                     confirm=True,
                     dry_run=False,
