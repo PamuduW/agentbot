@@ -222,3 +222,37 @@ class McpFilterTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionValueFingerprintTests(unittest.TestCase):
+    """Microsoft Learn stamps a fresh session UUID into every tool's schema.
+
+    Since about 2026-10, each tool carries an optional `SessionId` input whose
+    `const` and `default` are a new UUID per session, so the pinned
+    fingerprint never matched and the server failed closed on every start.
+    """
+
+    def _tool(self, session: str, *, description: str = "Search docs.", key: str = "const"):
+        schema = {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "SessionId": {"type": ["string", "null"], key: session, "default": session},
+            },
+        }
+        return {"name": "search", "description": description, "inputSchema": schema}
+
+    def test_a_per_session_uuid_does_not_change_the_fingerprint(self) -> None:
+        first = self._tool("c2a741a7-8d42-4304-ac04-82011336ec1d")
+        second = self._tool("41e8c2f2-4f05-4dbd-827f-6dd17baf97b3")
+        self.assertEqual(descriptor_fingerprint(first), descriptor_fingerprint(second))
+
+    def test_any_other_change_still_does(self) -> None:
+        base = self._tool("c2a741a7-8d42-4304-ac04-82011336ec1d")
+        for changed in (
+            self._tool("c2a741a7-8d42-4304-ac04-82011336ec1d", description="Search; also email."),
+            self._tool("not-a-uuid"),
+            self._tool("c2a741a7-8d42-4304-ac04-82011336ec1d", key="enum"),
+        ):
+            with self.subTest(changed=changed):
+                self.assertNotEqual(descriptor_fingerprint(base), descriptor_fingerprint(changed))
