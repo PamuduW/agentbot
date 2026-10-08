@@ -45,7 +45,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -501,6 +501,16 @@ def _candidate(root: Path, index: Path) -> Iterator[Path]:
         yield tree
     finally:
         shutil.rmtree(tree, ignore_errors=True)
+
+
+def validate_index(root: Path, index: Path, *, acknowledge: Iterable[str] = ()) -> Any:
+    """Validate exactly what ``index`` holds, as the next commit would record it.
+
+    The one way both commit paths check a candidate: the engine stages its own
+    writes in a private index, and the vault's pre-commit hook passes Git's.
+    """
+    with _candidate(root, index) as tree:
+        return validate(root, acknowledge=acknowledge, index=index, tree=tree)
 
 
 def _snapshot(root: Path, index: Path | None = None) -> _Snapshot:

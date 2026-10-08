@@ -45,8 +45,14 @@ if [ ! -x {installer} ]; then
 	exit 1
 fi
 unset AGENTBOT_MEMORY_ROOT
+# A commit is checked as Git will record it, the staged index; a push checks
+# the whole tree.
+case "$(basename "$0")" in
+pre-commit) scope=--staged ;;
+*) scope= ;;
+esac
 # A hook runs inside a commit or push: it must never start a memory sync.
-AGENTBOT_MEMORY_NO_SYNC=1 AGENTBOT_MEMORY_DIR="$root" exec {installer} memory validate
+AGENTBOT_MEMORY_NO_SYNC=1 AGENTBOT_MEMORY_DIR="$root" exec {installer} memory validate $scope
 """
 
 

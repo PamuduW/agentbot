@@ -461,6 +461,37 @@ class StatusAndCliTests(MemoryTestCase):
         )
         self.assertEqual(1, dirty.changed_paths)
 
+    def test_staged_validation_judges_the_staged_bytes(self) -> None:
+        """Review 2's COULD: the pre-commit check reads what the commit will hold.
+
+        The hook validated working files, so an invalid record could be staged
+        and committed while the editor's copy on disk was valid again, and the
+        other way round.
+        """
+        vault = v3_vault(self.tmp / "v")
+        vault.commit()
+        record = "core/lessons/2026-09-27-core.md"
+        valid = (vault.root / record).read_text(encoding="utf-8")
+        git = ["git", "-C", str(vault.root)]
+
+        vault.write(record, "not a record\n")
+        subprocess.run([*git, "add", record], check=True, capture_output=True)
+        vault.write(record, valid)
+        self.assertEqual(0, self._cli("memory", "validate", vault=vault.root)[0])
+        self.assertEqual(1, self._cli("memory", "validate", "--staged", vault=vault.root)[0])
+
+        subprocess.run([*git, "add", record], check=True, capture_output=True)
+        vault.write(record, "not a record\n")
+        self.assertEqual(1, self._cli("memory", "validate", vault=vault.root)[0])
+        self.assertEqual(0, self._cli("memory", "validate", "--staged", vault=vault.root)[0])
+
+    def test_the_pre_commit_hook_validates_the_staged_index(self) -> None:
+        from src import memory_hook
+
+        script = memory_hook.render_hook(self.tmp / "agentbot")
+        self.assertIn("pre-commit) scope=--staged", script)
+        self.assertIn("memory validate $scope", script)
+
     def test_validate_writes_nothing(self) -> None:
         # Hooks run it mid-commit and mid-push; status may sync, validate never does.
         vault = v3_vault(self.tmp / "v")

@@ -4,6 +4,7 @@ import argparse
 import io
 import json
 import os
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -851,6 +852,26 @@ def _handle_memory_sync(context: CommandContext) -> int:
     return code
 
 
+def _validate_staged(root: Path, acknowledge: Any) -> Any:
+    """The vault as the commit in progress will record it."""
+    from . import memory, memory_sync
+
+    named = os.environ.get("GIT_INDEX_FILE")
+    if named:
+        index = Path(named) if Path(named).is_absolute() else root / named
+    else:
+        found = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-path", "index"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if found.returncode != 0:
+            raise memory.MemoryVaultError("cannot find the vault's Git index")
+        index = Path(found.stdout.strip())
+    return memory_sync.validate_index(root, index, acknowledge=acknowledge)
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
@@ -925,7 +946,11 @@ def _dispatch_memory(context: CommandContext) -> int:
             status = memory.VaultStatus(state="unconfigured", looked_in=looked)
         else:
             try:
-                report = memory.validate(root, acknowledge=context.args.acknowledge_warning or ())
+                acknowledge = context.args.acknowledge_warning or ()
+                if getattr(context.args, "staged", False):
+                    report = _validate_staged(root, acknowledge)
+                else:
+                    report = memory.validate(root, acknowledge=acknowledge)
             except memory.MemoryVaultError as error:
                 status = memory.VaultStatus(
                     state="broken", looked_in=looked, root=root, problem=str(error)
@@ -1573,6 +1598,11 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
         dest="acknowledge_warning",
         metavar="RULE_ID",
         help="Accept one warning rule for this run only; blocking rules cannot be acknowledged",
+    )
+    memory_validate.add_argument(
+        "--staged",
+        action="store_true",
+        help="Validate the staged index (Git's, or GIT_INDEX_FILE) instead of the working files",
     )
     propose = memory_sub.add_parser(
         "propose", help="Propose one core record for the user to review"
