@@ -492,6 +492,51 @@ class StatusAndCliTests(MemoryTestCase):
         self.assertIn("pre-commit) scope=--staged", script)
         self.assertIn("memory validate $scope", script)
 
+    def test_update_refreshes_the_vault_hooks(self) -> None:
+        """Every update keeps the vault checks current, so a changed hook
+        (such as the 2026-10-08 staged pre-commit) needs no manual step."""
+        from src import memory_hook
+
+        vault = v3_vault(self.tmp / "v")
+        vault.commit()
+        home = self.tmp / "agentbot"
+        hooks = memory_hook.hooks_directory(vault.root)
+        hooks.mkdir(parents=True, exist_ok=True)
+        stale = memory_hook.render_hook(home).replace("--staged", "")
+        (hooks / "pre-commit").write_text(stale, encoding="utf-8")
+        (hooks / "pre-commit").chmod(0o755)
+        with patch.dict(os.environ, {"AGENTBOT_MEMORY_DIR": str(vault.root)}):
+            detail, result = memory_hook.refresh(home, self.tmp / "config")
+        self.assertEqual("ok", result)
+        self.assertIn("pre-commit", detail)
+        for name in memory_hook.HOOKS:
+            self.assertEqual(memory_hook.render_hook(home), (hooks / name).read_text())
+
+        with patch.dict(os.environ, {"AGENTBOT_MEMORY_DIR": str(vault.root)}):
+            self.assertEqual(("current", "ok"), memory_hook.refresh(home, self.tmp / "config"))
+
+    def test_update_never_replaces_a_hook_agentbot_does_not_own(self) -> None:
+        from src import memory_hook
+
+        vault = v3_vault(self.tmp / "v")
+        vault.commit()
+        hooks = memory_hook.hooks_directory(vault.root)
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        with patch.dict(os.environ, {"AGENTBOT_MEMORY_DIR": str(vault.root)}):
+            detail, result = memory_hook.refresh(self.tmp / "agentbot", self.tmp / "config")
+        self.assertEqual("check", result)
+        self.assertIn("not Agentbot's", detail)
+        self.assertIn("echo mine", (hooks / "pre-commit").read_text())
+
+    def test_update_skips_the_hooks_without_a_vault(self) -> None:
+        from src import memory_hook
+
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")}
+        with patch.dict(os.environ, {**clean, "HOME": str(self.tmp / "home")}, clear=True):
+            _, result = memory_hook.refresh(self.tmp / "agentbot", self.tmp / "config")
+        self.assertEqual("skipped", result)
+
     def test_validate_writes_nothing(self) -> None:
         # Hooks run it mid-commit and mid-push; status may sync, validate never does.
         vault = v3_vault(self.tmp / "v")

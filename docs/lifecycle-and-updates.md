@@ -89,8 +89,10 @@ Inside that transaction the update reconciles skills, refreshes Graphify, MCP,
 registered workspaces and CLI configuration, then runs Doctor as a silent
 gate: an error rolls the whole update back. Only after that gate does it
 refresh the editor and shell integrations (Boost, VS Code, the Cursor
-statusline, Codex Remote Control) and the recorded memory backup; each reports
-its own row and none of them can fail the update.
+statusline, Codex Remote Control), the recorded memory backup, and the memory
+vault's commit and push checks, which it installs when absent or outdated and
+never writes over a hook Agentbot does not own; each reports its own row and
+none of them can fail the update.
 
 The update prints a four-column report — component, installed, available,
 action — confirms, applies, and then prints the same four columns with a
@@ -132,7 +134,7 @@ that pass without any Dotfiles work or the full update's closing Doctors.
 `agentbot update --components L` narrows the update pass the way `install
 --components` narrows an install: the listed components are configured, and
 the rest are inspected and reported, never configured. Managed outputs,
-workspaces, Codex Remote Control, the memory backup and Doctor are the baseline
+workspaces, Codex Remote Control, the memory backup, the vault checks and Doctor are the baseline
 and always run. The bootstrap uses this so the update after a narrowed install
 does not set up what the operator deselected (Review 2, answer 1).
 

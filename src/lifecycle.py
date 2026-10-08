@@ -238,7 +238,7 @@ class Lifecycle:
         `selected` narrows it the way install is narrowed: a deselected surface
         is read and reported, never configured. None means all of them.
         """
-        from . import codex_remote_control, memory_backup
+        from . import codex_remote_control, memory_backup, memory_hook
         from .ui.reports import integration_result
 
         def chosen(key: str) -> bool:
@@ -263,6 +263,10 @@ class Lifecycle:
         outcomes.append(
             PlatformOutcome("memory-backup", "Memory backup", backup_detail, backup_result)
         )
+        # Baseline, like the backup: a new release of the vault's checks
+        # reaches every machine without `memory hook install`.
+        hooks_detail, hooks_result = memory_hook.refresh(self.paths.root, self.paths.config_home)
+        outcomes.append(PlatformOutcome("vault-hooks", "Vault checks", hooks_detail, hooks_result))
         return tuple(outcomes)
 
     def _mcp_install(self, *, apply: bool) -> McpInstallOutcome:

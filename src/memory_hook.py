@@ -127,6 +127,36 @@ def install(root: Path, agentbot_home: Path) -> HookState:
     return state
 
 
+def refresh(agentbot_root: Path, config_home: Path) -> tuple[str, str]:
+    """Keep the vault's checks current on every update; never raises.
+
+    Writes only an absent hook or one Agentbot wrote that has since changed
+    (a new release of the check); a hook somebody else owns is reported and
+    left alone, as `install` already guarantees.
+    """
+    from . import memory
+
+    try:
+        root, _ = memory.find_vault(agentbot_root, config_home=config_home)
+        if root is None:
+            return "no memory vault configured", "skipped"
+        state = install(root, agentbot_root)
+    except (MemoryVaultError, OSError) as error:
+        return f"not refreshed: {error}", "check"
+    if state.problem:
+        return f"not refreshed: {state.problem}", "check"
+    unowned = sorted(name for name, value in state.states.items() if value == "unowned")
+    if unowned:
+        return (
+            f"{', '.join(unowned)} exists and is not Agentbot's; left alone "
+            "(agentbot memory hook status)",
+            "check",
+        )
+    if state.applied:
+        return f"updated {', '.join(sorted(state.applied))}", "ok"
+    return "current", "ok"
+
+
 def remove(root: Path, agentbot_home: Path) -> HookState:
     state = inspect(root, agentbot_home)
     if state.hooks_dir is None:
