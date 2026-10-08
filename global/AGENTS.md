@@ -47,9 +47,6 @@ owns project-specific engineering rules. Keep this provider-neutral and concise.
 - Prefer native file/search tools. When shell search is appropriate and `rg` is
   available, prefer it over recursive `grep`. Use whatever path form the active
   tools require, and cite files repository-relative in reports.
-- Use a code-graph tool (`boostgraph_explore`) to get oriented in unfamiliar or
-  broad code; for a known symbol or file, search with `rg` and read the lines,
-  which costs a fraction of the tokens whatever the tool's description says.
 - Match surrounding naming, structure, idioms, error handling, formatting, and
   comment density. Do not add comments or docstrings the code does not need.
 - Make the smallest coherent change. Avoid speculative abstractions, unrelated

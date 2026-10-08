@@ -118,18 +118,16 @@ registered workspaces that violate policy.
 
 ### BoostGraph
 
-BoostGraph is the code graph for code repositories (workspace roadmap item 6A,
-option (a), 2026-10-08). Agentbot registers it like any other MCP server: the
-`boost_graph` entry in `mcp/catalog.json` renders `agentbot_boost_graph`,
-running `boost graph serve --mcp`, for Claude, Codex and Cursor. It serves the
-repository the client starts in and answers from that repository's
-`.codegraph/` index, which `boost graph init --no-install-mcp` builds; while a
-session runs, a watcher keeps the index current. Never run `boost graph
-install`, or `boost graph init` without `--no-install-mcp`: both write their own
-`boost-graph` entry into four client configs and Agentbot's Claude settings,
-and Doctor reports that entry as foreign. A `.codegraph/` index is expected; a
-pre-v0.14 index in `.boost/` is not. Graphify stays installed for
-document-heavy repositories and is rebuilt on demand.
+BoostGraph was adopted for code repositories and rejected on 2026-10-08
+(workspace roadmap item 6A). Measured in real sessions, `boostgraph_explore`
+returned about 4,000 tokens per call against a few hundred for a targeted
+`rg` and read, and its schema cost about 950 tokens in every Codex and Cursor
+session; it does not index Bash. Its `boost_graph` catalog entry stays as the
+record of that review but is not eligible, and the MCP step of every install
+and update removes Agentbot's own `agentbot_boost_graph` registration from any
+machine that still has it. `boost-graph-integration` stays pinned off, and
+Doctor reports any BoostGraph registration or `.codegraph/` index in a
+registered workspace. Graphify remains the code-graph tool, rebuilt on demand.
 
 ### Feature-flag policy
 

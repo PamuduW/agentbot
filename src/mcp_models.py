@@ -199,6 +199,8 @@ class McpInstallOutcome:
     admitted: tuple[tuple[str, str], ...] = ()
     current: tuple[tuple[str, str], ...] = ()
     blocked: tuple[tuple[str, str, str], ...] = ()
+    #: Owned registrations of entries no longer eligible, removed by this run.
+    retired: tuple[tuple[str, str], ...] = ()
     operation_id: str | None = None
     applied: bool = False
 

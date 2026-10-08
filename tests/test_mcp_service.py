@@ -236,6 +236,46 @@ class McpInstallComponentTests(unittest.TestCase):
         managed = self.service.state_store.load().managed
         self.assertEqual(len(outcome.admitted), len(managed))
 
+    def _set_eligible(self, catalog_id: str, eligible: bool) -> None:
+        import json
+
+        catalog = json.loads(self.catalog_file.read_text(encoding="utf-8"))
+        for entry in catalog["entries"]:
+            if entry["id"] == catalog_id:
+                entry["eligible"] = eligible
+        self.catalog_file.write_text(json.dumps(catalog), encoding="utf-8")
+
+    def test_an_entry_that_loses_eligibility_is_removed_on_the_next_install(self) -> None:
+        """BoostGraph was admitted on 2026-10-08 and rejected the same day.
+
+        Revoking eligibility has to take it back out of machines that already
+        registered it; an ineligible entry cannot be set up, so an owned
+        registration of one is always a retired one.
+        """
+        self._set_eligible("boost_graph", True)
+        McpService(self.paths).install_eligible(apply=True)
+        claude = self.paths.claude_home.parent / ".claude.json"
+        self.assertIn("agentbot_boost_graph", claude.read_text(encoding="utf-8"))
+
+        self._set_eligible("boost_graph", False)
+        outcome = McpService(self.paths).install_eligible(apply=True)
+
+        self.assertEqual(
+            {("boost_graph", "claude"), ("boost_graph", "codex"), ("boost_graph", "cursor")},
+            set(outcome.retired),
+        )
+        for config in (
+            claude,
+            self.paths.codex_home / "config.toml",
+            self.paths.cursor_home / "mcp.json",
+        ):
+            self.assertNotIn("agentbot_boost_graph", config.read_text(encoding="utf-8"))
+        managed = McpService(self.paths).state_store.load().managed
+        self.assertFalse([record for record in managed if record.catalog_id == "boost_graph"])
+        self.assertTrue(
+            any(record.catalog_id == "context7" for record in managed), "others stay"
+        )
+
     def test_a_second_install_changes_nothing(self) -> None:
         """Install runs on every bootstrap. A component that rewrote three
         client configs each time would churn a backup per run to change

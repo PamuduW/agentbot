@@ -1291,16 +1291,16 @@ class BoostRepositoryGraphIndexTests(BoostIntegrationTests):
         integration = self._integration_type()(self._paths())
         self.assertTrue(integration._forbidden_graph_evidence())
 
-    def test_a_codegraph_index_is_allowed(self) -> None:
-        # Item 6A phase 3 adopted BoostGraph for code (2026-10-08): the index
-        # in <repo>/.codegraph/ is the intended state, not evidence of misuse.
+    def test_a_codegraph_index_is_forbidden(self) -> None:
+        # BoostGraph was adopted and rejected on 2026-10-08 (item 6A); its
+        # <repo>/.codegraph/ index is evidence again.
         workspace = self._workspace()
         (workspace / ".codegraph").mkdir()
         (workspace / ".codegraph" / "codegraph.db").write_text("index", encoding="utf-8")
         integration = self._integration_type()(self._paths())
-        self.assertFalse(integration._forbidden_graph_evidence())
+        self.assertTrue(integration._forbidden_graph_evidence())
 
-    def test_agentbots_own_boost_graph_entry_is_allowed(self) -> None:
+    def test_the_retired_agentbot_entry_is_forbidden(self) -> None:
         claude_json = self._paths().claude_home.parent / ".claude.json"
         claude_json.parent.mkdir(parents=True, exist_ok=True)
         claude_json.write_text(
@@ -1317,7 +1317,7 @@ class BoostRepositoryGraphIndexTests(BoostIntegrationTests):
             encoding="utf-8",
         )
         integration = self._integration_type()(self._paths())
-        self.assertFalse(integration._forbidden_graph_evidence())
+        self.assertTrue(integration._forbidden_graph_evidence())
 
     def test_boosts_own_graph_registration_is_still_forbidden(self) -> None:
         # `boost graph install` and `boost graph init` without
