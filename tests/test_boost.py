@@ -1291,12 +1291,45 @@ class BoostRepositoryGraphIndexTests(BoostIntegrationTests):
         integration = self._integration_type()(self._paths())
         self.assertTrue(integration._forbidden_graph_evidence())
 
-    def test_a_codegraph_index_is_forbidden(self) -> None:
-        # Since v0.14 `boost graph init` builds its index in <repo>/.codegraph/,
-        # not .boost/, so a hand-run init went unseen.
+    def test_a_codegraph_index_is_allowed(self) -> None:
+        # Item 6A phase 3 adopted BoostGraph for code (2026-10-08): the index
+        # in <repo>/.codegraph/ is the intended state, not evidence of misuse.
         workspace = self._workspace()
         (workspace / ".codegraph").mkdir()
-        (workspace / ".codegraph" / "graph.db").write_text("index", encoding="utf-8")
+        (workspace / ".codegraph" / "codegraph.db").write_text("index", encoding="utf-8")
+        integration = self._integration_type()(self._paths())
+        self.assertFalse(integration._forbidden_graph_evidence())
+
+    def test_agentbots_own_boost_graph_entry_is_allowed(self) -> None:
+        claude_json = self._paths().claude_home.parent / ".claude.json"
+        claude_json.parent.mkdir(parents=True, exist_ok=True)
+        claude_json.write_text(
+            '{"mcpServers":{"agentbot_boost_graph":{"command":"boost",'
+            '"args":["graph","serve","--mcp"],"type":"stdio"}}}\n',
+            encoding="utf-8",
+        )
+        codex = self._paths().codex_home
+        codex.mkdir(parents=True, exist_ok=True)
+        (codex / "config.toml").write_text(
+            '[mcp_servers.agentbot_boost_graph]\ncommand = "boost"\n'
+            'args = ["graph", "serve", "--mcp"]\n'
+            'enabled_tools = ["boostgraph_explore", "boostgraph_entrypoints"]\n',
+            encoding="utf-8",
+        )
+        integration = self._integration_type()(self._paths())
+        self.assertFalse(integration._forbidden_graph_evidence())
+
+    def test_boosts_own_graph_registration_is_still_forbidden(self) -> None:
+        # `boost graph install` and `boost graph init` without
+        # --no-install-mcp write their own `boost-graph` entry; Agentbot owns
+        # the registration, so a second one is drift.
+        claude_json = self._paths().claude_home.parent / ".claude.json"
+        claude_json.parent.mkdir(parents=True, exist_ok=True)
+        claude_json.write_text(
+            '{"mcpServers":{"boost-graph":{"command":"boost",'
+            '"args":["graph","serve","--mcp"],"type":"stdio"}}}\n',
+            encoding="utf-8",
+        )
         integration = self._integration_type()(self._paths())
         self.assertTrue(integration._forbidden_graph_evidence())
 

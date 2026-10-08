@@ -164,6 +164,13 @@ GRAPH_FEATURE_FLAG = "boost-graph-integration"
 # the `--no-boostgraph` flag, was passed on every call until boost v0.13 removed
 # it. Kept because a later version may start disclosing BoostGraph in the plan,
 # and because it still catches a disclosed repository `.boost/` write.
+# A BoostGraph registration Agentbot did not write. Boost's own installer names
+# the server `boost-graph` (and older `boost init` wrote `boostgraph`, with
+# BOOSTGRAPH marker blocks); Agentbot's catalog entry is `agentbot_boost_graph`,
+# whose tool names `boostgraph_*` appear legitimately in Codex's enabled_tools.
+_FOREIGN_GRAPH_RE = re.compile(
+    r"boost-graph|boost graph(?! serve)|[\"\[.]boostgraph[\"\]]|\bBOOSTGRAPH\b|boostgraphgraph"
+)
 _FORBIDDEN_PLAN_RE = re.compile(
     r"boost[ -]?graph|\bmcp\b|background (?:index|watch)|(?:^|[\s/])\.boost(?:/|$)",
     re.IGNORECASE | re.MULTILINE,
@@ -825,19 +832,20 @@ class BoostIntegration:
                 content = path.read_text(encoding="utf-8")
             except OSError:
                 continue
-            if re.search(r"boost[ -]?graph|boostgraph_explore", content, re.IGNORECASE):
+            if _FOREIGN_GRAPH_RE.search(content):
                 return True
         return any(self._repository_graph_indexes())
 
     def _repository_graph_indexes(self) -> tuple[Path, ...]:
-        """Registered workspaces carrying a BoostGraph index.
+        """Registered workspaces carrying a pre-v0.14 BoostGraph index.
 
         Before v0.14 `boostgraph init` built its index into a repository
-        `.boost/`; since then `boost graph init` builds it into `.codegraph/`.
-        The plan forbids both outright. A `.boost/` holding nothing but a
-        config file is a different problem -- see `_shadowing_configs` -- and
-        `hook-meta/` is where the Bash hook records each tool call, so only
-        other content counts as graph evidence.
+        `.boost/`, alongside the session hooks and marker blocks that kept it
+        off. The current engine's `.codegraph/` index is the adopted state
+        (item 6A, 2026-10-08) and is not evidence. A `.boost/` holding nothing
+        but a config file is a different problem -- see `_shadowing_configs` --
+        and `hook-meta/` is where the Bash hook records each tool call, so only
+        other content counts.
         """
         from .workspace_state import WorkspaceStore
 
@@ -848,9 +856,6 @@ class BoostIntegration:
         allowed_names = {"config.toml", "config.toml.lock", "hook-meta"}
         indexes: list[Path] = []
         for record in records:
-            codegraph = Path(record.path) / ".codegraph"
-            if codegraph.is_dir():
-                indexes.append(codegraph)
             candidate = Path(record.path) / ".boost"
             if not candidate.is_dir():
                 continue

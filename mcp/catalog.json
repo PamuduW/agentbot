@@ -357,6 +357,56 @@
         "prohibited_tool_rejected",
         "live_endpoint_coverage"
       ]
+    },
+    {
+      "id": "boost_graph",
+      "name": "agentbot_boost_graph",
+      "publisher": "JFrog",
+      "documentation_url": "https://boost.jfrog.com/docs/en/features/boostgraph/",
+      "license": null,
+      "terms_url": "https://boost.jfrog.com/",
+      "reviewed_on": "2026-10-08",
+      "eligible": true,
+      "transport": "local_stdio",
+      "entrypoint": [
+        "boost",
+        "graph",
+        "serve",
+        "--mcp"
+      ],
+      "clients": {
+        "claude": {
+          "enabled": true
+        },
+        "codex": {
+          "enabled": true
+        },
+        "cursor": {
+          "enabled": true
+        }
+      },
+      "credential": {
+        "mode": "none",
+        "environment": []
+      },
+      "allowed_tools": [
+        "boostgraph_explore",
+        "boostgraph_entrypoints"
+      ],
+      "descriptor_fingerprints": [],
+      "read_only_authority": "BoostGraph answers structural questions from a local index in the repository's .codegraph/; its two default tools only read that index",
+      "limitations": [
+        "Serves the repository the client starts in; a repository without a .codegraph/ index has nothing to answer from",
+        "Indexing is a separate step: boost graph init --no-install-mcp, never boost graph install",
+        "A detached watcher keeps the index current during a session and exits about five minutes after it",
+        "Tool descriptors are not fingerprinted: the server is a local binary whose version Dotfiles owns"
+      ],
+      "timeout_seconds": 60,
+      "max_response_bytes": 4194304,
+      "doctor_rules": [
+        "local_binary_present",
+        "agentbot_owned_registration"
+      ]
     }
   ]
 }

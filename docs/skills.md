@@ -110,12 +110,26 @@ and Cursor setup, feature policy, diagnostics, and removal through
 `agentbot boost status|setup|off`. Setup wires whichever of those CLIs are
 installed and skips the rest. A later run picks up a newly installed CLI.
 
-Setup disables tracing upload and Boost auto-update, keeps BoostGraph and its
-MCP changes disabled, and writes the declared policy from
-`BOOST_FEATURE_POLICY` in `src/boost.py`. Repository `.boost/config.toml` files
-can shadow global configuration; Doctor reports registered workspaces that
-violate policy, including a BoostGraph index in `.codegraph/` (v0.14 and
-later) or in `.boost/` (earlier versions).
+Setup disables tracing upload and Boost auto-update, keeps Boost's own
+BoostGraph integration (`boost-graph-integration`) off, and writes the declared
+policy from `BOOST_FEATURE_POLICY` in `src/boost.py`. Repository
+`.boost/config.toml` files can shadow global configuration; Doctor reports
+registered workspaces that violate policy.
+
+### BoostGraph
+
+BoostGraph is the code graph for code repositories (workspace roadmap item 6A,
+option (a), 2026-10-08). Agentbot registers it like any other MCP server: the
+`boost_graph` entry in `mcp/catalog.json` renders `agentbot_boost_graph`,
+running `boost graph serve --mcp`, for Claude, Codex and Cursor. It serves the
+repository the client starts in and answers from that repository's
+`.codegraph/` index, which `boost graph init --no-install-mcp` builds; while a
+session runs, a watcher keeps the index current. Never run `boost graph
+install`, or `boost graph init` without `--no-install-mcp`: both write their own
+`boost-graph` entry into four client configs and Agentbot's Claude settings,
+and Doctor reports that entry as foreign. A `.codegraph/` index is expected; a
+pre-v0.14 index in `.boost/` is not. Graphify stays installed for
+document-heavy repositories and is rebuilt on demand.
 
 ### Feature-flag policy
 

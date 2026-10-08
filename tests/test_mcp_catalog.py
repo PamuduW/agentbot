@@ -66,9 +66,26 @@ class McpCatalogTests(unittest.TestCase):
                 "aws_knowledge": True,
                 "microsoft_learn": True,
                 "gitlab_read": True,
+                # Item 6A phase 3, option (a), 2026-10-08: BoostGraph is the
+                # code graph, registered globally for all three clients.
+                "boost_graph": True,
             },
             eligibility,
         )
+
+    def test_boost_graph_runs_the_local_server_for_every_client(self) -> None:
+        from src.mcp_render import parse_mcp_config, render_mcp_config
+
+        catalog = load_mcp_catalog(self.paths.mcp_catalog_file)
+        (entry,) = [item for item in catalog.entries if item.id == "boost_graph"]
+        self.assertEqual("agentbot_boost_graph", entry.name)
+        for client, empty in (("claude", "{}"), ("cursor", "{}"), ("codex", "")):
+            with self.subTest(client=client):
+                rendered = parse_mcp_config(client, render_mcp_config(client, empty, [entry]))
+                servers = rendered["mcp_servers" if client == "codex" else "mcpServers"]
+                native = servers["agentbot_boost_graph"]
+                self.assertEqual("boost", native["command"])
+                self.assertEqual(["graph", "serve", "--mcp"], native["args"])
 
     def test_static_headers_reject_credential_values(self) -> None:
         entry = self.valid_entry()
