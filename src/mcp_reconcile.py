@@ -113,7 +113,9 @@ def apply_mcp_plan(
     affected = (*destinations, context.paths.mcp_state_file)
     backup_dir, snapshots = _create_backup(context.paths, operation_id, affected)
     try:
-        entries = _selected_entries(context.catalog, plan.selection)
+        entries = _selected_entries(
+            context.catalog, plan.selection, require_eligible=plan.action == "setup"
+        )
         if plan.action == "setup":
             _apply_setup(context, plan, entries, operation_id, now)
         else:
@@ -156,7 +158,9 @@ def _plan(
 ) -> McpPlan:
     selected = _normalize_selection(selection)
     clients = _normalize_targets(targets)
-    entries = _selected_entries(context.catalog, selected)
+    # Removal is never gated on eligibility: revoking it is exactly when an
+    # entry has to come back out.
+    entries = _selected_entries(context.catalog, selected, require_eligible=action == "setup")
     state = context.state_store.load()
     records = {record.key: record for record in state.managed}
     items = []
@@ -243,7 +247,7 @@ def _apply_setup(
 
 
 def _apply_off(context: McpReconcileContext, plan: McpPlan) -> None:
-    entries = _selected_entries(context.catalog, plan.selection)
+    entries = _selected_entries(context.catalog, plan.selection, require_eligible=False)
     for client in plan.targets:
         destination = _destination(context.paths, client)
         rendered = _read_config(destination)
@@ -285,14 +289,16 @@ def _normalize_targets(targets: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(targets))
 
 
-def _selected_entries(catalog: McpCatalog, selection: Sequence[str]) -> tuple[McpCatalogEntry, ...]:
+def _selected_entries(
+    catalog: McpCatalog, selection: Sequence[str], *, require_eligible: bool = True
+) -> tuple[McpCatalogEntry, ...]:
     by_id = {entry.id: entry for entry in catalog.entries}
     selected = []
     for entry_id in selection:
         entry = by_id.get(entry_id)
         if entry is None:
             raise ValueError(f"unknown MCP catalog id: {entry_id}")
-        if not entry.eligible:
+        if require_eligible and not entry.eligible:
             raise ValueError(f"MCP catalog entry is not eligible: {entry_id}")
         selected.append(entry)
     return tuple(sorted(selected, key=lambda entry: entry.id))

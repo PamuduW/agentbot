@@ -164,9 +164,10 @@ class McpService:
 
         `apply=False` is the deselected case: the same reading, no writes.
         """
+        retired = self._retire_ineligible(apply=apply)
         selection, targets = self.eligible_selection()
         if not selection or not targets:
-            return McpInstallOutcome()
+            return McpInstallOutcome(retired=retired)
 
         plan = self.plan(selection, targets)
         admitted = tuple(
@@ -190,7 +191,9 @@ class McpService:
         # apply_mcp_plan rejects a plan it cannot apply, and a run that rewrote
         # three configs to change nothing would churn a backup every install.
         if not apply or not admitted or blocked:
-            return McpInstallOutcome(admitted=admitted, current=current, blocked=blocked)
+            return McpInstallOutcome(
+                admitted=admitted, current=current, blocked=blocked, retired=retired
+            )
 
         operation_id = self.setup(selection, targets, confirmed=True)
         return McpInstallOutcome(
@@ -199,7 +202,37 @@ class McpService:
             blocked=(),
             operation_id=operation_id,
             applied=True,
+            retired=retired,
         )
+
+    def _retire_ineligible(self, *, apply: bool) -> tuple[tuple[str, str], ...]:
+        """Remove Agentbot's own registrations of entries no longer eligible.
+
+        An ineligible entry cannot be set up, so an owned registration of one
+        is always a retired server (BoostGraph, rejected 2026-10-08). Only
+        pairs in an owned, unchanged state are removed; anything else is left
+        for `mcp status` to report.
+        """
+        entries = {entry.id: entry for entry in self.catalog().entries}
+        pairs = sorted(
+            {
+                (record.catalog_id, record.client)
+                for record in self.state_store.load().managed
+                if record.catalog_id in entries and not entries[record.catalog_id].eligible
+            }
+        )
+        if not pairs:
+            return ()
+        selection = sorted({catalog_id for catalog_id, _ in pairs})
+        targets = sorted({client for _, client in pairs})
+        removable = tuple(
+            (item.catalog_id, item.client)
+            for item in self.plan_off(selection, targets).items
+            if item.state == "owned" and (item.catalog_id, item.client) in pairs
+        )
+        if apply and removable:
+            self.off(selection, targets, confirmed=True)
+        return removable
 
     def plan(self, selection: Sequence[str], targets: Sequence[str]) -> McpPlan:
         from .mcp_reconcile import plan_mcp

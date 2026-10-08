@@ -366,7 +366,7 @@
       "license": null,
       "terms_url": "https://boost.jfrog.com/",
       "reviewed_on": "2026-10-08",
-      "eligible": true,
+      "eligible": false,
       "transport": "local_stdio",
       "entrypoint": [
         "boost",
@@ -396,6 +396,7 @@
       "descriptor_fingerprints": [],
       "read_only_authority": "BoostGraph answers structural questions from a local index in the repository's .codegraph/; its two default tools only read that index",
       "limitations": [
+        "Rejected 2026-10-08 after real-session measurement: about 4,000 tokens per explore call against a few hundred for a targeted search, and about 950 tokens of schema in every Codex and Cursor session; kept only as the record of that review",
         "Serves the repository the client starts in; a repository without a .codegraph/ index has nothing to answer from",
         "Indexing is a separate step: boost graph init --no-install-mcp, never boost graph install",
         "A detached watcher keeps the index current during a session and exits about five minutes after it",
