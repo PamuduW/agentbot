@@ -1103,13 +1103,35 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
                 "boost-files-optimization": True,
                 "boost-graph-integration": False,
                 "boost-html-article": False,
+                "boost-html-article-cursor-nudge": False,
+                "boost-html-article-preserve-agent-html": True,
+                "boost-mcp-browser-budget": False,
+                "boost-mcp-filtering": True,
                 "boost-mcp-toon-format": True,
+                "boost-path-ignore": False,
                 "boost-pr-usage-comments": False,
                 "boost-share-cli-outputs": False,
                 "boost-target-version": False,
             },
             dict(BOOST_FEATURE_POLICY),
         )
+
+    def test_permanently_off_flags_stay_off(self) -> None:
+        # Fixed by the user on 2026-10-08, not reviewed with the rest: Dotfiles
+        # owns the binary and its version, private output never leaves the
+        # machine, Boost never writes to GitHub, and Agentbot owns the status
+        # line. Turning one on means changing this test on purpose.
+        from src.boost import BOOST_FEATURE_POLICY
+
+        for flag in (
+            "boost-auto-update",
+            "boost-claude-status-line",
+            "boost-pr-usage-comments",
+            "boost-share-cli-outputs",
+            "boost-target-version",
+        ):
+            with self.subTest(flag=flag):
+                self.assertIs(False, BOOST_FEATURE_POLICY[flag])
 
     def test_safe_config_writes_the_declared_set(self) -> None:
         self._config('[feature_flags."boost-graph-integration"]\nuser = true\nremote = false\n')
@@ -1128,11 +1150,16 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
         self.assertIs(False, flags["boost-pr-usage-comments"]["user"])
         self.assertIs(False, flags["boost-share-cli-outputs"]["user"])
         self.assertIs(False, flags["boost-target-version"]["user"])
+        self.assertIs(True, flags["boost-mcp-filtering"]["user"])
+        self.assertIs(False, flags["boost-mcp-browser-budget"]["user"])
+        self.assertIs(True, flags["boost-html-article-preserve-agent-html"]["user"])
+        self.assertIs(False, flags["boost-html-article-cursor-nudge"]["user"])
+        self.assertIs(False, flags["boost-path-ignore"]["user"])
         # The remote value is JFrog's to set; only `user` is ours.
         self.assertIs(False, flags["boost-graph-integration"]["remote"])
 
     def test_safe_config_preserves_flags_outside_the_declared_set(self) -> None:
-        # The policy covers every flag Boost v0.13.11 ships. Upstream adds
+        # The policy covers every flag Boost v0.15.1 ships. Upstream adds
         # flags every release or two, and one Agentbot has not ruled on yet is
         # the user's to set until the policy names it.
         self._config(
@@ -1191,13 +1218,45 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
                 "boost-files-optimization",
                 "boost-graph-integration",
                 "boost-html-article",
+                "boost-html-article-cursor-nudge",
+                "boost-html-article-preserve-agent-html",
+                "boost-mcp-browser-budget",
+                "boost-mcp-filtering",
                 "boost-mcp-toon-format",
+                "boost-path-ignore",
                 "boost-pr-usage-comments",
                 "boost-share-cli-outputs",
                 "boost-target-version",
             ),
             self._status().diverged_flags,
         )
+
+    def test_a_flag_the_policy_does_not_name_is_reported(self) -> None:
+        # Boost v0.15.1 shipped five flags the policy did not name, and JFrog's
+        # remote default ran them unseen. Setup still leaves such a flag alone;
+        # Doctor says it has not been ruled on.
+        from src.diagnostics import Diagnostics
+
+        self._integration_type()(self._paths()).ensure_safe_config()
+        path = self.root / ".boost/config.toml"
+        path.write_text(
+            path.read_text(encoding="utf-8")
+            + '\n[feature_flags."boost-future-experiment"]\nremote = true\n\n'
+            '[feature_flags._metadata]\nlast_updated_at = "2026-10-08T00:00:00Z"\n',
+            encoding="utf-8",
+        )
+        status = self._status()
+
+        self.assertEqual(("boost-future-experiment",), status.unruled_flags)
+        issues = Diagnostics(self._paths())._boost_flag_issues(status)
+        self.assertEqual(1, len(issues))
+        self.assertEqual("warning", issues[0].level)
+        self.assertIn("boost-future-experiment", issues[0].message)
+        self.assertIn("BOOST_FEATURE_POLICY", issues[0].message)
+
+    def test_a_config_holding_only_policy_flags_has_none_unruled(self) -> None:
+        self._integration_type()(self._paths()).ensure_safe_config()
+        self.assertEqual((), self._status().unruled_flags)
 
 
 class BoostRepositoryGraphIndexTests(BoostIntegrationTests):

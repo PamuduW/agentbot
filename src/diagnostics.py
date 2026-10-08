@@ -465,8 +465,22 @@ class Diagnostics:
         """
         from .boost import BOOST_FEATURE_POLICY, GRAPH_FEATURE_FLAG
 
+        issues: list[DoctorIssue] = []
+        if status.unruled_flags:
+            issues.append(
+                DoctorIssue(
+                    level="warning",
+                    scope="boost",
+                    message=(
+                        "Boost ships feature flags the policy does not name, so "
+                        "JFrog's remote default decides them: "
+                        f"{', '.join(status.unruled_flags)}. Decide each in "
+                        "BOOST_FEATURE_POLICY (agentbot/src/boost.py)."
+                    ),
+                )
+            )
         if not status.diverged_flags:
-            return []
+            return issues
         detail = ", ".join(
             f"{flag} should be {'on' if BOOST_FEATURE_POLICY[flag] else 'off'}"
             for flag in status.diverged_flags
@@ -483,7 +497,8 @@ class Diagnostics:
                 "support first, since it writes marker blocks into managed "
                 "CLAUDE.md/AGENTS.md."
             )
-        return [DoctorIssue(level="warning", scope="boost", message=message)]
+        issues.append(DoctorIssue(level="warning", scope="boost", message=message))
+        return issues
 
     @staticmethod
     def _boost_doctor_message(status: BoostStatus) -> str:

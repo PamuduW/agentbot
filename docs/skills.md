@@ -103,28 +103,47 @@ violate policy.
 
 ### Feature-flag policy
 
-`BOOST_FEATURE_POLICY` names every feature flag Boost v0.13.11 ships, because
+`BOOST_FEATURE_POLICY` names every feature flag Boost v0.15.1 ships, because
 an unpinned flag is not neutral -- its effective value is a remote default
-JFrog can change without warning. `boost feature-flags` prints the resolved
-state and the remote default of each.
+JFrog can change without warning. `boost doctor` prints the effective value,
+the `user` pin and the remote default of each. Doctor warns about any flag
+Boost writes to its config that the policy does not name, so a new release's
+flags are decided rather than run by default; setup leaves such a flag alone
+until the policy names it.
 
 | Flag | Policy | Why |
 |---|---|---|
-| `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees |
-| `boost-auto-update` | off | Dotfiles owns the binary and its version stamp |
-| `boost-claude-status-line` | off | Agentbot owns the Claude status line |
+| `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees; deliberately not retrievable |
+| `boost-auto-update` | off (fixed) | Dotfiles owns the binary and its version stamp |
+| `boost-claude-status-line` | off (fixed) | Agentbot owns the Claude status line |
 | `boost-cli-filtering` | on | The compression itself |
 | `boost-english-abbreviation` | off | Lossy prose abbreviation, no gain here |
 | `boost-files-optimization` | on | Document and image reads, source untouched |
 | `boost-graph-integration` | off | BoostGraph rewrites files Agentbot owns |
 | `boost-html-article` | off | Discards markup the agent is reading |
+| `boost-html-article-cursor-nudge` | off | Undocumented; points at the disabled HTML path |
+| `boost-html-article-preserve-agent-html` | on | Inert while HTML conversion is off; the safer setting if it is turned on |
+| `boost-mcp-browser-budget` | off | A 120-line snapshot cap hides elements browser automation must act on |
+| `boost-mcp-filtering` | on | Filters MCP responses; the original stays retrievable |
 | `boost-mcp-toon-format` | on | Lossless reformat of MCP responses |
-| `boost-pr-usage-comments` | off | Outward-facing writes to GitHub PRs |
-| `boost-share-cli-outputs` | off | Sends command output to JFrog |
-| `boost-target-version` | off | Remote-chosen update target |
+| `boost-path-ignore` | off | Enables `[ignore] optimize` exclusion globs; none are needed yet |
+| `boost-pr-usage-comments` | off (fixed) | Outward-facing writes to GitHub PRs |
+| `boost-share-cli-outputs` | off (fixed) | Sends command output to JFrog |
+| `boost-target-version` | off (fixed) | Remote-chosen update target |
 
-Each entry carries its full reasoning in `src/boost.py`; change the map there
-rather than toggling in Boost's report UI, which the next setup run reverts.
+A lossy transform stays on only when the agent can retrieve the original with
+`boost retrieve`. Secrets and credentials are the one exemption: redaction is
+meant to be unrecoverable. "Fixed" flags are off permanently by the user's decision of 2026-10-08, and a
+test fails if one is turned on. Each entry carries its full reasoning in
+`src/boost.py`; change the map there rather than toggling in Boost's report
+UI, which the next setup run reverts.
+
+Since v0.15.1 the awareness file `boost init` writes tells agents to prefer
+WebFetch because "Boost converts HTML to article Markdown". The paragraph is
+fixed text in the binary, written whether or not `boost-html-article` is on, so
+here it overstates what Boost does; the advice itself is harmless. Agentbot
+leaves the file as Boost writes it: `boost init` owns and rewrites it, and the
+stale-artifact check reads its version marker.
 
 Everything else in `~/.boost/config.toml` is left to Boost and to you. Setup
 pins `[tracing] upload` and `[update] auto_update` to `false` and writes the
