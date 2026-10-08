@@ -333,10 +333,18 @@ run_update_backend_as() {
 	shift
 	# shellcheck disable=SC2034  # populated indirectly by agentbot_repo_update_run
 	local confirm=no dry_run=false interactive=false arg update_outcome update_reason repo_rc=0
+	local component_value=false
 	AGENTBOT_REPOSITORY_UPDATE_DECLINED=false
 	AGENTBOT_REPOSITORY_UPDATE_DECLINE_REPORTED=false
 	for arg in "$@"; do
+		# The value after --components is the CLI's to validate, not an option.
+		if [[ "$component_value" == true ]]; then
+			component_value=false
+			continue
+		fi
 		case "$arg" in
+		--components) component_value=true ;;
+		--components=*) ;;
 		--yes) confirm=yes ;;
 		--dry-run) dry_run=true ;;
 		--interactive)
@@ -487,7 +495,8 @@ Usage: ./install.sh <command> [args]
                              L narrows it to skills, graphify, boost,
                              vscode, cursor, cli-config
   full                       Install on a first run, then update (update alone once installed)
-  update [--dry-run|--yes]   Run the repository-first update flow
+  update [--dry-run|--yes]   Run the repository-first update flow;
+         [--components L]    L configures only those components, as for install
   status [--json]            Show current Agentbot state
   doctor                     Validate the installation
   skills <command>           Install, update, list, validate, or prune skills

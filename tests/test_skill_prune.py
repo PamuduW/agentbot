@@ -575,6 +575,82 @@ class EnforceExclusionsTests(PruneTests):
         lock = json.loads(self.paths.global_skill_lock.read_text(encoding="utf-8"))
         self.assertEqual(["keeper"], sorted(lock["skills"]))
 
+    def test_a_skill_changed_since_install_is_never_removed(self):
+        """Review 2, answer 3 (2026-10-08): a customised skill belongs to the user.
+
+        The lock's skillFolderHash is the install receipt. An excluded or
+        orphaned skill whose files no longer match it was edited after install,
+        so it is reported as modified and kept, whatever its name or source.
+        """
+        from src.skill_prune import enforce_exclusions
+        from src.skills_installer import _skill_folder_hash
+
+        for name, repo in (("alpha", "owner/repo"), ("leftover", "gone/repo")):
+            directory = self._skill(name)
+            receipt = _skill_folder_hash(directory)
+            (directory / "scripts").mkdir()
+            (directory / "scripts" / "mine.sh").write_text("echo mine\n", encoding="utf-8")
+            lock = (
+                json.loads(self.paths.global_skill_lock.read_text(encoding="utf-8"))
+                if self.paths.global_skill_lock.is_file()
+                else {"version": 3, "skills": {}}
+            )
+            lock["skills"][name] = {"source": repo, "skillFolderHash": receipt}
+            self.paths.global_skill_lock.parent.mkdir(parents=True, exist_ok=True)
+            self.paths.global_skill_lock.write_text(json.dumps(lock), encoding="utf-8")
+        config = self._manifest(self.BASE + "    exclude:\n      - alpha\n")
+
+        report = plan_prune(self.paths, config)
+        self.assertEqual((), report.removable)
+        self.assertEqual(
+            {"alpha": "modified", "leftover": "modified"},
+            {item.name: item.reason for item in report.candidates},
+        )
+        self.assertEqual((), enforce_exclusions(self.paths, config))
+        self.assertTrue((self.store / "alpha" / "scripts" / "mine.sh").is_file())
+        self.assertTrue((self.store / "leftover" / "scripts" / "mine.sh").is_file())
+
+    def test_an_unchanged_skill_matching_its_receipt_is_still_removed(self):
+        from src.skill_prune import enforce_exclusions
+        from src.skills_installer import _skill_folder_hash
+
+        directory = self._skill("alpha")
+        self._skill("keeper")
+        self.paths.global_skill_lock.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.global_skill_lock.write_text(
+            json.dumps({"version": 3, "skills": {
+                "alpha": {"source": "owner/repo", "skillFolderHash": _skill_folder_hash(directory)},
+                "keeper": {"source": "owner/repo"},
+            }}),
+            encoding="utf-8",
+        )
+        config = self._manifest(self.BASE + "    exclude:\n      - alpha\n")
+
+        self.assertEqual(("alpha",), enforce_exclusions(self.paths, config))
+
+    def test_a_skill_on_disk_before_install_is_not_claimed_as_an_excluded_copy(self):
+        """Identical to the source in every file, but already there before the
+        install ran: nothing proves Agentbot put it there, so it is not pinned
+        and enforcement leaves it."""
+        from src.skill_prune import enforce_exclusions
+        from src.skills_installer import _record_checkout_lock
+
+        checkout = self.root / "checkout"
+        skill = checkout / "skills" / "stray" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nname: stray\n---\nfrom the source\n", encoding="utf-8")
+        (self._skill("stray") / "SKILL.md").write_bytes(skill.read_bytes())
+        self._lock({})
+        config = self._manifest(self.BASE + "    exclude:\n      - stray\n")
+        (source,) = config.active_sources()
+
+        _record_checkout_lock(
+            source, checkout, self.paths.global_skill_lock, preexisting=frozenset({"stray"})
+        )
+
+        self.assertEqual((), enforce_exclusions(self.paths, config))
+        self.assertTrue((self.store / "stray").is_dir())
+
     def test_enforcement_is_a_no_op_when_nothing_is_excluded(self):
         from src.skill_prune import enforce_exclusions
 

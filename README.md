@@ -143,8 +143,11 @@ and one project. Schema 3 is the only schema Agentbot reads: schema 1 and 2
 vaults, and the commands that migrated them, were removed on 2026-09-27, so
 an older vault is reported as unsupported. Every command that reads records
 or changes the vault, sync and hook installation included, checks the marker
-first; `status`, `hook status` and `sync --status` still describe an older
-vault, so you can see what it is.
+first, and so does `sync --status`, which reports the older schema as
+unsupported. Three commands skip the check, because none of them reads a
+record or writes the vault: `status` and `hook status` describe an older vault
+so you can see what it is, `hook remove` removes only Agentbot's own hook, and
+`sync --mode` / `--interval` change this machine's settings.
 
 In Obsidian, the vault is a linked graph. Every project record carries
 `up: "[[projects/<folder>/project]]"`, so `project.md` is the project's hub and
@@ -288,8 +291,11 @@ rule for a single run; blocking rules cannot be acknowledged. `validate` exits
 including a dirty or invalid vault.
 
 `agentbot memory hook [status|install|remove] [--yes]` manages the vault's
-pre-commit and pre-push hooks, which run `memory validate` before Git proceeds.
-Only hooks carrying the `agentbot-memory-hook` marker are written or removed;
+pre-commit and pre-push hooks, which run `memory validate` before Git proceeds:
+pre-commit with `--staged`, so it judges exactly the staged bytes the commit
+will record (the check the sync engine applies to its own commits), and
+pre-push over the whole tree. A hook installed before 2026-10-08 still checks
+the working files; `memory hook install --yes` replaces it. Only hooks carrying the `agentbot-memory-hook` marker are written or removed;
 a `core.hooksPath` outside the vault's Git directory is refused. The hooks are
 an accident guard (`--no-verify` bypasses them), and they do not scan
 `.obsidian/`, where plugin settings are committed unscanned.

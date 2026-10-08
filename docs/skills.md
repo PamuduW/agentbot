@@ -49,9 +49,9 @@ repository.
 
 ## Reconciliation and removal
 
-`skills prune` classifies candidates as `excluded`, `orphaned`, `stale-pin`, or
-`manual`. It previews by default and requires `--yes` to write. Manual skills
-are preserved unless explicitly included. `skills remove-manual` accepts exact
+`skills prune` classifies candidates as `excluded`, `orphaned`, `stale-pin`,
+`manual`, or `modified`. It previews by default and requires `--yes` to write.
+Manual and modified skills are preserved unless explicitly named. `skills remove-manual` accepts exact
 names and never treats an empty selection as permission to remove everything.
 Agentbot-protected Graphify output is not a manual-removal candidate.
 
@@ -60,11 +60,26 @@ separate prune: a skill a source `exclude`s is removed when the lock pins it to
 that source, and so is a skill the lock pins to a manifest source set to
 `enabled: false`. The Skills CLI installs every skill a `skills: all` source
 publishes, so the install pins each excluded skill it can prove it put there
-(the whole folder is byte-identical to the source's, not just `SKILL.md`) for
-that removal; a copy with any changed or added file is the user's and stays. A skill pinned to a repository the manifest never names is
+(the whole folder is byte-identical to the source's, not just `SKILL.md`, and
+the folder was not already on disk before the install ran) for that removal; a
+copy with any changed or added file is the user's and stays. A skill pinned to a repository the manifest never names is
 left alone, because the user installed it, and so is an unpinned directory that
 only shares an excluded name: nothing shows Agentbot installed it, so it is a
 `manual` candidate, removed only by name.
+
+### Install receipts
+
+A customised skill belongs to the user (Review 2, answer 3, 2026-10-08). The
+lock's `skillFolderHash`, recorded at install, is the receipt:
+
+- Prune never removes an excluded or orphaned skill whose files no longer match
+  its receipt. It is classified `modified` and removed only by name.
+- Install refuses a source that would overwrite, with different files, a skill
+  folder that has no lock entry or no longer matches its receipt. The source
+  fails before the Skills CLI runs, naming the folders to move or rename.
+- An identical folder is not a conflict, and an unchanged managed skill updates
+  as before. A pin recorded without a hash predates receipts and cannot show a
+  change, so it is treated as unchanged.
 
 ## Claude listing states
 
@@ -95,36 +110,77 @@ and Cursor setup, feature policy, diagnostics, and removal through
 `agentbot boost status|setup|off`. Setup wires whichever of those CLIs are
 installed and skips the rest. A later run picks up a newly installed CLI.
 
-Setup disables tracing upload and Boost auto-update, keeps BoostGraph and its
-MCP changes disabled, and writes the declared policy from
-`BOOST_FEATURE_POLICY` in `src/boost.py`. Repository `.boost/config.toml` files
-can shadow global configuration; Doctor reports registered workspaces that
-violate policy.
+Setup disables tracing upload and Boost auto-update, keeps Boost's own
+BoostGraph integration (`boost-graph-integration`) off, and writes the declared
+policy from `BOOST_FEATURE_POLICY` in `src/boost.py`. Repository
+`.boost/config.toml` files can shadow global configuration; Doctor reports
+registered workspaces that violate policy.
+
+### BoostGraph
+
+BoostGraph is the code graph for code repositories (workspace roadmap item 6A,
+option (a), 2026-10-08). Agentbot registers it like any other MCP server: the
+`boost_graph` entry in `mcp/catalog.json` renders `agentbot_boost_graph`,
+running `boost graph serve --mcp`, for Claude, Codex and Cursor. It serves the
+repository the client starts in and answers from that repository's
+`.codegraph/` index, which `boost graph init --no-install-mcp` builds; while a
+session runs, a watcher keeps the index current. Never run `boost graph
+install`, or `boost graph init` without `--no-install-mcp`: both write their own
+`boost-graph` entry into four client configs and Agentbot's Claude settings,
+and Doctor reports that entry as foreign. A `.codegraph/` index is expected; a
+pre-v0.14 index in `.boost/` is not. Graphify stays installed for
+document-heavy repositories and is rebuilt on demand.
 
 ### Feature-flag policy
 
-`BOOST_FEATURE_POLICY` names every feature flag Boost v0.13.11 ships, because
+`BOOST_FEATURE_POLICY` names every feature flag Boost v0.15.1 ships, because
 an unpinned flag is not neutral -- its effective value is a remote default
-JFrog can change without warning. `boost feature-flags` prints the resolved
-state and the remote default of each.
+JFrog can change without warning. `boost doctor` prints the effective value,
+the `user` pin and the remote default of each. Doctor warns about any flag
+Boost writes to its config that the policy does not name, so a new release's
+flags are decided rather than run by default; setup leaves such a flag alone
+until the policy names it.
 
 | Flag | Policy | Why |
 |---|---|---|
-| `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees |
-| `boost-auto-update` | off | Dotfiles owns the binary and its version stamp |
-| `boost-claude-status-line` | off | Agentbot owns the Claude status line |
+| `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees; deliberately not retrievable |
+| `boost-auto-update` | off (fixed) | Dotfiles owns the binary and its version stamp |
+| `boost-claude-status-line` | off (fixed) | Agentbot owns the Claude status line |
 | `boost-cli-filtering` | on | The compression itself |
 | `boost-english-abbreviation` | off | Lossy prose abbreviation, no gain here |
 | `boost-files-optimization` | on | Document and image reads, source untouched |
 | `boost-graph-integration` | off | BoostGraph rewrites files Agentbot owns |
 | `boost-html-article` | off | Discards markup the agent is reading |
+| `boost-html-article-cursor-nudge` | off | Undocumented; points at the disabled HTML path |
+| `boost-html-article-preserve-agent-html` | on | Inert while HTML conversion is off; the safer setting if it is turned on |
+| `boost-mcp-browser-budget` | off | A 120-line snapshot cap hides elements browser automation must act on |
+| `boost-mcp-filtering` | on | Filters MCP responses; the original stays retrievable |
 | `boost-mcp-toon-format` | on | Lossless reformat of MCP responses |
-| `boost-pr-usage-comments` | off | Outward-facing writes to GitHub PRs |
-| `boost-share-cli-outputs` | off | Sends command output to JFrog |
-| `boost-target-version` | off | Remote-chosen update target |
+| `boost-path-ignore` | off | Enables `[ignore] optimize` exclusion globs; none are needed yet |
+| `boost-pr-usage-comments` | off (fixed) | Outward-facing writes to GitHub PRs |
+| `boost-share-cli-outputs` | off (fixed) | Sends command output to JFrog |
+| `boost-target-version` | off (fixed) | Remote-chosen update target |
 
-Each entry carries its full reasoning in `src/boost.py`; change the map there
-rather than toggling in Boost's report UI, which the next setup run reverts.
+Boost would otherwise refresh the remote defaults from JFrog whenever its flag
+cache expires, from any hook, and that request carries the Git email and the
+repository name. Every flag is pinned, so the remote values change nothing:
+Dotfiles' `.bashrc` exports `BOOST_FEATURE_FLAGS_DISABLE=1`, which stops the
+fetch while the pins still apply. `boost feature-flags` then shows the pinned
+values without contacting JFrog.
+
+A lossy transform stays on only when the agent can retrieve the original with
+`boost retrieve`. Secrets and credentials are the one exemption: redaction is
+meant to be unrecoverable. "Fixed" flags are off permanently by the user's decision of 2026-10-08, and a
+test fails if one is turned on. Each entry carries its full reasoning in
+`src/boost.py`; change the map there rather than toggling in Boost's report
+UI, which the next setup run reverts.
+
+Since v0.15.1 the awareness file `boost init` writes tells agents to prefer
+WebFetch because "Boost converts HTML to article Markdown". The paragraph is
+fixed text in the binary, written whether or not `boost-html-article` is on, so
+here it overstates what Boost does; the advice itself is harmless. Agentbot
+leaves the file as Boost writes it: `boost init` owns and rewrites it, and the
+stale-artifact check reads its version marker.
 
 Everything else in `~/.boost/config.toml` is left to Boost and to you. Setup
 pins `[tracing] upload` and `[update] auto_update` to `false` and writes the

@@ -165,9 +165,14 @@ sources:
         skill.write_text("---\nname: brainstorming\n---\n", encoding="utf-8")
         lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
         installed = lock_file.parent / "skills" / "brainstorming"
-        installed.mkdir(parents=True)
-        (installed / "SKILL.md").write_text("# installed\n", encoding="utf-8")
-        mock_run.return_value = self._success_result("superpowers", [])
+
+        def skills_add(*_args, **_kwargs):
+            # Stands in for the Skills CLI writing the folder.
+            installed.mkdir(parents=True)
+            (installed / "SKILL.md").write_text("# installed\n", encoding="utf-8")
+            return self._success_result("superpowers", [])
+
+        mock_run.side_effect = skills_add
 
         install_source(
             source,
@@ -178,6 +183,76 @@ sources:
 
         mock_clone.assert_not_called()
         self.assertEqual(str(checkout), mock_run.call_args.args[0][4])
+
+    def _checkout_with(self, name: str, body: str) -> Path:
+        checkout = self.root / "checkout"
+        skill = checkout / "skills" / name / "SKILL.md"
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        skill.write_text(body, encoding="utf-8")
+        return checkout
+
+    @patch("src.skills_installer.run_install_command")
+    def test_install_refuses_to_overwrite_a_skill_it_has_no_receipt_for(self, mock_run) -> None:
+        """Review 2, answer 3 (2026-10-08): a folder with no lock entry is the
+        user's. If the source would replace it with different files, the source
+        is refused before the Skills CLI runs, and the folder is untouched."""
+        from src.skills_installer import SkillsInstallError, install_source
+        from src.skills_sources import SkillSourceEntry
+
+        source = SkillSourceEntry(id="superpowers", repo="obra/superpowers", skills=["brainstorming"])
+        checkout = self._checkout_with("brainstorming", "---\nname: brainstorming\n---\nupstream\n")
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        mine = lock_file.parent / "skills" / "brainstorming"
+        mine.mkdir(parents=True)
+        (mine / "SKILL.md").write_text("---\nname: brainstorming\n---\nmine\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(SkillsInstallError, "brainstorming"):
+            install_source(source, agents=["codex"], global_lock_file=lock_file, checkout=checkout)
+
+        mock_run.assert_not_called()
+        self.assertIn("mine", (mine / "SKILL.md").read_text(encoding="utf-8"))
+
+    @patch("src.skills_installer.run_install_command")
+    def test_install_refuses_to_overwrite_a_skill_changed_since_install(self, mock_run) -> None:
+        from src.skills_installer import SkillsInstallError, _skill_folder_hash, install_source
+        from src.skills_sources import SkillSourceEntry
+
+        source = SkillSourceEntry(id="superpowers", repo="obra/superpowers", skills=["brainstorming"])
+        checkout = self._checkout_with("brainstorming", "---\nname: brainstorming\n---\nv2\n")
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        installed = lock_file.parent / "skills" / "brainstorming"
+        installed.mkdir(parents=True)
+        (installed / "SKILL.md").write_text("---\nname: brainstorming\n---\nv1\n", encoding="utf-8")
+        lock_file.write_text(json.dumps({"version": 3, "skills": {"brainstorming": {
+            "source": "obra/superpowers", "skillFolderHash": _skill_folder_hash(installed),
+        }}}), encoding="utf-8")
+        (installed / "notes.md").write_text("my notes\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(SkillsInstallError, "brainstorming"):
+            install_source(source, agents=["codex"], global_lock_file=lock_file, checkout=checkout)
+
+        mock_run.assert_not_called()
+        self.assertTrue((installed / "notes.md").is_file())
+
+    @patch("src.skills_installer.run_install_command")
+    def test_install_updates_an_unchanged_skill_it_installed(self, mock_run) -> None:
+        from src.skills_installer import _skill_folder_hash, install_source
+        from src.skills_sources import SkillSourceEntry
+
+        source = SkillSourceEntry(id="superpowers", repo="obra/superpowers", skills=["brainstorming"])
+        checkout = self._checkout_with("brainstorming", "---\nname: brainstorming\n---\nv2\n")
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        installed = lock_file.parent / "skills" / "brainstorming"
+        installed.mkdir(parents=True)
+        (installed / "SKILL.md").write_text("---\nname: brainstorming\n---\nv1\n", encoding="utf-8")
+        lock_file.write_text(json.dumps({"version": 3, "skills": {"brainstorming": {
+            "source": "obra/superpowers", "skillFolderHash": _skill_folder_hash(installed),
+        }}}), encoding="utf-8")
+        mock_run.return_value = self._success_result("superpowers", [])
+
+        install_source(source, agents=["codex"], global_lock_file=lock_file, checkout=checkout)
+
+        mock_run.assert_called_once()
 
     @patch("src.skills_installer.run_install_command")
     def test_install_source_records_remote_provenance_after_local_checkout(
@@ -191,13 +266,15 @@ sources:
             repo="obra/superpowers",
             skills=["brainstorming"],
         )
-        mock_install.return_value = self._success_result(
-            "superpowers", ["npx", "skills", "add", "local"]
-        )
         lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
         installed_skill = lock_file.parent / "skills" / "brainstorming"
-        installed_skill.mkdir(parents=True)
-        (installed_skill / "SKILL.md").write_text("# brainstorming\n", encoding="utf-8")
+
+        def skills_add(*_args, **_kwargs):
+            installed_skill.mkdir(parents=True)
+            (installed_skill / "SKILL.md").write_text("# brainstorming\n", encoding="utf-8")
+            return self._success_result("superpowers", ["npx", "skills", "add", "local"])
+
+        mock_install.side_effect = skills_add
 
         def clone_with_skill(_repo: str, destination: Path, **_kwargs) -> None:
             skill_dir = destination / "skills" / "brainstorming"
@@ -529,8 +606,13 @@ sources:
             encoding="utf-8",
         )
         installed_skill = lock_file.parent / "skills" / "real-skill"
-        installed_skill.mkdir(parents=True)
-        (installed_skill / "SKILL.md").write_text("# real skill\n", encoding="utf-8")
+
+        def skills_add(*_args, **_kwargs):
+            installed_skill.mkdir(parents=True)
+            (installed_skill / "SKILL.md").write_text("# real skill\n", encoding="utf-8")
+            return self._success_result("wildcard-source", ["npx", "skills", "add", "local"])
+
+        mock_install.side_effect = skills_add
 
         def clone_with_skill_and_fixture(_repo: str, destination: Path, **_kwargs) -> None:
             real_skill = destination / "skills" / "real-skill"

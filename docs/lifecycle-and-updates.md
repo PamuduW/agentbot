@@ -123,6 +123,19 @@ declined recovery, failed fetch, or failed backup stops downstream work.
 the documented repository recovery, restart Agentbot after a self-update, and
 run the non-interactive lifecycle update.
 
+Only `dotfiles full-update` and the bootstrap reach the complete end state
+(Review 2, answer 2, 2026-10-08). Agentbot's own entries are deliberately
+partial: **Install** sets up the selected components and the baseline, without
+the workspace refresh or backup that the update pass does, and **Update** runs
+that pass without any Dotfiles work or the full update's closing Doctors.
+
+`agentbot update --components L` narrows the update pass the way `install
+--components` narrows an install: the listed components are configured, and
+the rest are inspected and reported, never configured. Managed outputs,
+workspaces, Codex Remote Control, the memory backup and Doctor are the baseline
+and always run. The bootstrap uses this so the update after a narrowed install
+does not set up what the operator deselected (Review 2, answer 1).
+
 ## Contracts a calling run may set
 
 These are for a caller sequencing Agentbot inside a longer run — `dotfiles
@@ -133,6 +146,7 @@ behaviour exactly as it is.
 |---|---|
 | `AGENTBOT_INSTALL_CONFIRM=yes` | pre-approve the install the caller already asked about |
 | `AGENTBOT_INSTALL_GATE_ONLY=1` | run the repository gate and stop |
+| `AGENTBOT_INSTALL_SELECTION_FILE=PATH` | a successful `install` (menu or `--components`) writes the chosen component keys there, one per line, so the caller can pass them to `update --components` |
 | `AGENTBOT_QUIET=1` | drop the `[info]` lines meant for someone running Agentbot directly |
 | `AGENTBOT_TIMING_FILE=PATH` | `agentbot full` appends one `<stage> <seconds>` line per stage, so a caller can report its own sections instead of timing the whole command as one |
 | `REPO_UPDATE_CALLER_RESTARTS=1` | the caller restarts the run itself, so the repository gate must not tell the operator to run setup again |

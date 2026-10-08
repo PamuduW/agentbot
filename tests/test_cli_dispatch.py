@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 import re
 import tempfile
 import unittest
@@ -135,6 +136,39 @@ class HandlerTests(unittest.TestCase):
             cli._handle_install(context)
         self.assertIn("skils", str(raised.exception))
 
+    def test_install_records_the_selection_for_a_calling_run(self):
+        """Review 2, answer 1: bootstrap passes the selection on to update."""
+        context = _context(components="skills,boost")
+        target = Path(tempfile.mkdtemp()) / "selection"
+        with (
+            mock.patch.object(cli, "run_agentbot_install", return_value=0),
+            mock.patch.dict(os.environ, {"AGENTBOT_INSTALL_SELECTION_FILE": str(target)}),
+        ):
+            self.assertEqual(cli._handle_install(context), 0)
+        self.assertEqual("skills\nboost\n", target.read_text(encoding="utf-8"))
+
+    def test_an_unnarrowed_install_records_every_component(self):
+        context = _context(components="")
+        target = Path(tempfile.mkdtemp()) / "selection"
+        with (
+            mock.patch.object(cli, "run_agentbot_install", return_value=0),
+            mock.patch.dict(os.environ, {"AGENTBOT_INSTALL_SELECTION_FILE": str(target)}),
+        ):
+            cli._handle_install(context)
+        self.assertEqual(
+            list(cli.Lifecycle.SELECTABLE_COMPONENTS), target.read_text().split()
+        )
+
+    def test_a_failed_install_records_no_selection(self):
+        context = _context(components="skills")
+        target = Path(tempfile.mkdtemp()) / "selection"
+        with (
+            mock.patch.object(cli, "run_agentbot_install", return_value=1),
+            mock.patch.dict(os.environ, {"AGENTBOT_INSTALL_SELECTION_FILE": str(target)}),
+        ):
+            cli._handle_install(context)
+        self.assertFalse(target.exists())
+
     def test_skills_delegates_with_the_parsed_subcommand(self):
         context = _context(skills_command="list")
         with mock.patch.object(cli, "handle_skills_command", return_value=3) as handle:
@@ -257,6 +291,34 @@ class HandlerTests(unittest.TestCase):
         # One heading for the result, not a second one inside it.
         self.assertNotIn("=== Workspace resync ===", rendered)
         self.assertEqual(1, len(re.findall(r"\d+ ok|All \d+ component", rendered)))
+
+    def test_update_passes_a_component_selection_to_apply(self):
+        from src.models import UpdateOutcome
+
+        context = _context(
+            command="update", dry_run=False, interactive=False, confirm=True,
+            components="skills,vscode",
+        )
+        context.lifecycle.plan_update.return_value = _plan()
+        context.lifecycle.apply_update.return_value = UpdateOutcome("applied", "ok")
+        with redirect_stdout(io.StringIO()):
+            cli._handle_update(context)
+        self.assertEqual(
+            ("skills", "vscode"), context.lifecycle.apply_update.call_args.kwargs["components"]
+        )
+
+    def test_update_refuses_an_unknown_component(self):
+        context = _context(
+            command="update", dry_run=False, interactive=False, confirm=True, components="vscod"
+        )
+        with self.assertRaises(SystemExit) as raised:
+            cli._handle_update(context)
+        self.assertIn("vscod", str(raised.exception))
+        context.lifecycle.plan_update.assert_not_called()
+
+    def test_update_parser_accepts_components(self):
+        args = cli.build_parser().parse_args(["update", "--yes", "--components", "skills"])
+        self.assertEqual("skills", args.components)
 
     def test_update_requires_confirmation_for_source_owned_changes(self):
         context = _context(command="update", dry_run=False, interactive=False, confirm=False)

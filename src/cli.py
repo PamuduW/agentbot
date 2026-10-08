@@ -4,6 +4,7 @@ import argparse
 import io
 import json
 import os
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -11,6 +12,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from .atomic_io import write_text_atomic
 from .boost import BoostIntegration
 from .commands import CommandSpec, command_by_name
 from .diagnostics import Diagnostics
@@ -850,6 +852,26 @@ def _handle_memory_sync(context: CommandContext) -> int:
     return code
 
 
+def _validate_staged(root: Path, acknowledge: Any) -> Any:
+    """The vault as the commit in progress will record it."""
+    from . import memory, memory_sync
+
+    named = os.environ.get("GIT_INDEX_FILE")
+    if named:
+        index = Path(named) if Path(named).is_absolute() else root / named
+    else:
+        found = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-path", "index"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if found.returncode != 0:
+            raise memory.MemoryVaultError("cannot find the vault's Git index")
+        index = Path(found.stdout.strip())
+    return memory_sync.validate_index(root, index, acknowledge=acknowledge)
+
+
 def _handle_memory(context: CommandContext) -> int:
     from . import memory
 
@@ -924,7 +946,11 @@ def _dispatch_memory(context: CommandContext) -> int:
             status = memory.VaultStatus(state="unconfigured", looked_in=looked)
         else:
             try:
-                report = memory.validate(root, acknowledge=context.args.acknowledge_warning or ())
+                acknowledge = context.args.acknowledge_warning or ()
+                if getattr(context.args, "staged", False):
+                    report = _validate_staged(root, acknowledge)
+                else:
+                    report = memory.validate(root, acknowledge=acknowledge)
             except memory.MemoryVaultError as error:
                 status = memory.VaultStatus(
                     state="broken", looked_in=looked, root=root, problem=str(error)
@@ -1136,6 +1162,7 @@ def _handle_mcp(context: CommandContext) -> int:
 def _handle_update(context: CommandContext) -> int:
     args = context.args
     command = args.command
+    components = _parse_components(getattr(args, "components", None))
     # No planning phase on screen. It had a heading, a legend and three
     # [STEP]/[OK] pairs before the report, which is four screens of scaffolding
     # in front of one table -- and the sibling product's update goes straight to
@@ -1174,7 +1201,11 @@ def _handle_update(context: CommandContext) -> int:
     log_legend()
     print()
     applying = InstallLog(sentinel="Update complete")
-    outcome = context.lifecycle.apply_update(plan, progress=applying.stage)
+    outcome = context.lifecycle.apply_update(
+        plan,
+        progress=applying.stage,
+        **({"components": components} if components is not None else {}),
+    )
     # One result block, closing on one rollup. The outcome, the reconciliation
     # and the resync each used to print their own, and the resync brought a
     # second `=== Workspace resync ===` heading with it -- so one update ended
@@ -1317,23 +1348,34 @@ def _handle_resync(context: CommandContext) -> int:
     return 1 if any(item.status in {"conflict", "failed"} for item in report.results) else 0
 
 
+def _parse_components(selected: str | None) -> tuple[str, ...] | None:
+    """A `--components` value as component keys; None means all of them."""
+    if not selected:
+        return None
+    wanted = tuple(part.strip() for part in selected.split(",") if part.strip())
+    # The class attribute, not the instance: which components exist is a
+    # fact about Lifecycle, and reading it off the object would make
+    # validation depend on having built one.
+    known_components = Lifecycle.SELECTABLE_COMPONENTS
+    unknown = [c for c in wanted if c not in known_components]
+    if unknown:
+        known = ", ".join(known_components)
+        raise SystemExit(f"unknown component(s): {', '.join(unknown)} (known: {known})")
+    return wanted
+
+
 def _handle_install(context: CommandContext) -> int:
-    selected = getattr(context.args, "components", None)
-    components: tuple[str, ...] | None = None
-    if selected:
-        wanted = tuple(part.strip() for part in selected.split(",") if part.strip())
-        # The class attribute, not the instance: which components exist is a
-        # fact about Lifecycle, and reading it off the object would make
-        # validation depend on having built one.
-        known_components = Lifecycle.SELECTABLE_COMPONENTS
-        unknown = [c for c in wanted if c not in known_components]
-        if unknown:
-            known = ", ".join(known_components)
-            raise SystemExit(f"unknown component(s): {', '.join(unknown)} (known: {known})")
-        components = wanted
+    components = _parse_components(getattr(context.args, "components", None))
     if bool(getattr(context.args, "plan_only", False)):
         return show_install_plan(context.lifecycle, components)
-    return run_agentbot_install(context.lifecycle, context.paths, components=components)
+    rc = run_agentbot_install(context.lifecycle, context.paths, components=components)
+    # A calling run (the Dotfiles bootstrap) cannot see the selector, so the
+    # selection is handed back for the update that follows (Review 2, answer 1).
+    selection_file = os.environ.get("AGENTBOT_INSTALL_SELECTION_FILE")
+    if rc == 0 and selection_file:
+        chosen = components if components is not None else Lifecycle.SELECTABLE_COMPONENTS
+        write_text_atomic(Path(selection_file), "".join(f"{name}\n" for name in chosen))
+    return rc
 
 
 def _handle_skills(context: CommandContext) -> int:
@@ -1557,6 +1599,11 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="RULE_ID",
         help="Accept one warning rule for this run only; blocking rules cannot be acknowledged",
     )
+    memory_validate.add_argument(
+        "--staged",
+        action="store_true",
+        help="Validate the staged index (Git's, or GIT_INDEX_FILE) instead of the working files",
+    )
     propose = memory_sub.add_parser(
         "propose", help="Propose one core record for the user to review"
     )
@@ -1755,6 +1802,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--interactive",
         action="store_true",
         help="Preview, confirm, and apply one update plan in this process",
+    )
+    update.add_argument(
+        "--components",
+        default="",
+        help="Comma-separated subset to configure, as for install; the rest are "
+        "inspected and reported, never configured. Omit for all of them.",
     )
 
     workspace = subparsers.add_parser("workspace", help="Preview or render one workspace")

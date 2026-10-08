@@ -39,6 +39,7 @@ class BoostStatus:
     stale_artifacts: tuple[Path, ...] = ()
     user_flags: tuple[tuple[str, bool], ...] = ()
     diverged_flags: tuple[str, ...] = ()
+    unruled_flags: tuple[str, ...] = ()
 
 
 DEFAULT_BOOST_TIMEOUT_SECONDS = 300
@@ -64,10 +65,18 @@ _RELEASE_TAG_RE = re.compile(r"v?([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)")
 #
 # Leaving a flag unpinned is not neutral: its effective value falls back to a
 # remote default JFrog can change without warning.
+#
+# Five are off permanently, by the user's decision of 2026-10-08:
+# boost-auto-update, boost-target-version, boost-share-cli-outputs,
+# boost-pr-usage-comments and boost-claude-status-line. They are not up for
+# review, and a test fails if any of them is turned on.
 BOOST_FEATURE_POLICY: dict[str, bool] = {
     # Scrubs secrets and abbreviates paths in what the agent sees, not just in
     # the local database. Enforces the global "never expose secrets in command
-    # output" rule mechanically rather than by trusting the agent.
+    # output" rule mechanically rather than by trusting the agent. Unlike every
+    # other lossy transform kept on here, this one is deliberately not
+    # recoverable through `boost retrieve`: secrets and credentials are exempt
+    # from the retrievable-original rule (user decision, 2026-10-08).
     "boost-agent-facing-redaction": True,
     # Boost's background self-updater. Dotfiles owns this binary: it installs a
     # digest-verified release asset and records the tag in
@@ -108,9 +117,30 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     # seeing what the tool printed. Flip to True if doc-page fetching ever
     # outweighs that.
     "boost-html-article": False,
+    # Undocumented. From its name, prompts Cursor towards the HTML-to-article
+    # path, which is off above; an unknown behaviour stays off until it is
+    # understood.
+    "boost-html-article-cursor-nudge": False,
+    # Keeps HTML the agent saved itself out of the article conversion on read
+    # (v0.13.33). Inert while boost-html-article is off, and pinned on so the
+    # safer behaviour is already in place if that ever changes.
+    "boost-html-article-preserve-agent-html": True,
+    # Caps browser snapshot and CDP text from MCP at 120 lines (v0.13.33).
+    # Browser automation acts on what the snapshot shows, and an element past
+    # line 120 is one the agent cannot click; correctness beats the saving for
+    # tools used this rarely.
+    "boost-mcp-browser-budget": False,
+    # Filters noisy MCP responses, with the original retrievable through the
+    # same `boost retrieve` marker as CLI filtering -- the bargain already
+    # accepted for shell output. It was on by remote default and unseen.
+    "boost-mcp-filtering": True,
     # Re-encodes MCP JSON responses as TOON with values copied across untouched
     # -- a lossless reformat that costs nothing when no MCP tool is called.
     "boost-mcp-toon-format": True,
+    # Enables `[ignore] optimize = [...]`, repo-relative globs excluded from
+    # optimization. Nothing here needs an exclusion yet; turn it on with the
+    # first list that does.
+    "boost-path-ignore": False,
     # Posts and updates a GitHub PR comment with per-model token usage, driven
     # by an authenticated `gh`. An outward-facing write to someone else's
     # repository is never an incidental side effect of a local savings tool.
@@ -134,6 +164,13 @@ GRAPH_FEATURE_FLAG = "boost-graph-integration"
 # the `--no-boostgraph` flag, was passed on every call until boost v0.13 removed
 # it. Kept because a later version may start disclosing BoostGraph in the plan,
 # and because it still catches a disclosed repository `.boost/` write.
+# A BoostGraph registration Agentbot did not write. Boost's own installer names
+# the server `boost-graph` (and older `boost init` wrote `boostgraph`, with
+# BOOSTGRAPH marker blocks); Agentbot's catalog entry is `agentbot_boost_graph`,
+# whose tool names `boostgraph_*` appear legitimately in Codex's enabled_tools.
+_FOREIGN_GRAPH_RE = re.compile(
+    r"boost-graph|boost graph(?! serve)|[\"\[.]boostgraph[\"\]]|\bBOOSTGRAPH\b|boostgraphgraph"
+)
 _FORBIDDEN_PLAN_RE = re.compile(
     r"boost[ -]?graph|\bmcp\b|background (?:index|watch)|(?:^|[\s/])\.boost(?:/|$)",
     re.IGNORECASE | re.MULTILINE,
@@ -269,6 +306,7 @@ class BoostIntegration:
             stale,
             user_flags,
             diverged,
+            self._unruled_feature_flags(),
         )
 
     @contextmanager
@@ -683,6 +721,28 @@ class BoostIntegration:
         ]
         return tuple(chosen)
 
+    def _unruled_feature_flags(self) -> tuple[str, ...]:
+        """Flags Boost knows about that the policy does not name.
+
+        Boost writes every flag it ships into config.toml, so a new release's
+        flags appear there before anyone has decided them, run by JFrog's
+        remote default. `_metadata` is bookkeeping, not a flag.
+        """
+        try:
+            parsed = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return ()
+        flags = parsed.get("feature_flags")
+        if not isinstance(flags, dict):
+            return ()
+        return tuple(
+            name
+            for name, entry in sorted(flags.items())
+            if isinstance(entry, dict)
+            and not name.startswith("_")
+            and name not in BOOST_FEATURE_POLICY
+        )
+
     def _stale_artifacts(self, cli_version: str | None) -> tuple[Path, ...]:
         """Hook and awareness files left behind by a Boost binary upgrade.
 
@@ -772,18 +832,20 @@ class BoostIntegration:
                 content = path.read_text(encoding="utf-8")
             except OSError:
                 continue
-            if re.search(r"boost[ -]?graph|boostgraph_explore", content, re.IGNORECASE):
+            if _FOREIGN_GRAPH_RE.search(content):
                 return True
         return any(self._repository_graph_indexes())
 
     def _repository_graph_indexes(self) -> tuple[Path, ...]:
-        """Registered workspaces carrying a BoostGraph index.
+        """Registered workspaces carrying a pre-v0.14 BoostGraph index.
 
-        `boostgraph init` builds its index into a repository `.boost/`, which
-        the plan forbids outright. A `.boost/` holding nothing but a config file
-        is a different problem -- see `_shadowing_configs` -- and `hook-meta/`
-        is where the Bash hook records each tool call, so only other content
-        counts as graph evidence.
+        Before v0.14 `boostgraph init` built its index into a repository
+        `.boost/`, alongside the session hooks and marker blocks that kept it
+        off. The current engine's `.codegraph/` index is the adopted state
+        (item 6A, 2026-10-08) and is not evidence. A `.boost/` holding nothing
+        but a config file is a different problem -- see `_shadowing_configs` --
+        and `hook-meta/` is where the Bash hook records each tool call, so only
+        other content counts.
         """
         from .workspace_state import WorkspaceStore
 

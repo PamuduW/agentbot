@@ -31,7 +31,7 @@ must use Agentbot and agentbot.
 | Global machine baseline | global/AGENTS.md and install.sh global | Live |
 | Curated skills | skills.sources.yaml and install.sh skills ... | Live |
 | Dotfiles integration | sibling dotfiles Agentbot bridge | Live |
-| Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Live; all five candidates admitted, MCP is an install component |
+| Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Live; six servers admitted (BoostGraph on 2026-10-08), MCP is an install component |
 | Durable memory | src/memory*.py, `agentbot memory` | Live: two-tier vault, schema 3 (workspace ADR-0009) |
 | Graphify CLI and assistant integration | sibling dotfiles component plus Agentbot integration | Live (Phase 5) |
 

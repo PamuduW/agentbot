@@ -309,12 +309,63 @@ def _same_skill_folder(source_dir: Path, installed_dir: Path) -> bool:
         return False
 
 
+def _skills_not_ours_to_replace(
+    source: SkillSourceEntry, checkout: Path, lock_file: Path
+) -> tuple[tuple[str, ...], frozenset[str]]:
+    """Installed skills this source would overwrite, and those with no receipt.
+
+    The lock's skillFolderHash is the install receipt. A folder with no lock
+    entry, or whose files no longer match its receipt, is the user's (Review 2,
+    answer 3), so the Skills CLI must not replace it with different files. The
+    second value is every folder already on disk without a receipt, so the
+    record that follows never claims one of them.
+    """
+    try:
+        lock = json.loads(lock_file.read_text(encoding="utf-8")) if lock_file.is_file() else {}
+    except (OSError, ValueError) as error:
+        raise SkillsInstallError(f"unable to read global skill lock {lock_file}: {error}") from error
+    pins = lock.get("skills") if isinstance(lock, dict) else None
+    pins = pins if isinstance(pins, dict) else {}
+    skills_home = lock_file.parent / "skills"
+    unreceipted = frozenset(
+        entry.name
+        for entry in (skills_home.iterdir() if skills_home.is_dir() else ())
+        if entry.is_dir() and (entry / "SKILL.md").is_file() and entry.name not in pins
+    )
+    wanted = None if source.skills == ["*"] else set(source.skills)
+    blocked: set[str] = set()
+    for skill_file in checkout.rglob("SKILL.md"):
+        name = skill_name_from_file(skill_file)
+        installed = skills_home / name
+        if wanted is not None and name not in wanted:
+            continue
+        if not (installed / "SKILL.md").is_file() or _same_skill_folder(skill_file.parent, installed):
+            continue
+        entry = pins.get(name)
+        receipt = entry.get("skillFolderHash") if isinstance(entry, dict) else None
+        if name in unreceipted or (
+            isinstance(receipt, str) and _skill_folder_hash(installed) != receipt
+        ):
+            blocked.add(name)
+    return tuple(sorted(blocked)), unreceipted
+
+
+def _refuse_overwrites(source: SkillSourceEntry, blocked: tuple[str, ...]) -> None:
+    if blocked:
+        raise SkillsInstallError(
+            f"source {source.id!r} would overwrite skills that are yours: "
+            f"{', '.join(blocked)}. They have no install record or were changed since "
+            "install; move or rename them, then rerun."
+        )
+
+
 def _record_checkout_lock(
     source: SkillSourceEntry,
     checkout: Path,
     lock_file: Path,
     *,
     source_revision: str | None = None,
+    preexisting: frozenset[str] = frozenset(),
 ) -> None:
     if source.repo is None:
         raise SkillsInstallError(f"source {source.id!r} has no repository to record")
@@ -368,7 +419,9 @@ def _record_checkout_lock(
         if (wanted is None or name in wanted) and name in installed_names:
             if not source.excludes(name):
                 checkout_skills.setdefault(name, skill_file)
-            elif _same_skill_folder(skill_file.parent, installed_skills_home / name):
+            elif name not in preexisting and _same_skill_folder(
+                skill_file.parent, installed_skills_home / name
+            ):
                 excluded_copies.setdefault(name, skill_file)
 
     # A wildcard checkout can contain SKILL.md fixtures that npx deliberately
@@ -543,11 +596,18 @@ def install_source(
         elif checkout is not None:
             source_revision = _checkout_revision(checkout, runner=runner)
             argv[4] = str(checkout)
+            preexisting: frozenset[str] = frozenset()
+            if global_scope:
+                blocked, preexisting = _skills_not_ours_to_replace(
+                    source, checkout, _require_global_lock(global_lock_file)
+                )
+                _refuse_overwrites(source, blocked)
             result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
             if result.returncode == 0 and global_scope:
                 _record_checkout_lock(
                     source, checkout, _require_global_lock(global_lock_file),
                     source_revision=source_revision,
+                    preexisting=preexisting,
                 )
             result = InstallResult(
                 source_id=result.source_id,
@@ -568,11 +628,18 @@ def install_source(
                 _clone_remote_source(source.repo, checkout, runner=runner)
                 source_revision = _checkout_revision(checkout, runner=runner)
                 argv[4] = str(checkout)
+                preexisting = frozenset()
+                if global_scope:
+                    blocked, preexisting = _skills_not_ours_to_replace(
+                        source, checkout, _require_global_lock(global_lock_file)
+                    )
+                    _refuse_overwrites(source, blocked)
                 result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
                 if result.returncode == 0 and global_scope:
                     _record_checkout_lock(
                         source, checkout, _require_global_lock(global_lock_file),
                         source_revision=source_revision,
+                        preexisting=preexisting,
                     )
                 result = InstallResult(
                     source_id=result.source_id,
