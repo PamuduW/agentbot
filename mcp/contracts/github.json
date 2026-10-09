@@ -30,12 +30,12 @@
     {
       "name": "get_me",
       "capability": "identity",
-      "descriptor_fingerprint": "sha256:1c5b98ed9b3d3d374b3b7a2f2c7d009b7a5b5eaee02bf53c05fca87d2b473638"
+      "descriptor_fingerprint": "sha256:e296e488fcd44f31ecdce94894c5312a321fbbdc8bc725ec062e0ce670e95b09"
     },
     {
       "name": "search_repositories",
       "capability": "repository_metadata",
-      "descriptor_fingerprint": "sha256:6e07ceb9e1e050abc618098c50fcc8ceb8e7533dc44c07cf2955a9105aec191e"
+      "descriptor_fingerprint": "sha256:26550cacfbfe193ee8fddffb5e8617893a9e112e436a0a8ceab0969d9fdc6cac"
     },
     {
       "name": "get_file_contents",
