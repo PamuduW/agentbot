@@ -105,10 +105,16 @@ def _native_entry(client: str, entry: McpCatalogEntry) -> dict[str, object]:
         if client == "antigravity" and (
             entry.credential.mode in {"bearer_env", "header_env"} or contract.headers
         ):
-            raise ValueError(
-                f"MCP catalog entry {entry.id} needs an environment credential header, "
-                "which antigravity cannot expand"
-            )
+            # A local bridge that inherits the credential, or nothing.
+            if not contract.command:
+                raise ValueError(
+                    f"MCP catalog entry {entry.id} needs an environment credential header, "
+                    "which antigravity cannot expand"
+                )
+            bridge: dict[str, object] = {"command": contract.command}
+            if contract.args:
+                bridge["args"] = list(contract.args)
+            return bridge
         url = contract.url or entry.origin
         if not isinstance(url, str) or not url.startswith("https://"):
             raise ValueError(f"MCP catalog entry {entry.id} has no secure remote URL")

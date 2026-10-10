@@ -130,15 +130,18 @@ def _decode_entry(raw: object) -> McpCatalogEntry:
 
     credential = _decode_credential(data["credential"])
     # agy sends header values literally (no ${NAME} expansion), so a remote
-    # server that authenticates from the environment cannot reach it.
+    # server that authenticates from the environment reaches it only through a
+    # local bridge command that inherits the credential.
+    antigravity = next((c for c in clients if c.client == "antigravity" and c.enabled), None)
     if (
         transport == "remote_http"
-        and any(c.client == "antigravity" and c.enabled for c in clients)
-        and (credential.mode in {"bearer_env", "header_env"} or _antigravity_headers(clients))
+        and antigravity is not None
+        and antigravity.command is None
+        and (credential.mode in {"bearer_env", "header_env"} or antigravity.headers)
     ):
         raise ValueError(
             f"catalog entry {entry_id} cannot enable antigravity: it needs an environment "
-            "credential header"
+            "credential header and names no bridge command"
         )
     allowed_tools = _unique_string_tuple(data["allowed_tools"], "allowed_tools")
     fingerprints = _unique_string_tuple(data["descriptor_fingerprints"], "descriptor_fingerprints")
@@ -199,10 +202,6 @@ def _decode_clients(raw: object) -> tuple[McpClientContract, ...]:
             )
         )
     return tuple(contracts)
-
-
-def _antigravity_headers(clients: tuple[McpClientContract, ...]) -> bool:
-    return any(c.client == "antigravity" and c.headers for c in clients)
 
 
 def _decode_credential(raw: object) -> McpCredential:

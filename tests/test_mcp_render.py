@@ -95,6 +95,21 @@ class McpRenderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "antigravity cannot expand"):
             render_mcp_config("antigravity", "", (entry,))
 
+    def test_antigravity_renders_a_remote_env_credential_as_its_bridge(self) -> None:
+        entry = replace(
+            self.entry,
+            clients=(
+                *self.entry.clients,
+                McpClientContract(
+                    client="antigravity", enabled=True, command="agentbot", args=("bridge",)
+                ),
+            ),
+        )
+        document = json.loads(render_mcp_config("antigravity", "", (entry,)))
+        self.assertEqual(
+            {"command": "agentbot", "args": ["bridge"]}, document["mcpServers"]["agentbot_docs"]
+        )
+
     def test_antigravity_renders_server_url_without_type(self) -> None:
         source = json.dumps(
             {"mcpServers": {"mine": {"serverUrl": "https://x.test", "disabled": True}}}

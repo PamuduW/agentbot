@@ -250,12 +250,18 @@ class McpInstallComponentTests(unittest.TestCase):
         self.assertEqual((), outcome.blocked)
         self.assertEqual(self.service.eligible_pair_count(), len(outcome.admitted))
         reached = {catalog_id for catalog_id, client in outcome.admitted if client == "antigravity"}
-        self.assertEqual({"context7", "aws_knowledge", "microsoft_learn", "gitlab_read"}, reached)
+        self.assertEqual(
+            {"context7", "aws_knowledge", "microsoft_learn", "gitlab_read", "github"}, reached
+        )
         config = json.loads(
             (self.root / ".gemini" / "config" / "mcp_config.json").read_text(encoding="utf-8")
         )
         servers = config["mcpServers"]
-        self.assertNotIn("agentbot_github", servers)
+        # GitHub's header credential reaches agy through the local bridge.
+        self.assertEqual(
+            {"command": "agentbot", "args": ["mcp", "serve", "--catalog-id", "github"]},
+            servers["agentbot_github"],
+        )
         # agy passes env values literally; the server inherits the token instead.
         self.assertNotIn("env", servers["agentbot_gitlab_read"])
         self.assertEqual(

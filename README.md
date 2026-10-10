@@ -385,9 +385,13 @@ Antigravity is a target only once it is installed, and only for entries whose
 and args through as literal text (checked with agy 1.3.3), so Agentbot renders
 its stdio servers without an `env` block and they inherit the token from the
 shell that started `agy`. Context7, AWS Knowledge, Microsoft Learn and the
-GitLab facade are enabled that way. GitHub is not: it is a remote server that
-authenticates with a header, and the catalog refuses to enable Antigravity for
-any such entry.
+GitLab facade are enabled that way. GitHub authenticates with a header, so
+Antigravity reaches it through `agentbot mcp serve --catalog-id github`: a
+local bridge that reads `GITHUB_MCP_TOKEN` from its environment, sends the same
+read-only controls as the other clients, and serves only the catalog's 18 tools
+whose descriptors match their pins. The catalog refuses to enable Antigravity
+for any other header-authenticated remote entry unless it names such a bridge
+command.
 
 The component never overwrites configuration it does not own. A same-name entry
 another tool wrote, or a registered entry that no longer matches its record, is
