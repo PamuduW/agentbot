@@ -17,7 +17,7 @@
       },
       {
         "name": "query-docs",
-        "descriptor_fingerprint": "sha256:60e12e0b14c4612360c5013bcf56fbc471b60320ece424090c15e08a0c9d7ab3"
+        "descriptor_fingerprint": "sha256:c72de62aefbd1cd3859bb42d808c0be5f8623ff8f387113c10347ac511d73590"
       }
     ],
     "timeout_seconds": 60,
