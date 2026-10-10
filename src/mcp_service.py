@@ -142,8 +142,9 @@ class McpService:
         """Every vetted catalog entry, and the clients it declares.
 
         Eligibility is the review: mcp_catalog rejects a catalog that marks an
-        entry eligible without enabling all three clients, so an eligible entry
-        always has the same target set and the install never has to choose one.
+        entry eligible without enabling Claude, Codex and Cursor, so an eligible
+        entry always has those targets. Antigravity is optional per entry and
+        is a target only where its contract is enabled.
         """
         entries = tuple(entry for entry in self.catalog().entries if entry.eligible)
         if not entries:
@@ -319,6 +320,8 @@ class McpService:
             return self.paths.codex_home / "config.toml"
         if client == "cursor":
             return self.paths.cursor_home / "mcp.json"
+        if client == "antigravity":
+            return self.paths.antigravity_config / "mcp_config.json"
         raise ValueError(f"unsupported MCP client: {client}")
 
     @staticmethod

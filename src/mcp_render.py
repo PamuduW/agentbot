@@ -12,7 +12,7 @@ from tomlkit.items import Table
 
 from .mcp_models import McpCatalogEntry, McpClientContract
 
-_CLIENTS = frozenset({"claude", "codex", "cursor"})
+_CLIENTS = frozenset({"claude", "codex", "cursor", "antigravity"})
 _ENV_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
@@ -105,8 +105,10 @@ def _native_entry(client: str, entry: McpCatalogEntry) -> dict[str, object]:
         url = contract.url or entry.origin
         if not isinstance(url, str) or not url.startswith("https://"):
             raise ValueError(f"MCP catalog entry {entry.id} has no secure remote URL")
-        native: dict[str, object] = {"url": url}
-        if client != "codex":
+        # Antigravity writes serverUrl itself (`agy mcp add`) and infers the
+        # transport from it; it has no type key.
+        native: dict[str, object] = {"serverUrl" if client == "antigravity" else "url": url}
+        if client not in {"codex", "antigravity"}:
             native["type"] = "http"
         _add_remote_auth(native, client, entry.credential.mode, environment)
         _add_static_headers(native, client, contract.static_headers)

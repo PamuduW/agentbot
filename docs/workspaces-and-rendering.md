@@ -52,6 +52,16 @@ Global Codex and Claude policy adapters, Claude skill links, and the managed
 Claude statusline are rendered from canonical sources. Use install, update, or
 the relevant resync/setup flow to reconcile them.
 
+Antigravity (`agy`) gets two global outputs once it is installed (the
+`~/.local/bin/agy` binary, or an existing `~/.gemini/antigravity-cli/` or
+`~/.gemini/config/`): the merged baseline at `~/.gemini/config/AGENTS.md`,
+and one entry in `~/.gemini/config/skills.json` that points at the shared
+`~/.agents/skills` store, so it needs no per-skill links. Other entries and
+keys in `skills.json` are kept; an unreadable file or a symlink is reported
+and left alone. Nothing is written to `~/.gemini/GEMINI.md`, which the Gemini
+CLI also reads. Repository policy reaches Antigravity through each
+repository's `AGENTS.md`, so there is no `antigravity` workspace target.
+
 Cursor has no global output. Its user-level rules live only in its settings
 screen, and neither the editor nor the Cursor CLI reads a user-level rules
 file from disk; both read a repository's `.cursor/rules`, `AGENTS.md`, and

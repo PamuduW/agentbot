@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 
 from src.mcp_models import McpCatalogEntry, McpClientContract, McpCredential
 from src.mcp_render import (
@@ -66,6 +67,36 @@ class McpRenderTests(unittest.TestCase):
             "Bearer ${env:DOCS_TOKEN}",
             document["mcpServers"]["agentbot_docs"]["headers"]["Authorization"],
         )
+
+    def test_antigravity_renders_server_url_without_type(self) -> None:
+        source = json.dumps(
+            {"mcpServers": {"mine": {"serverUrl": "https://x.test", "disabled": True}}}
+        )
+        entry = replace(
+            self.entry,
+            clients=(*self.entry.clients, McpClientContract(client="antigravity", enabled=True)),
+        )
+        document = json.loads(render_mcp_config("antigravity", source, (entry,)))
+        self.assertEqual(
+            {"serverUrl": "https://x.test", "disabled": True}, document["mcpServers"]["mine"]
+        )
+        self.assertEqual(
+            {
+                "serverUrl": "https://example.test/mcp",
+                "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"},
+            },
+            document["mcpServers"]["agentbot_docs"],
+        )
+
+    def test_antigravity_render_fails_closed_without_an_enabled_contract(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must define one antigravity contract"):
+            render_mcp_config("antigravity", "", (self.entry,))
+        disabled = replace(
+            self.entry,
+            clients=(*self.entry.clients, McpClientContract(client="antigravity", enabled=False)),
+        )
+        with self.assertRaisesRegex(ValueError, "does not enable antigravity"):
+            render_mcp_config("antigravity", "", (disabled,))
 
     def test_codex_merge_preserves_manual_server_and_comment(self) -> None:
         source = '# keep\n[mcp_servers.manual]\nurl = "https://example.test/mcp"\n'

@@ -18,6 +18,18 @@ class AgentbotPaths:
     # real ~/.agents skill store. Declared last so the existing positional
     # order (root, codex, claude, cursor, config) is unchanged.
     agents_home: Path = field(default_factory=lambda: Path.home() / ".agents")
+    # Antigravity's home (~/.gemini). Left unset it follows codex_home's home
+    # folder, never Path.home(), so a caller that injects the other homes cannot
+    # reach the real ~/.gemini through a forgotten default.
+    gemini_home: Path | None = None
+
+    @property
+    def antigravity_home(self) -> Path:
+        return self.gemini_home or self.codex_home.parent / ".gemini"
+
+    @property
+    def antigravity_config(self) -> Path:
+        return self.antigravity_home / "config"
 
     @property
     def global_agents(self) -> Path:
@@ -75,6 +87,7 @@ def default_paths(root: Path | None = None) -> AgentbotPaths:
         claude_home=home / ".claude",
         cursor_home=home / ".cursor",
         agents_home=home / ".agents",
+        gemini_home=home / ".gemini",
     )
 
 
