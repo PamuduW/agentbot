@@ -51,7 +51,7 @@ change shape — the same reason `vscode/` holds JSON rather than YAML.
 
 ```toml
 # cli/codex.config.toml
-model = "gpt-6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "medium"
 ```
 
