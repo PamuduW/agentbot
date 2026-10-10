@@ -178,12 +178,43 @@ class McpCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must enable every client"):
             load_mcp_catalog(self.catalog_path)
 
-    def test_shipped_catalog_keeps_antigravity_disabled_until_verified(self) -> None:
+    def test_shipped_catalog_enables_antigravity_where_no_header_credential_is_needed(
+        self,
+    ) -> None:
         catalog = load_mcp_catalog(self.paths.mcp_catalog_file)
+        enabled = {
+            entry.id
+            for entry in catalog.entries
+            for contract in entry.clients
+            if contract.client == "antigravity" and contract.enabled
+        }
+        self.assertEqual(
+            {"context7", "aws_knowledge", "microsoft_learn", "gitlab_read", "github"}, enabled
+        )
+        github = next(entry for entry in catalog.entries if entry.id == "github")
+        bridge = next(c for c in github.clients if c.client == "antigravity")
+        self.assertEqual("agentbot", bridge.command)
+        self.assertEqual(("mcp", "serve", "--catalog-id", "github"), bridge.args)
         for entry in catalog.entries:
-            contracts = {contract.client: contract for contract in entry.clients}
-            self.assertIn("antigravity", contracts, entry.id)
-            self.assertFalse(contracts["antigravity"].enabled, entry.id)
+            self.assertIn("antigravity", {contract.client for contract in entry.clients})
+
+    def test_antigravity_reaches_a_remote_env_credential_only_through_a_bridge(self) -> None:
+        entry = self.valid_entry(credential={"mode": "bearer_env", "environment": ["DOCS_TOKEN"]})
+        entry["clients"] = {
+            **{client: {"enabled": True} for client in ("claude", "codex", "cursor")},
+            "antigravity": {"enabled": True, "command": "agentbot", "args": ["bridge"]},
+        }
+        self.write_catalog({"version": 1, "entries": [entry]})
+        load_mcp_catalog(self.catalog_path)
+
+    def test_antigravity_cannot_be_enabled_for_a_remote_env_credential(self) -> None:
+        entry = self.valid_entry(credential={"mode": "bearer_env", "environment": ["DOCS_TOKEN"]})
+        entry["clients"] = {
+            client: {"enabled": True} for client in ("claude", "codex", "cursor", "antigravity")
+        }
+        self.write_catalog({"version": 1, "entries": [entry]})
+        with self.assertRaisesRegex(ValueError, "cannot enable antigravity"):
+            load_mcp_catalog(self.catalog_path)
 
     def test_unknown_enum_fails_closed(self) -> None:
         self.write_catalog({"version": 1, "entries": [self.valid_entry(transport="magic")]})

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -147,8 +148,18 @@ class FilteredMcpServer:
 
 
 class SdkRemoteUpstream:
-    def __init__(self, contract: McpFilterContract) -> None:
-        self.client = Client(contract.origin, read_timeout_seconds=contract.timeout_seconds)
+    def __init__(
+        self, contract: McpFilterContract, *, headers: dict[str, str] | None = None
+    ) -> None:
+        # Headers carry a credential for an upstream that needs one (the GitHub
+        # bridge). The HTTP client is ours to close; the transport only uses it.
+        self._http_client = create_mcp_http_client(headers=headers) if headers else None
+        server = (
+            streamable_http_client(contract.origin, http_client=self._http_client)
+            if self._http_client is not None
+            else contract.origin
+        )
+        self.client = Client(server, read_timeout_seconds=contract.timeout_seconds)
         self._entered = False
 
     async def initialize(self) -> None:
@@ -170,6 +181,9 @@ class SdkRemoteUpstream:
         if self._entered:
             self._entered = False
             await self.client.__aexit__(None, None, None)
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
 
 
 def build_stdio_server(filtered: FilteredMcpServer) -> Server[None]:

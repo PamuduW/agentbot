@@ -129,6 +129,20 @@ def _decode_entry(raw: object) -> McpCatalogEntry:
         raise ValueError(f"eligible catalog entry {entry_id} must enable every client")
 
     credential = _decode_credential(data["credential"])
+    # agy sends header values literally (no ${NAME} expansion), so a remote
+    # server that authenticates from the environment reaches it only through a
+    # local bridge command that inherits the credential.
+    antigravity = next((c for c in clients if c.client == "antigravity" and c.enabled), None)
+    if (
+        transport == "remote_http"
+        and antigravity is not None
+        and antigravity.command is None
+        and (credential.mode in {"bearer_env", "header_env"} or antigravity.headers)
+    ):
+        raise ValueError(
+            f"catalog entry {entry_id} cannot enable antigravity: it needs an environment "
+            "credential header and names no bridge command"
+        )
     allowed_tools = _unique_string_tuple(data["allowed_tools"], "allowed_tools")
     fingerprints = _unique_string_tuple(data["descriptor_fingerprints"], "descriptor_fingerprints")
     if any(not _FINGERPRINT_PATTERN.fullmatch(value) for value in fingerprints):

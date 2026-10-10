@@ -35,11 +35,14 @@
           }
         },
         "antigravity": {
-          "enabled": false,
-          "static_headers": {
-            "X-MCP-Readonly": "true",
-            "X-MCP-Tools": "get_me,search_repositories,get_file_contents,get_commit,list_commits,list_branches,list_tags,get_tag,list_releases,get_latest_release,get_release_by_tag,list_issues,issue_read,list_pull_requests,pull_request_read,actions_list,actions_get,get_job_logs"
-          }
+          "enabled": true,
+          "command": "agentbot",
+          "args": [
+            "mcp",
+            "serve",
+            "--catalog-id",
+            "github"
+          ]
         }
       },
       "credential": {
@@ -69,24 +72,24 @@
         "get_job_logs"
       ],
       "descriptor_fingerprints": [
-        "sha256:e296e488fcd44f31ecdce94894c5312a321fbbdc8bc725ec062e0ce670e95b09",
-        "sha256:26550cacfbfe193ee8fddffb5e8617893a9e112e436a0a8ceab0969d9fdc6cac",
-        "sha256:37ab6d6cd6da6cb17c63534cdcfd55759e5dbc48d5c91cbba49c64cf9f4526d6",
-        "sha256:f5f0698dfbf42dadc6d18702d54459588c2b569f39061dfbc898ef61147c8e64",
-        "sha256:1319cb12f7de449dcedb8e909cc45c655b5201cf8e8dce621e8b7feb97d34bfc",
-        "sha256:dc682d42d124840ab59909184ecb1033765100451468e8b1316fe1d8326e1a15",
-        "sha256:30fff089318ec544ee2730163b569b7583e80ef48bb988094739cbcf2589dde6",
-        "sha256:c01afc122ecd4cf829ea9d727af53c5e051ad4ad6eee308c139fdd32f8ba861e",
-        "sha256:9960f6c48fb0ab4ebec546b9d427edbbf61741f75e6b1dbc6d7a96d62f662b3e",
-        "sha256:d27ca415830ed787118788fff4e76f4f111ea94d29650f70a16b3ebb2600416c",
-        "sha256:f45841a264a91152b0d5ea102568d6ed41ac8878ec09a0d57ef724efd9c9ce5d",
-        "sha256:57cc557cd2eb39e27028b0d554854f9d2c682988f44463195cbe5a21312188cf",
-        "sha256:f6e785464d9e479d02d8d11ad683152d547bd9028d129c588e827097269edf56",
-        "sha256:0e6642a2e1ca69a4d109c48dc80b7db8db9333b13144f016d47b8ec48ca1da54",
-        "sha256:6faeb8c4918da63dd5df0b50aabb58de6397ec9fd07e6ed20c0d1d35218eb21e",
-        "sha256:94b870ab985189c090638b1d37be7f0fd3c53ad6c3b6006dd675d5836a1762a2",
-        "sha256:601dfa84296fe6358ac8035ad28c60ae35d73544936318f0fba02265f273dca2",
-        "sha256:25333cbc9c4ca59b24aa4ee5f0923412955483d53f2c92a7c34337dba8bd73ae"
+        "sha256:36661e61eb235e8f68a10ea2f4c9d1659792fe3d913cac89707d5edda946abae",
+        "sha256:e9dcbd0f2c8b87316d43897ca5ca15f5054c5f1f755cef990e19a49d0a88dca5",
+        "sha256:050a66ed56fecb49f9d5c2d2564e44f0a97a09ab5fa92e990050ccc528fc417b",
+        "sha256:d92aee47ba2724e11d04fcaa479ef7182814e6504694c0ad74d64f5503cfbdd2",
+        "sha256:153656e7d53f9e81d1e4255e029482df11b1681f2d263217b10cb0d3ae45fe4c",
+        "sha256:f201d3eae13b442ade3056df0ea103d4b33f151f47f70462232908922fe19525",
+        "sha256:32247b9adbc4a66172c526a77cbb0ee36adace6854d95964004671594108f1b3",
+        "sha256:7d84e7d0ab309e3f302b7cf8376d7d4839c28137f0a54d05424faf31650eb298",
+        "sha256:548005292a187da0213829a7e6f32bf1f54cb6c7abdcd93e443edbf5605c9632",
+        "sha256:4c3bdc3a888b8ded21ce6a9d7e7f4d02c4a92498c2eee2df1d85f9dcd88cf651",
+        "sha256:75ddbceb8e3c04cad0bdb99434b15e45bf32c682a53602e706056da2e21f8e86",
+        "sha256:1c461d59a17755f809975d2a26cf64c51d14e80edb37fa41453f3b8a9ba3e2bd",
+        "sha256:38e705e358fc3b77b7f996626eb50e3afeef0873af2ae8a8ab9bdb48c0946855",
+        "sha256:7dee86a1f918e360261e36bff6eb80e903e5962b210256f9ee72be9fdae5b73e",
+        "sha256:07f8aec68ff50f5815236986671ae0b30a4caca04196ed3cfbf5961c7e11112f",
+        "sha256:5f29baa9afb2a9a920890395417ae07fcf0d2dca4e3ed46970dd13ffbc307840",
+        "sha256:07080adba7d9d5be8429502a8cbd293a5a9f52736e9dda75a79fdcaf82f533c9",
+        "sha256:0e248465a249ba0581396ab6ae8ceda72b60d147ea03ce5a4821d7cba5ec52d9"
       ],
       "read_only_authority": "GitHub remote /readonly path and X-MCP-Readonly strict server filter, paired with a repository-limited fine-grained token whose selected permissions are read-only",
       "limitations": [
@@ -134,7 +137,7 @@
           "enabled": true
         },
         "antigravity": {
-          "enabled": false
+          "enabled": true
         }
       },
       "credential": {
@@ -147,7 +150,7 @@
       ],
       "descriptor_fingerprints": [
         "sha256:1a7e831848ea3442cf7194efafce33f598f2f39977632330b29626f20569a016",
-        "sha256:60e12e0b14c4612360c5013bcf56fbc471b60320ece424090c15e08a0c9d7ab3"
+        "sha256:c72de62aefbd1cd3859bb42d808c0be5f8623ff8f387113c10347ac511d73590"
       ],
       "read_only_authority": "Agentbot's local filter exposes only two descriptor-pinned documentation lookup tools from the fixed Context7 HTTPS origin",
       "limitations": [
@@ -192,7 +195,7 @@
           "enabled": true
         },
         "antigravity": {
-          "enabled": false
+          "enabled": true
         }
       },
       "credential": {
@@ -257,7 +260,7 @@
           "enabled": true
         },
         "antigravity": {
-          "enabled": false
+          "enabled": true
         }
       },
       "credential": {
@@ -270,9 +273,9 @@
         "microsoft_docs_fetch"
       ],
       "descriptor_fingerprints": [
-        "sha256:8462ce3cd9f2a6a378cda75160dcc1518f7703955bd29030cc829a7c57f72181",
-        "sha256:c74402d46b6c8ef85e1d4cceac95d2178b5940551b73e1c70a4438693675cb0f",
-        "sha256:131729d97ebbd6fe64d938e9232ef52f3d97c12dec3a65fc849467afede85454"
+        "sha256:c51097b359ca6a9b39062c180113fca83e5ac40f33014b9ddb37f267d59fe172",
+        "sha256:d4886260c3c25d496ebafbe145d113829dff6fbec40025560b188432238a4880",
+        "sha256:7b9a414f1d7326040ba98acd713e448e4c6cde57e649585818ab20a4849fa0c6"
       ],
       "read_only_authority": "Agentbot's local filter exposes only three descriptor-pinned Microsoft Learn search, article, and code-sample tools from the fixed Microsoft HTTPS origin",
       "limitations": [
@@ -317,7 +320,7 @@
           "enabled": true
         },
         "antigravity": {
-          "enabled": false
+          "enabled": true
         }
       },
       "credential": {

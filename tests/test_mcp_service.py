@@ -240,6 +240,37 @@ class McpInstallComponentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.service.plan(("not_a_catalog_id",), targets)
 
+    def test_installed_antigravity_gets_every_entry_it_can_reach(self) -> None:
+        agy = self.root / ".local" / "bin" / "agy"
+        agy.parent.mkdir(parents=True)
+        agy.write_text("#!/bin/sh\n", encoding="utf-8")
+
+        outcome = self.service.install_eligible(apply=True)
+
+        self.assertEqual((), outcome.blocked)
+        self.assertEqual(self.service.eligible_pair_count(), len(outcome.admitted))
+        reached = {catalog_id for catalog_id, client in outcome.admitted if client == "antigravity"}
+        self.assertEqual(
+            {"context7", "aws_knowledge", "microsoft_learn", "gitlab_read", "github"}, reached
+        )
+        config = json.loads(
+            (self.root / ".gemini" / "config" / "mcp_config.json").read_text(encoding="utf-8")
+        )
+        servers = config["mcpServers"]
+        # GitHub's header credential reaches agy through the local bridge.
+        self.assertEqual(
+            {"command": "agentbot", "args": ["mcp", "serve", "--catalog-id", "github"]},
+            servers["agentbot_github"],
+        )
+        # agy passes env values literally; the server inherits the token instead.
+        self.assertNotIn("env", servers["agentbot_gitlab_read"])
+        self.assertEqual(
+            ["mcp", "serve", "--catalog-id", "gitlab_read"], servers["agentbot_gitlab_read"]["args"]
+        )
+        again = self.service.install_eligible(apply=True)
+        self.assertFalse(again.applied)
+        self.assertEqual("ok", again.result)
+
     def test_install_writes_nothing_for_disabled_antigravity(self) -> None:
         self.service.install_eligible(apply=True)
         self.assertFalse((self.root / ".gemini").exists())
@@ -251,6 +282,7 @@ class McpInstallComponentTests(unittest.TestCase):
         outcome = self.service.install_eligible(apply=True)
 
         self.assertTrue(outcome.applied)
+        self.assertEqual(self.service.eligible_pair_count(), len(outcome.admitted))
         self.assertEqual(len(selection) * len(targets), len(outcome.admitted))
         self.assertEqual((), outcome.blocked)
         self.assertEqual("installed", outcome.result)

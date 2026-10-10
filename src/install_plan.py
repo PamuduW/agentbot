@@ -66,8 +66,7 @@ def _mcp(lifecycle: Lifecycle) -> tuple[str, str, str]:
     from .mcp_service import McpService
 
     service = McpService(lifecycle.paths)
-    selection, targets = service.eligible_selection()
-    available = len(selection) * len(targets)
+    available = service.eligible_pair_count()
     if not available:
         return "none registered", "no reviewed servers", "skip"
     outcome = service.install_eligible(apply=False)

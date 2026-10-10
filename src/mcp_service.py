@@ -138,21 +138,47 @@ class McpService:
             items=tuple(sorted(items, key=lambda item: (item.client, item.catalog_id, item.name))),
         )
 
-    def eligible_selection(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Every vetted catalog entry, and the clients it declares.
+    def eligible_groups(self) -> tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]:
+        """Eligible entries grouped by the clients each one enables.
 
-        Eligibility is the review: mcp_catalog rejects a catalog that marks an
-        entry eligible without enabling Claude, Codex and Cursor, so an eligible
-        entry always has those targets. Antigravity is optional per entry and
-        is a target only where its contract is enabled.
+        Every eligible entry enables Claude, Codex and Cursor; Antigravity is
+        enabled per entry, and only counts once it is installed, so a machine
+        without it never gains a ~/.gemini folder from this.
         """
-        entries = tuple(entry for entry in self.catalog().entries if entry.eligible)
-        if not entries:
-            return ((), ())
-        clients = sorted(
-            {contract.client for entry in entries for contract in entry.clients if contract.enabled}
-        )
-        return (tuple(entry.id for entry in entries), tuple(clients))
+        from .antigravity import antigravity_present
+
+        include_antigravity = antigravity_present(self.paths)
+        groups: dict[tuple[str, ...], list[str]] = {}
+        for entry in self.catalog().entries:
+            if not entry.eligible:
+                continue
+            clients = tuple(
+                sorted(
+                    contract.client
+                    for contract in entry.clients
+                    if contract.enabled
+                    and (include_antigravity or contract.client != "antigravity")
+                )
+            )
+            if clients:
+                groups.setdefault(clients, []).append(entry.id)
+        return tuple((tuple(ids), clients) for clients, ids in sorted(groups.items()))
+
+    def eligible_pair_count(self) -> int:
+        return sum(len(ids) * len(clients) for ids, clients in self.eligible_groups())
+
+    def eligible_selection(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Every vetted catalog entry, and every client any of them reaches.
+
+        The union of eligible_groups: Claude, Codex and Cursor always, and
+        Antigravity once it is installed and at least one entry enables it.
+        Not every pair in the product is registerable; count pairs with
+        eligible_pair_count.
+        """
+        groups = self.eligible_groups()
+        ids = sorted({entry_id for group_ids, _ in groups for entry_id in group_ids})
+        clients = sorted({client for _, group_clients in groups for client in group_clients})
+        return (tuple(ids), tuple(clients))
 
     def install_eligible(self, *, apply: bool = True) -> McpInstallOutcome:
         """Admit every vetted catalog entry that is not registered yet.
@@ -166,20 +192,19 @@ class McpService:
         `apply=False` is the deselected case: the same reading, no writes.
         """
         retired = self._retire_ineligible(apply=apply)
-        selection, targets = self.eligible_selection()
-        if not selection or not targets:
+        groups = self.eligible_groups()
+        if not groups:
             return McpInstallOutcome(retired=retired)
 
-        plan = self.plan(selection, targets)
-        admitted = tuple(
-            (item.catalog_id, item.client) for item in plan.items if item.state == "absent"
-        )
-        current = tuple(
-            (item.catalog_id, item.client) for item in plan.items if item.state == "owned"
-        )
+        # One plan per group of entries sharing a client set: Antigravity is
+        # enabled per entry, so not every entry reaches every client.
+        plans = tuple((ids, clients, self.plan(ids, clients)) for ids, clients in groups)
+        items = tuple(item for _, _, plan in plans for item in plan.items)
+        admitted = tuple((item.catalog_id, item.client) for item in items if item.state == "absent")
+        current = tuple((item.catalog_id, item.client) for item in items if item.state == "owned")
         blocked = tuple(
             (item.catalog_id, item.client, item.state)
-            for item in plan.items
+            for item in items
             if item.state not in {"absent", "owned"}
         )
         # `admitted` is what the plan says is absent, reported whether or not
@@ -196,7 +221,10 @@ class McpService:
                 admitted=admitted, current=current, blocked=blocked, retired=retired
             )
 
-        operation_id = self.setup(selection, targets, confirmed=True)
+        operation_id = None
+        for ids, clients, plan in plans:
+            if any(item.state == "absent" for item in plan.items):
+                operation_id = self.setup(ids, clients, confirmed=True)
         return McpInstallOutcome(
             admitted=admitted,
             current=current,

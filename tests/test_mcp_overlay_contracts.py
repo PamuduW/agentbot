@@ -81,9 +81,8 @@ class McpOverlayContractTests(unittest.TestCase):
                 self.assertEqual("none", entry.credential.mode)
                 self.assertEqual((), entry.credential.environment)
                 enabled = {c.client: c.enabled for c in entry.clients}
-                # Antigravity stays declared but disabled until it is verified live.
                 self.assertEqual(
-                    {"claude": True, "codex": True, "cursor": True, "antigravity": False}, enabled
+                    {"claude": True, "codex": True, "cursor": True, "antigravity": True}, enabled
                 )
                 self.assertEqual(expected["tools"], entry.allowed_tools)
                 self.assertEqual(

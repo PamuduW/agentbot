@@ -1115,6 +1115,10 @@ def _handle_mcp(context: CommandContext) -> int:
             from .gitlab_read_mcp import main as run_gitlab
 
             return run_gitlab([])
+        if context.args.catalog_id == "github":
+            from .github_mcp_bridge import main as run_github_bridge
+
+            return run_github_bridge(paths=context.paths)
         from .mcp_filter import main as run_filter
 
         return run_filter(

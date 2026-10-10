@@ -102,6 +102,19 @@ def _native_entry(client: str, entry: McpCatalogEntry) -> dict[str, object]:
     environment = _credential_environment(entry)
 
     if entry.transport == "remote_http":
+        if client == "antigravity" and (
+            entry.credential.mode in {"bearer_env", "header_env"} or contract.headers
+        ):
+            # A local bridge that inherits the credential, or nothing.
+            if not contract.command:
+                raise ValueError(
+                    f"MCP catalog entry {entry.id} needs an environment credential header, "
+                    "which antigravity cannot expand"
+                )
+            bridge: dict[str, object] = {"command": contract.command}
+            if contract.args:
+                bridge["args"] = list(contract.args)
+            return bridge
         url = contract.url or entry.origin
         if not isinstance(url, str) or not url.startswith("https://"):
             raise ValueError(f"MCP catalog entry {entry.id} has no secure remote URL")
@@ -127,7 +140,11 @@ def _native_entry(client: str, entry: McpCatalogEntry) -> dict[str, object]:
     if args:
         native["args"] = list(args)
     referenced = tuple(dict.fromkeys((*environment, *(value for _, value in contract.environment))))
-    _add_stdio_environment(native, client, referenced)
+    # Antigravity passes `env` values through literally, so a reference would
+    # replace the inherited token with the text "${NAME}". The server inherits
+    # the client's environment instead (verified with agy 1.3.3).
+    if client != "antigravity":
+        _add_stdio_environment(native, client, referenced)
     if client == "codex" and entry.allowed_tools:
         native["enabled_tools"] = list(entry.allowed_tools)
     return native
