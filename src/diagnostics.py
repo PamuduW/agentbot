@@ -387,8 +387,7 @@ class Diagnostics:
             # The raw entry count mixed units against it -- five catalog
             # entries against nine registerable pairs -- so a status row
             # comparing the two was comparing different things.
-            selection, targets = service.eligible_selection()
-            available = len(selection) * len(targets)
+            available = service.eligible_pair_count()
         except ImportError as error:
             # A missing renderer dependency is a provisioning fault, not a
             # reason to abort every diagnostic around it. Reported as an issue

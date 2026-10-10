@@ -380,12 +380,14 @@ up before it existed; and `agentbot status` reports registered pairs against
 available ones. Deselecting the component reads without writing, the rule
 Graphify and Boost follow.
 
-Every catalog entry declares an `antigravity` contract, and every one is
-disabled for now: whether Antigravity expands `${VAR}` references in headers
-and `env` has not been verified with a signed-in session. A disabled contract
-is never a target, so the install writes nothing under `~/.gemini`, and
-`agentbot mcp setup --targets antigravity` refuses the entry. Enable an entry's
-contract in `mcp/catalog.json` once it is verified.
+Antigravity is a target only once it is installed, and only for entries whose
+`antigravity` contract is enabled. `agy` passes `${NAME}` in headers, `env`
+and args through as literal text (checked with agy 1.3.3), so Agentbot renders
+its stdio servers without an `env` block and they inherit the token from the
+shell that started `agy`. Context7, AWS Knowledge, Microsoft Learn and the
+GitLab facade are enabled that way. GitHub is not: it is a remote server that
+authenticates with a header, and the catalog refuses to enable Antigravity for
+any such entry.
 
 The component never overwrites configuration it does not own. A same-name entry
 another tool wrote, or a registered entry that no longer matches its record, is

@@ -68,12 +68,40 @@ class McpRenderTests(unittest.TestCase):
             document["mcpServers"]["agentbot_docs"]["headers"]["Authorization"],
         )
 
+    def test_antigravity_stdio_inherits_the_environment(self) -> None:
+        entry = replace(
+            self.entry,
+            transport="local_stdio",
+            origin=None,
+            entrypoint=("agentbot", "mcp", "serve", "--catalog-id", "docs"),
+            credential=McpCredential(mode="header_env", environment=("DOCS_TOKEN",)),
+            clients=(*self.entry.clients, McpClientContract(client="antigravity", enabled=True)),
+        )
+        document = json.loads(render_mcp_config("antigravity", "", (entry,)))
+        self.assertEqual(
+            {"command": "agentbot", "args": ["mcp", "serve", "--catalog-id", "docs"]},
+            document["mcpServers"]["agentbot_docs"],
+        )
+        claude = json.loads(render_mcp_config("claude", "", (entry,)))
+        self.assertEqual(
+            {"DOCS_TOKEN": "${DOCS_TOKEN}"}, claude["mcpServers"]["agentbot_docs"]["env"]
+        )
+
+    def test_antigravity_refuses_a_remote_env_credential(self) -> None:
+        entry = replace(
+            self.entry,
+            clients=(*self.entry.clients, McpClientContract(client="antigravity", enabled=True)),
+        )
+        with self.assertRaisesRegex(ValueError, "antigravity cannot expand"):
+            render_mcp_config("antigravity", "", (entry,))
+
     def test_antigravity_renders_server_url_without_type(self) -> None:
         source = json.dumps(
             {"mcpServers": {"mine": {"serverUrl": "https://x.test", "disabled": True}}}
         )
         entry = replace(
             self.entry,
+            credential=McpCredential(mode="none", environment=()),
             clients=(*self.entry.clients, McpClientContract(client="antigravity", enabled=True)),
         )
         document = json.loads(render_mcp_config("antigravity", source, (entry,)))
@@ -81,10 +109,7 @@ class McpRenderTests(unittest.TestCase):
             {"serverUrl": "https://x.test", "disabled": True}, document["mcpServers"]["mine"]
         )
         self.assertEqual(
-            {
-                "serverUrl": "https://example.test/mcp",
-                "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"},
-            },
+            {"serverUrl": "https://example.test/mcp"},
             document["mcpServers"]["agentbot_docs"],
         )
 
