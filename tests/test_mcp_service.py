@@ -35,8 +35,9 @@ class McpServiceTests(unittest.TestCase):
         )
         self.service = McpService(self.paths)
 
-    def write_catalog(self, *, credential_mode: str = "none") -> None:
+    def write_catalog(self, *, credential_mode: str = "none", antigravity: bool = False) -> None:
         environment = ["DOCS_TOKEN"] if credential_mode == "bearer_env" else []
+        clients = ("claude", "codex", "cursor", "antigravity") if antigravity else None
         entry = {
             "id": "docs",
             "name": "agentbot_docs",
@@ -48,7 +49,9 @@ class McpServiceTests(unittest.TestCase):
             "eligible": True,
             "transport": "remote_http",
             "origin": "https://example.test/mcp",
-            "clients": {client: {"enabled": True} for client in ("claude", "codex", "cursor")},
+            "clients": {
+                client: {"enabled": True} for client in clients or ("claude", "codex", "cursor")
+            },
             "credential": {"mode": credential_mode, "environment": environment},
             "allowed_tools": ["search"],
             "descriptor_fingerprints": ["sha256:" + "a" * 64],
@@ -69,6 +72,18 @@ class McpServiceTests(unittest.TestCase):
         self.assertEqual((), report.items)
         self.assertFalse(report.live)
         self.assertEqual(before, tuple(self.paths.root.parent.rglob("*")))
+
+    def test_enabled_antigravity_contract_writes_the_gemini_config(self) -> None:
+        self.write_catalog(antigravity=True)
+        self.service.setup(("docs",), ("antigravity",), confirmed=True)
+
+        destination = self.paths.codex_home.parent / ".gemini" / "config" / "mcp_config.json"
+        document = json.loads(destination.read_text(encoding="utf-8"))
+        self.assertEqual(
+            {"serverUrl": "https://example.test/mcp"}, document["mcpServers"]["agentbot_docs"]
+        )
+        statuses = {(item.client, item.status) for item in self.service.status().items}
+        self.assertIn(("antigravity", "ok"), statuses)
 
     def test_empty_setup_never_means_all_servers(self) -> None:
         with self.assertRaisesRegex(ValueError, "select at least one MCP server"):
@@ -225,6 +240,12 @@ class McpInstallComponentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.service.plan(("not_a_catalog_id",), targets)
 
+    def test_install_writes_nothing_for_disabled_antigravity(self) -> None:
+        self.service.install_eligible(apply=True)
+        self.assertFalse((self.root / ".gemini").exists())
+        clients = {record.client for record in self.service.state_store.load().managed}
+        self.assertNotIn("antigravity", clients)
+
     def test_install_registers_every_reviewed_pair(self) -> None:
         selection, targets = self.service.eligible_selection()
         outcome = self.service.install_eligible(apply=True)
@@ -272,9 +293,7 @@ class McpInstallComponentTests(unittest.TestCase):
             self.assertNotIn("agentbot_boost_graph", config.read_text(encoding="utf-8"))
         managed = McpService(self.paths).state_store.load().managed
         self.assertFalse([record for record in managed if record.catalog_id == "boost_graph"])
-        self.assertTrue(
-            any(record.catalog_id == "context7" for record in managed), "others stay"
-        )
+        self.assertTrue(any(record.catalog_id == "context7" for record in managed), "others stay")
 
     def test_a_second_install_changes_nothing(self) -> None:
         """Install runs on every bootstrap. A component that rewrote three

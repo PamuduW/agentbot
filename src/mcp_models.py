@@ -6,7 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
-_CLIENTS = frozenset({"claude", "codex", "cursor"})
+_CLIENTS = frozenset({"claude", "codex", "cursor", "antigravity"})
 _FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _NAME_PATTERN = re.compile(r"^agentbot_[a-z][a-z0-9_]*$")

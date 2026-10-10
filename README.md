@@ -368,7 +368,8 @@ input is masked, and normal output shows only a fingerprint.
 ## MCP management
 
 Agentbot provides a provider-neutral MCP control plane for Claude Code, Codex
-CLI, and Cursor CLI. `mcp/catalog.json` is its manifest, the way
+CLI, and Cursor CLI, with Antigravity CLI (`~/.gemini/config/mcp_config.json`)
+as an optional fourth client. `mcp/catalog.json` is its manifest, the way
 `skills.sources.yaml` is for skills: an entry marked eligible has passed its
 admission gate and is reviewed, and an entry that has not stays unreachable.
 
@@ -378,6 +379,13 @@ the same, so a server added to the catalog later reaches a machine that was set
 up before it existed; and `agentbot status` reports registered pairs against
 available ones. Deselecting the component reads without writing, the rule
 Graphify and Boost follow.
+
+Every catalog entry declares an `antigravity` contract, and every one is
+disabled for now: whether Antigravity expands `${VAR}` references in headers
+and `env` has not been verified with a signed-in session. A disabled contract
+is never a target, so the install writes nothing under `~/.gemini`, and
+`agentbot mcp setup --targets antigravity` refuses the entry. Enable an entry's
+contract in `mcp/catalog.json` once it is verified.
 
 The component never overwrites configuration it does not own. A same-name entry
 another tool wrote, or a registered entry that no longer matches its record, is

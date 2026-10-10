@@ -251,7 +251,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
             option("status [--live]", "Inspect ownership and configuration state.", "offline"),
             option("plan", "Preview exact changes.", "explicit"),
             option("--select ID...", "Choose one or more catalog IDs.", "required"),
-            option("--targets CLIENT...", "Choose Claude, Codex, or Cursor.", "required"),
+            option(
+                "--targets CLIENT...", "Choose Claude, Codex, Cursor, or Antigravity.", "required"
+            ),
             option("setup|off --yes", "Apply or remove owned entries.", "confirmation required"),
             option(
                 "restore ID --yes", "Restore one complete guarded backup.", "confirmation required"

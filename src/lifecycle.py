@@ -549,6 +549,8 @@ class Lifecycle:
             self.paths.claude_home / "settings.json",
             self.paths.codex_home / "config.toml",
             self.paths.cursor_home / "cli-config.json",
+            self.paths.antigravity_config / "AGENTS.md",
+            self.paths.antigravity_config / "skills.json",
         ]
         for result in plan.workspace_report.results:
             affected.extend(result.path / action.relative_path for action in result.actions)

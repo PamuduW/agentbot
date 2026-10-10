@@ -40,7 +40,10 @@ _CLIENT_KEYS = frozenset(
     {"enabled", "url", "command", "args", "environment", "headers", "static_headers"}
 )
 _CREDENTIAL_KEYS = frozenset({"mode", "environment"})
-_CLIENTS = ("claude", "codex", "cursor")
+_CLIENTS = ("claude", "codex", "cursor", "antigravity")
+# Antigravity's contract is optional and may be disabled until its
+# environment-reference handling is verified live.
+_REQUIRED_CLIENTS = ("claude", "codex", "cursor")
 _TRANSPORTS = frozenset({"remote_http", "local_stdio"})
 _CREDENTIAL_MODES = frozenset({"none", "bearer_env", "header_env", "oauth_native"})
 _ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -118,9 +121,11 @@ def _decode_entry(raw: object) -> McpCatalogEntry:
             raise ValueError("local_stdio catalog entry must not define origin")
 
     clients = _decode_clients(data["clients"])
-    if eligible and {contract.client for contract in clients} != set(_CLIENTS):
+    if eligible and not set(_REQUIRED_CLIENTS) <= {contract.client for contract in clients}:
         raise ValueError(f"eligible catalog entry {entry_id} must define claude, codex, and cursor")
-    if eligible and not all(contract.enabled for contract in clients):
+    if eligible and not all(
+        contract.enabled for contract in clients if contract.client in _REQUIRED_CLIENTS
+    ):
         raise ValueError(f"eligible catalog entry {entry_id} must enable every client")
 
     credential = _decode_credential(data["credential"])

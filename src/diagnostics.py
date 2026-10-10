@@ -6,6 +6,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+from .antigravity import doctor_antigravity
 from .boost import BoostIntegration, BoostStatus
 from .claude_statusline import (
     StatuslineState,
@@ -112,6 +113,7 @@ class Diagnostics:
 
         issues.extend(doctor_claude_statusline(self.paths, state=facts.statusline))
         issues.extend(doctor_cursor_statusline(self.paths))
+        issues.extend(doctor_antigravity(self.paths))
         for component, detail, result in doctor_cli_configs(self.paths):
             # Drift and unreadable configs are worth reporting; "nothing
             # declared" and "current" are not.

@@ -150,6 +150,41 @@ class McpCatalogTests(unittest.TestCase):
         ):
             load_mcp_catalog(self.catalog_path)
 
+    def test_antigravity_contract_is_optional_and_may_be_disabled(self) -> None:
+        entry = self.valid_entry()
+        entry["clients"] = {
+            **{client: {"enabled": True} for client in ("claude", "codex", "cursor")},
+            "antigravity": {"enabled": False},
+        }
+        self.write_catalog(
+            {"version": 1, "entries": [entry, self.valid_entry(id="b", name="agentbot_b")]}
+        )
+        catalog = load_mcp_catalog(self.catalog_path)
+        contracts = {contract.client: contract.enabled for contract in catalog.entries[0].clients}
+        self.assertEqual(
+            {"claude": True, "codex": True, "cursor": True, "antigravity": False}, contracts
+        )
+        self.assertNotIn("antigravity", {c.client for c in catalog.entries[1].clients})
+
+    def test_eligible_entry_still_requires_the_core_clients_enabled(self) -> None:
+        entry = self.valid_entry()
+        entry["clients"] = {
+            "claude": {"enabled": True},
+            "codex": {"enabled": True},
+            "cursor": {"enabled": False},
+            "antigravity": {"enabled": True},
+        }
+        self.write_catalog({"version": 1, "entries": [entry]})
+        with self.assertRaisesRegex(ValueError, "must enable every client"):
+            load_mcp_catalog(self.catalog_path)
+
+    def test_shipped_catalog_keeps_antigravity_disabled_until_verified(self) -> None:
+        catalog = load_mcp_catalog(self.paths.mcp_catalog_file)
+        for entry in catalog.entries:
+            contracts = {contract.client: contract for contract in entry.clients}
+            self.assertIn("antigravity", contracts, entry.id)
+            self.assertFalse(contracts["antigravity"].enabled, entry.id)
+
     def test_unknown_enum_fails_closed(self) -> None:
         self.write_catalog({"version": 1, "entries": [self.valid_entry(transport="magic")]})
         with self.assertRaisesRegex(ValueError, "unknown transport: magic"):

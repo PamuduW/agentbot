@@ -3,6 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .antigravity import (
+    antigravity_present,
+    antigravity_rules_path,
+    apply_antigravity_skills_config,
+    plan_antigravity_skills_config,
+)
 from .atomic_io import write_text_atomic
 from .claude_bridge import run_claude_bridge
 from .claude_statusline import (
@@ -49,9 +55,15 @@ def render_global_outputs(paths: AgentbotPaths) -> None:
     install_claude_statusline(paths)
     run_claude_bridge(paths)
 
+    if antigravity_present(paths):
+        # Antigravity reads AGENTS.md at the user scope, like Codex.
+        paths.antigravity_config.mkdir(parents=True, exist_ok=True)
+        _render_global_output(antigravity_rules_path(paths), merged)
+        apply_antigravity_skills_config(paths)
+
 
 def plan_global_resync_actions(paths: AgentbotPaths) -> tuple[RenderAction, ...]:
-    """Preview managed global home outputs (Codex/Claude AGENTS + statusline)."""
+    """Preview managed global home outputs (Codex/Claude/Antigravity AGENTS + statusline)."""
     if not paths.global_agents.is_file():
         return (
             RenderAction(
@@ -77,6 +89,15 @@ def plan_global_resync_actions(paths: AgentbotPaths) -> tuple[RenderAction, ...]
         ),
         _plan_statusline_action(paths),
     ]
+    if antigravity_present(paths):
+        actions.append(
+            _plan_global_instruction_action(
+                _display_managed_path(paths, antigravity_rules_path(paths)),
+                antigravity_rules_path(paths),
+                desired,
+            )
+        )
+        actions.append(plan_antigravity_skills_config(paths))
     return tuple(actions)
 
 
@@ -120,6 +141,7 @@ def _display_managed_path(paths: AgentbotPaths, path: Path) -> str:
     for home, prefix in (
         (paths.codex_home, "~/.codex"),
         (paths.claude_home, "~/.claude"),
+        (paths.antigravity_home, "~/.gemini"),
     ):
         try:
             relative = path.resolve().relative_to(home.resolve())

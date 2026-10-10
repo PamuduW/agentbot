@@ -85,12 +85,31 @@ class PathIsolationTests(unittest.TestCase):
                 "mcp_catalog_file": paths.mcp_catalog_file,
                 "mcp_state_file": paths.mcp_state_file,
                 "mcp_backup_home": paths.mcp_backup_home,
+                "antigravity_home": paths.antigravity_home,
+                "antigravity_config": paths.antigravity_config,
             }
             for name, value in managed.items():
                 self.assertTrue(
                     str(value).startswith(str(root)),
                     f"{name} escaped the injected root: {value}",
                 )
+
+    def test_antigravity_home_follows_the_injected_home_when_unset(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = _sandboxed(root)
+            self.assertEqual(root / ".gemini", paths.antigravity_home)
+            self.assertEqual(root / ".gemini" / "config", paths.antigravity_config)
+            explicit = AgentbotPaths(
+                root=root,
+                codex_home=root / ".codex",
+                claude_home=root / ".claude",
+                cursor_home=root / ".cursor",
+                config_home=root / ".config" / "agentbot",
+                agents_home=root / ".agents",
+                gemini_home=root / "elsewhere",
+            )
+            self.assertEqual(root / "elsewhere" / "config", explicit.antigravity_config)
 
     def test_agents_home_is_injectable_not_derived_from_the_process_home(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -1759,7 +1759,7 @@ def build_parser() -> argparse.ArgumentParser:
             "--targets",
             nargs="+",
             required=True,
-            choices=("claude", "codex", "cursor"),
+            choices=("claude", "codex", "cursor", "antigravity"),
             dest="mcp_targets",
         )
         action_parser.add_argument("--json", action="store_true", dest="mcp_json")

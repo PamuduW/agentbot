@@ -31,7 +31,7 @@ from .mcp_render import (
 from .mcp_state import McpStateStore
 from .paths import AgentbotPaths
 
-_CLIENTS = frozenset({"claude", "codex", "cursor"})
+_CLIENTS = frozenset({"claude", "codex", "cursor", "antigravity"})
 _OPERATION_PATTERN = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$")
 _MANIFEST_KEYS = frozenset({"version", "operation_id", "files"})
 _FILE_KEYS = frozenset(
@@ -134,7 +134,7 @@ def restore_mcp_operation(context: McpReconcileContext, operation_id: str) -> No
     _validate_operation_id(operation_id)
     backup_dir = context.paths.mcp_backup_home / operation_id
     snapshots = _load_manifest(backup_dir, operation_id)
-    allowed = {_destination(context.paths, client) for client in ("claude", "codex", "cursor")}
+    allowed = {_destination(context.paths, client) for client in _CLIENTS}
     allowed.add(context.paths.mcp_state_file)
     if any(snapshot.path not in allowed for snapshot in snapshots):
         raise ValueError("MCP backup contains a destination outside managed destinations")
@@ -311,6 +311,8 @@ def _destination(paths: AgentbotPaths, client: str) -> Path:
         return paths.codex_home / "config.toml"
     if client == "cursor":
         return paths.cursor_home / "mcp.json"
+    if client == "antigravity":
+        return paths.antigravity_config / "mcp_config.json"
     raise ValueError(f"unsupported MCP client: {client}")
 
 
