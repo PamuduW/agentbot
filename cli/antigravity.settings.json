@@ -1,0 +1,6 @@
+{
+  "model": "Gemini 3.8 Flash (Medium)",
+  "verbosity": "low",
+  "notifications": true,
+  "showFeedbackSurvey": false
+}

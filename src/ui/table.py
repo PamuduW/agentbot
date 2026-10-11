@@ -354,7 +354,7 @@ def print_rollup(*, ok: int, check: int, miss: int) -> None:
     print()
     if ok == check == miss == 0:
         # Nothing was inspected, which is not the same as everything being
-        # fine. `cli-config status` on a machine with none of the three CLIs
+        # fine. `cli-config status` on a machine with none of the managed CLIs
         # said "All 0 component(s) look good.", which reads like a verdict on
         # work that never happened. Dim, because it is a non-event.
         print(f"  {_c('Nothing to report.', DIM)}")

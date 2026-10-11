@@ -1,11 +1,11 @@
 """Preview-first ownership of the supported CLI configuration files.
 
-Three CLIs, three formats, one model: a desired-state file per CLI holding only
+Four CLIs, three formats, one model: a desired-state file per CLI holding only
 the keys Agentbot owns, merged key by key into the operator's config. Everything
 not named in the desired state is left exactly as it was.
 
-The desired state is authored in each CLI's own format -- JSON for Claude and
-Cursor, TOML for Codex -- rather than a common one. A shared format has to be
+The desired state is authored in each CLI's own format -- JSON for Claude,
+Cursor and Antigravity, TOML for Codex -- rather than a common one. A shared format has to be
 translated, and translation is where values quietly change shape: this is the
 same reason the VS Code settings in `vscode/` are JSON and not YAML.
 
@@ -80,6 +80,12 @@ def managed_clis(paths: AgentbotPaths) -> tuple[ManagedCli, ...]:
         ManagedCli("codex", paths.codex_home / "config.toml", "toml", "codex.config.toml"),
         ManagedCli(
             "cursor", paths.cursor_home / "cli-config.json", "json", "cursor.cli-config.json"
+        ),
+        ManagedCli(
+            "antigravity",
+            paths.antigravity_home / "antigravity-cli" / "settings.json",
+            "json",
+            "antigravity.settings.json",
         ),
     )
 
@@ -482,7 +488,7 @@ def preview(paths: AgentbotPaths) -> CliConfigReport:
 def apply(paths: AgentbotPaths) -> CliConfigReport:
     """Merge every CLI's owned keys, rolling the whole set back on any failure.
 
-    A half-applied run across three agents is worse than none: the operator
+    A half-applied run across four agents is worse than none: the operator
     would have to work out which two of three now disagree with the desired
     state. Originals are captured before the first write and restored if any
     target fails.

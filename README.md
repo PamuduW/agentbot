@@ -374,7 +374,8 @@ as an optional fourth client. `mcp/catalog.json` is its manifest, the way
 admission gate and is reviewed, and an entry that has not stays unreachable.
 
 MCP is an install component. Selecting **MCP servers** in the install selector
-registers every reviewed entry for all three clients; `agentbot update` does
+registers every reviewed entry for Claude, Codex and Cursor, and for
+Antigravity when `agy` is installed; `agentbot update` does
 the same, so a server added to the catalog later reaches a machine that was set
 up before it existed; and `agentbot status` reports registered pairs against
 available ones. Deselecting the component reads without writing, the rule

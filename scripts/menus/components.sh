@@ -28,10 +28,10 @@ AGENTBOT_COMPONENT_DESCS=(
 	'Install and update the skills named in skills.sources.yaml.'
 	'Refresh the Graphify CLI and Agent Skills integration.'
 	'Configure Boost for Claude, Codex, and Cursor.'
-	'Register every reviewed server in mcp/catalog.json for Claude, Codex, and Cursor.'
+	'Register every reviewed server in mcp/catalog.json for Claude, Codex, Cursor, and Antigravity.'
 	'Install the selected extensions and merge owned settings for each host.'
 	'Install the managed Cursor CLI statusline.'
-	'Merge the declared Claude, Codex, and Cursor configuration keys.'
+	'Merge the declared Claude, Codex, Cursor, and Antigravity configuration keys.'
 )
 
 _agentbot_components_prepare() {

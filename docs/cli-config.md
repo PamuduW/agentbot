@@ -8,7 +8,7 @@ agentbot cli-config apply    # merge the declared keys
 It is also the `cli-config` install component, and one row of `agentbot status`.
 `agentbot update` also merges these declared keys after refreshing managed
 workspaces and before its final diagnostics. Its transaction covers the Claude,
-Codex, and Cursor config files if a later update stage fails.
+Codex, Cursor, and Antigravity config files if a later update stage fails.
 
 Agentbot owns only the keys you declare, merged key by key into each CLI's own
 config. Everything you have not declared is left exactly as it was.
@@ -26,6 +26,7 @@ archived research:
 | Claude Code | `~/.claude/settings.json` | JSON (comments tolerated) |
 | Codex | `~/.codex/config.toml` | TOML |
 | Cursor CLI | `~/.cursor/cli-config.json` | JSON (comments tolerated) |
+| Antigravity CLI | `~/.gemini/antigravity-cli/settings.json` | JSON |
 
 ## Declaring desired state
 
@@ -35,10 +36,11 @@ One file per CLI, in that CLI's own format:
 cli/claude.settings.json
 cli/codex.config.toml
 cli/cursor.cli-config.json
+cli/antigravity.settings.json
 ```
 
 Authoring in each CLI's native format is deliberate. A single shared format
-would have to be translated into three, and translation is where values quietly
+would have to be translated into each, and translation is where values quietly
 change shape — the same reason `vscode/` holds JSON rather than YAML.
 
 ```jsonc
@@ -65,6 +67,15 @@ Claude's desired state also owns `skillOverrides`, which decides how each
 skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
 Agentbot owns that whole object, so add personal overrides in
 `cli/claude.settings.json` rather than in `~/.claude/settings.json`.
+
+Antigravity's desired state holds the model, verbosity, notifications and the
+feedback survey (keys from the official settings page,
+`antigravity.google/docs/settings?tab=cli`; `agy` writes only values that
+differ from its defaults). Its approval keys (`toolPermission`, `agentMode`,
+`artifactReviewPolicy`) and `trustedWorkspaces` stay per machine: they decide
+what the agent may do without asking, and a committed file would carry one
+machine's choice to every other. Antigravity has no setting that turns off its
+own memory, which stays advisory (ADR-0008).
 
 ## Remote Control
 
@@ -96,8 +107,8 @@ paste it anywhere or commit it.
   re-serialising) and in TOML (only the lines of owned keys are rewritten: above the
   first table header for top-level keys, inside the table for a table's keys).
 - **The whole run rolls back.** If one target fails, the targets already
-  written are restored. A half-applied run across three agents is worse than
-  none: you would have to work out which two of three now disagree with the
+  written are restored. A half-applied run across four agents is worse than
+  none: you would have to work out which of them now disagree with the
   desired state.
 - **Every write is verified first.** The merged text is re-parsed and the owned
   keys checked before it replaces anything. The input parsed a moment earlier,
