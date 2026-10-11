@@ -4,5 +4,6 @@
   "artifactReviewPolicy": "agent-decides",
   "verbosity": "low",
   "notifications": true,
-  "showFeedbackSurvey": false
+  "showFeedbackSurvey": false,
+  "enableTelemetry": false
 }

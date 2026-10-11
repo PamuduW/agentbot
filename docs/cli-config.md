@@ -69,8 +69,9 @@ Agentbot owns that whole object, so add personal overrides in
 `cli/claude.settings.json` rather than in `~/.claude/settings.json`.
 
 Antigravity's desired state holds the model, `agentMode: accept-edits`,
-`artifactReviewPolicy: agent-decides`, verbosity, notifications and the
-feedback survey (keys from the official settings page,
+`artifactReviewPolicy: agent-decides`, verbosity, notifications, the
+feedback survey, and `enableTelemetry: false` (on by default in `agy`; keys
+from the official settings page,
 `antigravity.google/docs/settings?tab=cli`; `agy` writes only values that
 differ from its defaults). Edits and plans are reviewable after the fact, so
 those two are shared. `toolPermission` stays per machine: it decides whether
