@@ -1,4 +1,4 @@
-"""Preview-first ownership of the Claude, Codex, and Cursor CLI configs."""
+"""Preview-first ownership of the Claude, Codex, Cursor, and Antigravity CLI configs."""
 
 from __future__ import annotations
 
@@ -356,7 +356,8 @@ class CliConfigTests(unittest.TestCase):
         rows = doctor_cli_configs(self.paths)
 
         self.assertEqual(
-            [row[0] for row in rows], ["claude config", "codex config", "cursor config"]
+            [row[0] for row in rows],
+            ["antigravity config", "claude config", "codex config", "cursor config"],
         )
 
     def test_install_reports_a_merge_it_just_made_as_applied(self) -> None:

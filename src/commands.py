@@ -245,7 +245,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "mcp",
         "agentbot mcp catalog|status|plan|setup|off|restore",
         "mutating",
-        "Inspect or explicitly manage validated MCP servers for Claude, Codex, and Cursor.",
+        "Inspect or explicitly manage validated MCP servers for Claude, Codex, Cursor, and Antigravity.",
         (
             option("catalog", "List validated candidates without contacting them.", "read-only"),
             option("status [--live]", "Inspect ownership and configuration state.", "offline"),
@@ -473,7 +473,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "cli-config",
         "agentbot cli-config status|apply",
         "mutating",
-        "Merge the declared Claude, Codex, and Cursor CLI configuration keys.",
+        "Merge the declared Claude, Codex, Cursor, and Antigravity CLI configuration keys.",
         (
             option("status", "Preview what a run would change. Writes nothing.", "default"),
             option(

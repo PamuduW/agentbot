@@ -74,7 +74,7 @@ def _cli_config(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> 
         return f"{len(pending)} to merge; run `agentbot cli-config apply`", "check"
     declared = [name for name, plan in report.plans.items() if not plan.skipped]
     if not declared:
-        # None of the three CLIs is on this machine. Nothing was inspected,
+        # None of the managed CLIs is on this machine. Nothing was inspected,
         # which is not the same as everything being fine.
         return "no CLI configuration on this machine", "skipped"
     return f"{len(declared)} CLI(s) current", "ok"

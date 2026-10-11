@@ -18,7 +18,7 @@ Six parts of an install are optional and can be narrowed:
 | `boost` | Boost for Claude, Codex, and Cursor |
 | `vscode` | selected extensions and owned settings, per host |
 | `cursor` | the managed Cursor CLI statusline |
-| `cli-config` | the declared Claude, Codex, and Cursor configuration keys |
+| `cli-config` | the declared Claude, Codex, Cursor, and Antigravity configuration keys |
 
 ```bash
 agentbot install                                  # every component

@@ -549,6 +549,7 @@ class Lifecycle:
             self.paths.claude_home / "settings.json",
             self.paths.codex_home / "config.toml",
             self.paths.cursor_home / "cli-config.json",
+            self.paths.antigravity_home / "antigravity-cli" / "settings.json",
             self.paths.antigravity_config / "AGENTS.md",
             self.paths.antigravity_config / "skills.json",
         ]

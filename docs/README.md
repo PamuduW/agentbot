@@ -16,7 +16,7 @@ manifest is `skills.sources.yaml`, and private workspace state lives under
 | [Lifecycle and updates](lifecycle-and-updates.md) | Install, update, recovery, and transaction behavior |
 | [VS Code](vscode.md) | Selected extensions and owned settings, per host |
 | [Cursor statusline](cursor-statusline.md) | The managed Cursor CLI statusline |
-| [Agent CLI configuration](cli-config.md) | Declared Claude, Codex, and Cursor config keys |
+| [Agent CLI configuration](cli-config.md) | Declared Claude, Codex, Cursor, and Antigravity config keys |
 | [Validation](validation.md) | Complete and focused validation commands |
 | [Roadmap](roadmap.md) | Delivered phases and planned capabilities |
 
