@@ -152,10 +152,10 @@ Two things keep this manageable:
   setting you thought you controlled, check `cli/*` against that CLI's current
   documentation. The previous file is always at `<name>.agentbot-backup`.
 
-Automating that check is a planned add-on to the recurring setup review
-(workspace roadmap item 7): it reads `cli/`, compares each declared key against
-the CLI's current official documentation, and reports renamed, removed, or
-deprecated keys. It proposes; it does not write.
+`agentbot setup-review --scope cli-config` automates that check: an agent CLI
+reads only `cli/`, compares each declared key against the CLI's current
+official documentation, and reports renamed, removed, or deprecated keys. It
+proposes; it does not write. See [Setup review](setup-review.md).
 
 ## What it refuses
 

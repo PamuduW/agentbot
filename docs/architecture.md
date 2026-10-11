@@ -42,6 +42,10 @@ src/lifecycle.py  src/mcp_service.py
   relay in the menu, so they look the same from a terminal, through a pipe, and
   inside `dotfiles full-update`.
 - `src/diagnostics.py` produces the shared Status and Doctor snapshot.
+- `src/setup_review.py` runs `agentbot setup-review`: it resolves the chosen
+  agent CLI from its Dotfiles location, fills the versioned prompts in
+  `review/`, runs the CLI read-only, and saves the masked report under private
+  state ([Setup review](setup-review.md)).
 - `src/mcp_service.py` is the only public MCP business-logic entrypoint. It
   loads the strict catalog and private ownership state, delegates native
   rendering to `src/mcp_render.py`, and delegates whole-operation planning,

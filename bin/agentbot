@@ -110,7 +110,7 @@ agentbot_main() {
 	boot) agentbot_run_backend "$command" "$@" ;;
 	workspace | workspaces | resync) agentbot_run_backend "$command" "$@" ;;
 	graphify | boost | mcp | gitlab-token | memory) agentbot_run_backend "$command" "$@" ;;
-	cli-config | cursor | vscode) agentbot_run_backend "$command" "$@" ;;
+	cli-config | cursor | vscode | setup-review) agentbot_run_backend "$command" "$@" ;;
 	token) agentbot_run_token "$@" ;;
 	update) agentbot_run_backend "$command" "$@" ;;
 	help | -h | --help) agentbot_usage "$@" ;;

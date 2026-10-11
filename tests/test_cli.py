@@ -428,6 +428,7 @@ class CliTests(unittest.TestCase):
                 "memory",
                 "cli-config",
                 "cursor",
+                "setup-review",
                 "vscode",
                 "help",
             },
