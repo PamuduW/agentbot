@@ -68,14 +68,16 @@ skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
 Agentbot owns that whole object, so add personal overrides in
 `cli/claude.settings.json` rather than in `~/.claude/settings.json`.
 
-Antigravity's desired state holds the model, verbosity, notifications and the
+Antigravity's desired state holds the model, `agentMode: accept-edits`,
+`artifactReviewPolicy: agent-decides`, verbosity, notifications and the
 feedback survey (keys from the official settings page,
 `antigravity.google/docs/settings?tab=cli`; `agy` writes only values that
-differ from its defaults). Its approval keys (`toolPermission`, `agentMode`,
-`artifactReviewPolicy`) and `trustedWorkspaces` stay per machine: they decide
-what the agent may do without asking, and a committed file would carry one
-machine's choice to every other. Antigravity has no setting that turns off its
-own memory, which stays advisory (ADR-0008).
+differ from its defaults). Edits and plans are reviewable after the fact, so
+those two are shared. `toolPermission` stays per machine: it decides whether
+`agy` runs shell commands without asking, and a committed value would grant
+that on a machine before anyone has looked at it. `trustedWorkspaces` stays
+per machine too, because it lists local paths. Antigravity has no setting that
+turns off its own memory, which stays advisory (ADR-0008).
 
 ## Remote Control
 
