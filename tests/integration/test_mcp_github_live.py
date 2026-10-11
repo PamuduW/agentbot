@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import asyncio
 import json
 import os
 import unittest
@@ -9,6 +9,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from mcp.types import Tool
+
+from src.github_mcp_bridge import github_entry, github_filter_contract, github_headers
+from src.mcp_contract import descriptor_fingerprint
+from src.mcp_filter import SdkRemoteUpstream
+from src.paths import default_paths
 from tests.test_mcp_github_contract import EXPECTED_TOOLS
 
 
@@ -95,14 +101,27 @@ def _decode_mcp_body(body: bytes, content_type: str) -> dict[str, Any]:
     return value
 
 
-def _descriptor_fingerprint(tool: dict[str, Any]) -> str:
-    encoded = json.dumps(
-        tool,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+async def _bridge_view(token: str) -> tuple[Tool, ...]:
+    # The descriptors as the GitHub bridge receives them: the SDK's protocol,
+    # which is the one GitHub adds outputSchema under, and the one the pins
+    # are enforced against.
+    entry = github_entry(default_paths())
+    upstream = SdkRemoteUpstream(
+        github_filter_contract(entry),
+        headers=github_headers(entry, {"GITHUB_MCP_TOKEN": token}),
+    )
+    try:
+        await upstream.initialize()
+        tools: list[Tool] = []
+        cursor: str | None = None
+        while True:
+            page = await upstream.list_tools(cursor)
+            tools.extend(page.tools)
+            cursor = page.next_cursor
+            if cursor is None:
+                return tuple(tools)
+    finally:
+        await upstream.close()
 
 
 class GitHubMcpLiveTests(unittest.TestCase):
@@ -117,20 +136,19 @@ class GitHubMcpLiveTests(unittest.TestCase):
         cls.contract = json.loads(
             (root / "mcp" / "contracts" / "github.json").read_text(encoding="utf-8")
         )
+        cls.token = token
         cls.session = GitHubRemoteSession(cls.contract, token)
         cls.session.initialize()
 
     def test_tool_list_and_descriptors_match_the_frozen_contract(self) -> None:
-        response = self.session.request("tools/list", {})
-        tools = response.get("result", {}).get("tools", [])
-        by_name = {tool["name"]: tool for tool in tools}
+        by_name = {tool.name: tool for tool in asyncio.run(_bridge_view(self.token))}
         self.assertEqual(set(EXPECTED_TOOLS), set(by_name))
         expected_fingerprints = {
             tool["name"]: tool["descriptor_fingerprint"] for tool in self.contract["tools"]
         }
         self.assertEqual(
             expected_fingerprints,
-            {name: _descriptor_fingerprint(tool) for name, tool in by_name.items()},
+            {name: descriptor_fingerprint(tool) for name, tool in by_name.items()},
         )
 
     def test_write_alias_and_unknown_tools_are_rejected_before_arguments(self) -> None:
