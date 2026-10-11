@@ -1,5 +1,7 @@
 {
   "model": "Gemini 3.8 Flash (Medium)",
+  "agentMode": "accept-edits",
+  "artifactReviewPolicy": "agent-decides",
   "verbosity": "low",
   "notifications": true,
   "showFeedbackSurvey": false
