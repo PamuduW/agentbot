@@ -108,7 +108,9 @@ sources:
     skills: all
     # This repository ships its own Skills-CLI test fixtures under
     # cli/test/fixtures/, and `skills: all` sweeps them in. They are not real
-    # skills; excluding them keeps them out of every agent's context.
+    # skills; excluding them keeps them out of every agent's context. gamma
+    # and delta (bundle-mini-v3) were installed by an older Skills CLI on
+    # 2026-10-07 and stayed; excluded 2026-10-12 so the next update removes them.
     # `tdd` duplicates superpowers/test-driven-development and, unlike most of
     # this source, is model-listed -- so it costs description budget twice over.
     # These four are model-listed (so they cost description budget) but are
@@ -120,6 +122,8 @@ sources:
     exclude:
       - alpha
       - beta
+      - gamma
+      - delta
       - tdd
       - recursive-decomposition
       - research

@@ -51,6 +51,7 @@ MENUS: dict[str, Menu] = {
             "Token Config",
             "Workspaces",
             "Memory",
+            "Setup review",
             "Libraries",
             "Quit",
         ),
@@ -62,6 +63,7 @@ MENUS: dict[str, Menu] = {
             "token",
             "workspaces",
             "memory",
+            "setup-review",
             "libraries",
             "quit",
         ),
@@ -80,6 +82,8 @@ MENUS: dict[str, Menu] = {
             "Apply actions require explicit confirmation.",
             "Choose this machine's memory vault, check it, or validate it.\n"
             "Setup previews first and asks before it writes anything.",
+            "Have Claude, Codex, Cursor or agy review the setup, read-only.\n"
+            "The report is filed in Dotfiles' reviews/ on the development branch.",
             "Open the Agentbot and Graphify command reference libraries.\n"
             "Read-only command and safety information.",
             "Exit the Agentbot menu.\nReturn to the calling process.",
@@ -136,6 +140,40 @@ MENUS: dict[str, Menu] = {
             "Start a new, empty vault, with an optional remote for later.\n"
             "Previews, then asks; nothing is pushed.",
             "Remove this machine's vault setting.\nThe vault itself is not touched.",
+        ),
+    ),
+    "review_agent": Menu(
+        title="Setup review",
+        breadcrumb="Agentbot › Setup review › Agent",
+        labels=("Claude Code", "Codex", "Cursor CLI", "Antigravity CLI (agy)"),
+        keys=("claude", "codex", "cursor", "agy"),
+        descs=(
+            "Review with Claude Code in plan mode.\nIts default model and effort apply.",
+            "Review with Codex in its read-only sandbox.\nIts default model and effort apply.",
+            "Review with Cursor CLI in plan mode.\nIts default model applies.",
+            "Review with the Antigravity CLI in plan mode.\nIts default model applies.",
+        ),
+    ),
+    "review_scope": Menu(
+        title="Setup review",
+        breadcrumb="Agentbot › Setup review › Scope",
+        labels=(
+            "Full system (recommended)",
+            "Dotfiles only",
+            "Agentbot only",
+            "Shared library only",
+            "Skill sources only",
+            "Agent CLI settings only",
+        ),
+        keys=("full", "dotfiles", "agentbot", "shared", "skills", "cli-config"),
+        descs=(
+            "Dotfiles, Agentbot, the shared library and every skill source.\n"
+            "One report, one section per repository.",
+            "The Dotfiles installer, plus where the others meet it.\nOne report.",
+            "The Agentbot lifecycle, plus where the others meet it.\nOne report.",
+            "dotfiles-shared and how both products use it.\nOne report.",
+            "Every enabled skill source, skill by skill.\nOne report.",
+            "The declared cli/ settings against each CLI's documentation.\nOne report.",
         ),
     ),
     "libraries": Menu(

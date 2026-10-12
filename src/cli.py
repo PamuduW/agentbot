@@ -250,20 +250,15 @@ def _handle_setup_review(context: CommandContext) -> int:
     from . import setup_review
 
     args = context.args
-    workspace = getattr(args, "workspace", None)
-    caller = os.environ.get("AGENTBOT_CALLER_PWD")
     options = setup_review.ReviewOptions(
         cli=args.review_cli,
         scope=args.review_scope,
-        workspace=Path(workspace).expanduser().resolve() if workspace else None,
         timeout_minutes=args.review_timeout,
         source_budget=args.source_budget,
-        update=False if args.no_update else None,
+        confirmed=bool(args.review_yes),
     )
     print_header("Setup review", "Agentbot \u203a Setup review")
-    return setup_review.run(
-        context.paths, options, caller_dir=Path(caller) if caller else None
-    )
+    return setup_review.run(context.paths, options)
 
 
 def _handle_cursor(context: CommandContext) -> int:
@@ -1512,11 +1507,10 @@ def _add_setup_review_parser(subparsers: argparse._SubParsersAction) -> None:
     review.add_argument(
         "--scope",
         dest="review_scope",
-        choices=("setup", "cli-config"),
-        default="setup",
-        help="setup: the whole setup and skill sources; cli-config: only the cli/ desired state",
+        choices=("full", "dotfiles", "agentbot", "shared", "skills", "cli-config"),
+        default="full",
+        help="full: everything; or one component; cli-config: only the cli/ desired state",
     )
-    review.add_argument("--workspace", help="Development workspace holding the product checkouts")
     review.add_argument(
         "--timeout",
         dest="review_timeout",
@@ -1533,7 +1527,10 @@ def _add_setup_review_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Most external pages the review may read",
     )
     review.add_argument(
-        "--no-update", action="store_true", help="Save the report and never offer the update phase"
+        "--yes",
+        dest="review_yes",
+        action="store_true",
+        help="Run without asking to confirm the chosen CLI",
     )
 
 

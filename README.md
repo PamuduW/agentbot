@@ -362,10 +362,10 @@ agentbot cursor status|statusline     # the managed Cursor CLI statusline
 agentbot cli-config status|apply      # declared Claude, Codex, Cursor keys
 ```
 
-`agentbot setup-review` has an agent CLI you choose review the whole setup and
-every enabled skill source, read-only, and saves the report under
-`~/.config/agentbot/setup-reviews`; edits happen only in a session you start
-afterwards. See [Setup review](docs/setup-review.md).
+`agentbot setup-review` (also in the menu) has an agent CLI you choose review
+the setup read-only, after fetching and fast-forwarding the installed
+checkouts, and commits the report to Dotfiles' `reviews/` on `development`.
+See [Setup review](docs/setup-review.md).
 
 The menu and direct CLI share the same command model and lifecycle code. Token
 input is masked, and normal output shows only a fingerprint.
