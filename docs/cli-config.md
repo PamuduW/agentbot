@@ -68,7 +68,7 @@ skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
 Agentbot owns that whole object, so add personal overrides in
 `cli/claude.settings.json` rather than in `~/.claude/settings.json`.
 
-Antigravity's desired state holds the model, `agentMode: accept-edits`,
+Antigravity's desired state holds `agentMode: accept-edits`,
 `artifactReviewPolicy: agent-decides`, verbosity, notifications, the
 feedback survey, and `enableTelemetry: false` (on by default in `agy`; keys
 from the official settings page,
@@ -79,6 +79,14 @@ those two are shared. `toolPermission` stays per machine: it decides whether
 that on a machine before anyone has looked at it. `trustedWorkspaces` stays
 per machine too, because it lists local paths. Antigravity has no setting that
 turns off its own memory, which stays advisory (ADR-0008).
+
+**Checked 2026-10-12** with `agentbot setup-review --scope cli-config`, then by
+hand. Two keys were dropped: Codex `service_tier = "default"` (no model
+advertises a `default` tier; unset already means the standard tier) and
+Antigravity `model` (not a documented settings key; choose the model with
+`/model` or `--model`). Cursor's `modelSlashCommands` and `display.mode` are
+missing from Cursor's documentation but are live settings in the CLI's own
+settings schema (2026.10.01), so they stay.
 
 ## Remote Control
 
