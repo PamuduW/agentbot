@@ -238,7 +238,7 @@ class Lifecycle:
         `selected` narrows it the way install is narrowed: a deselected surface
         is read and reported, never configured. None means all of them.
         """
-        from . import codex_remote_control, memory_backup, memory_hook
+        from . import codex_remote_control, memory_backup, memory_hook, skill_adaptations
         from .ui.reports import integration_result
 
         def chosen(key: str) -> bool:
@@ -267,6 +267,14 @@ class Lifecycle:
         # reaches every machine without `memory hook install`.
         hooks_detail, hooks_result = memory_hook.refresh(self.paths.root, self.paths.config_home)
         outcomes.append(PlatformOutcome("vault-hooks", "Vault checks", hooks_detail, hooks_result))
+        # Read, not checked: the check ran against the verified source clones
+        # earlier in the update, and recorded what it found.
+        adaptation_detail, adaptation_result = skill_adaptations.summary(self.paths)
+        outcomes.append(
+            PlatformOutcome(
+                "skill-adaptations", "Adapted skills", adaptation_detail, adaptation_result
+            )
+        )
         return tuple(outcomes)
 
     def _mcp_install(self, *, apply: bool) -> McpInstallOutcome:
@@ -428,6 +436,15 @@ class Lifecycle:
             stage_begins("Verifying source checkouts")
             with self._checkout_provider(config, plan.source_catalogs) as checkouts:
                 stage: dict[str, object] = {}
+                # Upstream changes to adapted first-party skills, measured on
+                # the clones this update already verified. It only reports, so
+                # it can never fail the update.
+                from . import skill_adaptations
+
+                try:
+                    skill_adaptations.record(self.paths, skill_adaptations.check(config, checkouts))
+                except OSError:
+                    pass
 
                 def validate_transaction() -> None:
                     if chosen("skills"):

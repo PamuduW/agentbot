@@ -2370,10 +2370,19 @@ def _platform_status_rows(diagnostics: Diagnostics) -> tuple:
     paths = getattr(diagnostics, "paths", None)
     if paths is None:
         return ()
+    from . import skill_adaptations
+    from .models import PlatformOutcome
+
     runner = CommandRunner()
-    return tuple(
-        surface_outcome(key, label, paths, runner, apply=False)
-        for key, label, _phase in Lifecycle.PLATFORM_COMPONENTS
+    adaptation_detail, adaptation_result = skill_adaptations.summary(paths)
+    return (
+        *(
+            surface_outcome(key, label, paths, runner, apply=False)
+            for key, label, _phase in Lifecycle.PLATFORM_COMPONENTS
+        ),
+        PlatformOutcome(
+            "skill-adaptations", "Adapted skills", adaptation_detail, adaptation_result
+        ),
     )
 
 

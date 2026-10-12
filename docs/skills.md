@@ -81,6 +81,21 @@ lock's `skillFolderHash`, recorded at install, is the receipt:
   as before. A pin recorded without a hash predates receipts and cannot show a
   change, so it is treated as unchanged.
 
+## Adapted skills
+
+A source may publish adaptations of another source's skills, listed in an
+`adaptations.yaml` at its root with the upstream repository, the skill's path
+there, the commit the adaptation was made from, and that path's Git tree hash
+at that commit. Every update compares the recorded hash with the same path in
+the upstream source's verified clone and records the result in
+`~/.config/agentbot/skill-adaptations.json`; the update table and
+`agentbot status` show it as "Adapted skills", for example
+`brainstorming: superpowers changed since bb92a77`. A change elsewhere in the
+upstream repository does not count. The check only reports: redoing an
+adaptation is a manual edit in the adapting source (`agentbot_skills` keeps the
+steps in `adaptations/README.md`), and the upstream must itself be a managed
+source.
+
 ## Claude listing states
 
 Every listed skill's description is sent in every Claude session. The
