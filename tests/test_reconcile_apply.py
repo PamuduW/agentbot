@@ -152,6 +152,70 @@ class ReconcileApplyTests(unittest.TestCase):
             json.loads(self.lock.read_text(encoding="utf-8"))["skills"],
         )
 
+    def _handover(self, *, user_changed: bool) -> tuple:
+        """`moved` was installed from the explicit source; the wildcard source now has it."""
+        from src.skill_reconcile import apply_reconcile_plan, build_reconcile_plan
+        from src.skills_installer import _skill_folder_hash
+        from src.skills_sources import load_skills_sources
+
+        installed = self._skill("moved")
+        (installed / "SKILL.md").write_text("# moved, upstream\n", encoding="utf-8")
+        lock = json.loads(self.lock.read_text(encoding="utf-8"))
+        lock["skills"]["moved"] = {
+            "source": "owner/repo",
+            "skillFolderHash": _skill_folder_hash(installed),
+        }
+        self.lock.write_text(json.dumps(lock), encoding="utf-8")
+        if user_changed:
+            (installed / "SKILL.md").write_text("# moved, edited by hand\n", encoding="utf-8")
+        explicit = self.root / "explicit-checkout"
+        self._skill_from(explicit, "moved")
+        (explicit / "moved" / "SKILL.md").write_text("# moved, upstream\n", encoding="utf-8")
+        wildcard = self.root / "wildcard-checkout"
+        self._skill_from(wildcard, "moved")
+        (wildcard / "moved" / "SKILL.md").write_text("# moved, adapted\n", encoding="utf-8")
+        config = load_skills_sources(self.root / "skills.sources.yaml")
+        plan = build_reconcile_plan(
+            config,
+            discovered={"explicit": ("gone", "keep", "moved"), "wildcard": ("moved",)},
+            lock=lock,
+        )
+        self.assertEqual(("moved",), plan.wildcard_additions)
+        paths, patches = self._paths()
+        with patches[0], patches[1]:
+            # The explicit clone comes first, as superpowers does in the manifest.
+            result = apply_reconcile_plan(
+                paths,
+                config,
+                plan,
+                checkouts={"explicit": explicit, "wildcard": wildcard},
+                confirm=True,
+            )
+        return result, json.loads(self.lock.read_text(encoding="utf-8"))["skills"]["moved"]
+
+    def test_an_unchanged_skill_moves_to_the_source_that_now_selects_it(self) -> None:
+        """Break caught: the folder stayed the old source's while the lock named the new one."""
+        result, entry = self._handover(user_changed=False)
+
+        self.assertEqual("applied", result.status)
+        self.assertEqual(
+            "# moved, adapted\n",
+            (self.agents / "moved" / "SKILL.md").read_text(encoding="utf-8"),
+        )
+        self.assertEqual("owner/all", entry["source"])
+
+    def test_a_skill_the_user_changed_is_not_handed_over(self) -> None:
+        result, entry = self._handover(user_changed=True)
+
+        self.assertEqual("applied", result.status)
+        self.assertEqual(
+            "# moved, edited by hand\n",
+            (self.agents / "moved" / "SKILL.md").read_text(encoding="utf-8"),
+        )
+        # Still the old source's, so the install that follows names it as the
+        # user's instead of replacing it.
+        self.assertEqual("owner/repo", entry["source"])
+
     def _skill_from(self, checkout: Path, name: str) -> None:
         path = checkout / name
         path.mkdir(parents=True, exist_ok=True)

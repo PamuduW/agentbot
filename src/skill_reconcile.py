@@ -14,6 +14,7 @@ import yaml
 from .atomic_io import write_text_atomic
 from .command_runner import CommandRunner
 from .skill_catalog import skill_name_from_file
+from .skills_installer import _skill_folder_hash
 from .skills_sources import SkillsSourcesConfig
 
 
@@ -258,6 +259,51 @@ def _tracked(path: Path, root: Path, runner: CommandRunner) -> bool:
     return result.returncode == 0
 
 
+def _wildcard_owners(
+    source_by_id: Mapping[str, Any], checkouts: Mapping[str, Path]
+) -> tuple[dict[str, Path], dict[str, str]]:
+    """Each wildcard addition's folder and owner, from the source that selects it.
+
+    Another source's clone may hold a skill of the same name -- one it no
+    longer selects, for instance -- so neither may come from whichever clone
+    happened to be read first.
+    """
+    dirs: dict[str, Path] = {}
+    owners: dict[str, str] = {}
+    for source_id, checkout in checkouts.items():
+        source = source_by_id.get(source_id)
+        if source is None or source.skills != ["*"]:
+            continue
+        for skill, source_dir in _checkout_dirs(checkout).items():
+            if not source.excludes(skill) and skill not in owners:
+                dirs[skill] = source_dir
+                owners[skill] = source_id
+    return dirs, owners
+
+
+def _handover(previous: object, owner: Any, target: Path) -> str:
+    """For a skill another source installed: "replace", "keep", or "none".
+
+    Unchanged since its install, the folder was that source's and is handed
+    over. Changed, it is the user's: it stays as it is, and the install that
+    follows says so.
+    """
+    if not (
+        isinstance(previous, Mapping)
+        and owner is not None
+        and previous.get("source") not in {None, owner.repo}
+    ):
+        return "none"
+    receipt = previous.get("skillFolderHash")
+    unchanged = (
+        isinstance(receipt, str)
+        and target.is_dir()
+        and not target.is_symlink()
+        and _skill_folder_hash(target) == receipt
+    )
+    return "replace" if unchanged else "keep"
+
+
 def apply_reconcile_plan(
     paths: Any,
     config: SkillsSourcesConfig,
@@ -309,13 +355,7 @@ def apply_reconcile_plan(
         if isinstance(entry, Mapping) and entry.get("source")
     }
 
-    checkout_dirs: dict[str, Path] = {}
-    checkout_owner: dict[str, str] = {}
-    for source_id, checkout in (checkouts or {}).items():
-        source_dirs = _checkout_dirs(checkout)
-        checkout_dirs.update(source_dirs)
-        for skill in source_dirs:
-            checkout_owner.setdefault(skill, source_id)
+    checkout_dirs, checkout_owner = _wildcard_owners(source_by_id, checkouts or {})
 
     affected: list[Path] = [lock_path] if added or removed else []
     if explicit_removals:
@@ -361,6 +401,12 @@ def apply_reconcile_plan(
         for skill in sorted(added):
             source_dir = checkout_dirs.get(skill)
             target = agents_home / skill
+            owner_source = source_by_id.get(checkout_owner.get(skill, ""))
+            handover = _handover(lock_skills.get(skill), owner_source, target)
+            if handover == "keep":
+                continue
+            if handover == "replace":
+                shutil.rmtree(target)
             if not (target.exists() or target.is_symlink()):
                 if source_dir is None:
                     raise ReconcileError(
@@ -372,7 +418,6 @@ def apply_reconcile_plan(
                 # preserving links would leave them dangling. Materialize.
                 shutil.copytree(source_dir, target)
                 changed.append(target)
-            owner_source = source_by_id.get(checkout_owner.get(skill, ""))
             if owner_source is None or owner_source.repo is None:
                 raise ReconcileError(
                     f"unable to determine source owner for wildcard skill {skill!r}"
