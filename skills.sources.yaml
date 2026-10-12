@@ -22,12 +22,21 @@ scope: global
 sources:
   - id: superpowers
     repo: obra/superpowers
+    # brainstorming and test-driven-development are first-party adaptations in
+    # PamuduW/agentbot_skills (2026-10-12): upstream's brainstorming trigger is
+    # "You MUST use this before any creative work", and its TDD rule deletes
+    # code written before its test, user-owned code included. The other six
+    # are here because the selected skills invoke them by name.
     skills:
-      - brainstorming
       - writing-plans
       - executing-plans
       - subagent-driven-development
-      - test-driven-development
+      - finishing-a-development-branch
+      - verification-before-completion
+      - requesting-code-review
+      - systematic-debugging
+      - writing-skills
+      - using-git-worktrees
 
   - id: devops-fullstack
     # NOTE: upstream org slug is literally "full-statck-skills" (misspelled on GitHub).
