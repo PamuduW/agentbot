@@ -1098,7 +1098,7 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
                 "boost-agent-facing-redaction": True,
                 "boost-auto-update": False,
                 "boost-claude-status-line": False,
-                "boost-cli-filtering": True,
+                "boost-cli-filtering": False,
                 "boost-english-abbreviation": False,
                 "boost-files-optimization": True,
                 "boost-graph-integration": False,
@@ -1145,7 +1145,7 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
         self.assertIs(True, flags["boost-mcp-toon-format"]["user"])
         self.assertIs(False, flags["boost-auto-update"]["user"])
         self.assertIs(False, flags["boost-claude-status-line"]["user"])
-        self.assertIs(True, flags["boost-cli-filtering"]["user"])
+        self.assertIs(False, flags["boost-cli-filtering"]["user"])
         self.assertIs(False, flags["boost-html-article"]["user"])
         self.assertIs(False, flags["boost-pr-usage-comments"]["user"])
         self.assertIs(False, flags["boost-share-cli-outputs"]["user"])

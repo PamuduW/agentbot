@@ -144,7 +144,7 @@ until the policy names it.
 | `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees; deliberately not retrievable |
 | `boost-auto-update` | off (fixed) | Dotfiles owns the binary and its version stamp |
 | `boost-claude-status-line` | off (fixed) | Agentbot owns the Claude status line |
-| `boost-cli-filtering` | on | The compression itself |
+| `boost-cli-filtering` | off | Its hook auto-approves every command it rewrites (`git push`, `curl \| sh`) in Claude Code and Codex, for under 1% saving; decided 2026-10-12. Shell output is no longer redacted |
 | `boost-english-abbreviation` | off | Lossy prose abbreviation, no gain here |
 | `boost-files-optimization` | on | Document and image reads, source untouched |
 | `boost-graph-integration` | off | BoostGraph rewrites files Agentbot owns |
@@ -179,6 +179,15 @@ fixed text in the binary, written whether or not `boost-html-article` is on, so
 here it overstates what Boost does; the advice itself is harmless. Agentbot
 leaves the file as Boost writes it: `boost init` owns and rewrites it, and the
 stale-artifact check reads its version marker.
+
+The same awareness file describes shell-output compaction, which is off since
+2026-10-12 (`boost-cli-filtering`): Boost's PreToolUse hook answered every
+command it rewrote with `permissionDecision: "allow"` in Claude Code and Codex,
+so commands such as `git push` or `curl | sh` skipped the permission prompt.
+With the flag off the hook rewrites nothing and decides nothing, and commands
+go through the normal permission flow. Shell output is then neither compacted
+nor redacted; file reads and MCP output still are. Any replacement filter
+(roadmap pilot 10.1, RTK) must never approve a command on its own.
 
 Everything else in `~/.boost/config.toml` is left to Boost and to you. Setup
 pins `[tracing] upload` and `[update] auto_update` to `false` and writes the
