@@ -2,6 +2,14 @@
   "theme": "dark",
   "model": "opus",
   "effortLevel": "medium",
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "medium"
+    },
+    "claude-sonnet-5": {
+      "effortLevel": "medium"
+    }
+  },
   "askUserQuestionTimeout": "never",
   "timeFormat": "12-hour",
   "editorMode": "normal",

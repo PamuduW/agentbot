@@ -88,6 +88,18 @@ Antigravity `model` (not a documented settings key; choose the model with
 missing from Cursor's documentation but are live settings in the CLI's own
 settings schema (2026.10.01), so they stay.
 
+**Effort on Opus 5.5 (checked 2026-10-12).** In `~/.claude/settings.json`,
+the top-level `effortLevel` is the older form: Opus 5.5 and later models ignore
+it and start at their own default, so `model: opus` was not getting the
+declared `medium`. The desired state now also declares `modelSettings` with
+`medium` for `claude-opus-5-5` and `claude-sonnet-5`; the top-level key stays
+for older models. Agentbot owns `modelSettings` as a whole, so a level saved
+with `/effort` lasts until the next update; change it here instead. Two other
+suggestions from the same review were not taken: Cursor's `version` is
+Cursor's own schema number (declaring it would write `1` back after Cursor
+moves on), and Codex's `[memories]` keys only matter when
+`features.memories`, already declared `false`, is on.
+
 ## Remote Control
 
 Both agents are kept reachable from the Claude and ChatGPT mobile apps.
