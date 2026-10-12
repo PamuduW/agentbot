@@ -488,9 +488,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "setup-review",
-        "agentbot setup-review [--cli claude|codex|cursor|agy] [--scope setup|cli-config]",
+        "agentbot setup-review [--cli claude|codex|cursor|agy] [--scope NAME] [--yes]",
         "mutating",
-        "Have an agent CLI review Dotfiles, Agentbot and every enabled skill source.",
+        "Have an agent CLI review the setup and file the report in Dotfiles.",
         (
             option(
                 "--cli NAME",
@@ -499,20 +499,20 @@ COMMANDS: tuple[CommandSpec, ...] = (
             ),
             option(
                 "--scope NAME",
-                "setup reviews everything; cli-config checks only the declared cli/ keys "
-                "against each CLI's documentation.",
-                "setup",
+                "full, or one of dotfiles, agentbot, shared, skills; cli-config checks "
+                "only the declared cli/ keys.",
+                "full",
             ),
-            option("--workspace PATH", "Development workspace with the product checkouts.", "detected"),
+            option("--yes", "Skip the confirmation of the chosen CLI.", "ask at a terminal"),
             option("--timeout MINUTES", "Stop the review after this long.", "45"),
             option("--source-budget N", "Most external pages the review may read.", "40"),
-            option("--no-update", "Never offer the update phase.", "offer at a terminal"),
         ),
-        "Runs the chosen CLI read-only and saves its report under ~/.config/agentbot/setup-reviews; "
-        "an interactive update session starts only after you answer yes.",
+        "Fetches and fast-forwards the installed checkouts, runs the CLI read-only, and "
+        "commits reviews/review_<stamp>_<scope>.md to Dotfiles' development branch "
+        "from a temporary worktree; a copy stays under ~/.config/agentbot/setup-reviews.",
         (
-            "agentbot setup-review --cli codex",
-            "agentbot setup-review --scope cli-config --no-update",
+            "agentbot setup-review",
+            "agentbot setup-review --cli codex --scope dotfiles --yes",
         ),
         ("cli-config", "skills"),
         "public",

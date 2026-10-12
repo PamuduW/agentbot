@@ -17,7 +17,7 @@ manifest is `skills.sources.yaml`, and private workspace state lives under
 | [VS Code](vscode.md) | Selected extensions and owned settings, per host |
 | [Cursor statusline](cursor-statusline.md) | The managed Cursor CLI statusline |
 | [Agent CLI configuration](cli-config.md) | Declared Claude, Codex, Cursor, and Antigravity config keys |
-| [Setup review](setup-review.md) | The recurring agent-run review of the setup and skill sources |
+| [Setup review](setup-review.md) | The recurring agent-run review, filed in Dotfiles' `reviews/` |
 | [Validation](validation.md) | Complete and focused validation commands |
 | [Roadmap](roadmap.md) | Delivered phases and planned capabilities |
 

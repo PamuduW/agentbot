@@ -1,9 +1,13 @@
 """Recurring setup review, run by the agent CLI the operator chooses.
 
-Two phases. The review phase runs the chosen CLI non-interactively in its
-read-only mode, captures what it prints, and saves that as the report under
-private Agentbot state. The update phase is an ordinary interactive session of
-the same CLI, started only after the operator says yes at a terminal.
+Agentbot brings the installed checkouts up to date (fetch, status, a
+fast-forward pull of a clean clone), runs the chosen CLI non-interactively in
+its read-only mode from the Dotfiles checkout, and captures what it prints as
+the report. The report has secrets and personal details replaced, is kept under
+private Agentbot state, and is committed to Dotfiles' development branch as
+reviews/review_<stamp>_<scope>.md with a line in reviews/review_log.md, from a
+throwaway worktree so the live clone never changes. The agent itself writes,
+commits and pushes nothing.
 
 Every CLI is resolved from the location Dotfiles installs it to, never from
 PATH: inside WSL, `cursor` on PATH is the Windows editor, and the Windows
@@ -32,18 +36,20 @@ from .memory import SECRET_RULES
 from .paths import AgentbotPaths
 from .skills_sources import load_skills_sources, source_clone_url
 
-PROMPT_VERSION = "setup-review/1"
+PROMPT_VERSION = "setup-review/2"
 RECURSION_ENV = "AGENTBOT_SETUP_REVIEW"
 DEFAULT_TIMEOUT_MINUTES = 45
 DEFAULT_SOURCE_BUDGET = 40
 CLONE_TIMEOUT_SECONDS = 120
 
-Scope = Literal["setup", "cli-config"]
+Scope = Literal["full", "dotfiles", "agentbot", "shared", "skills", "cli-config"]
+SCOPES: tuple[str, ...] = ("full", "dotfiles", "agentbot", "shared", "skills", "cli-config")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_USAGE = 2
 EXIT_ACCESS = 3
+EXIT_PREFLIGHT = 4
 EXIT_TIMEOUT = 124
 EXIT_CANCELLED = 130
 
@@ -119,14 +125,13 @@ class ResolvedCli:
 
 @dataclass(frozen=True)
 class Checkout:
-    role: Literal["installed", "development"]
     name: str
     path: Path
+    state: str = "current"
+    detail: str = ""
     branch: str = ""
     head: str = ""
-    dirty: int | None = None
     origin: str = ""
-    missing: bool = False
 
 
 @dataclass(frozen=True)
@@ -265,72 +270,187 @@ def _print_available(resolved: Mapping[str, ResolvedCli], out: Callable[[str], N
 # --- Evidence -----------------------------------------------------------------
 
 
-def _git(path: Path, *args: str) -> str:
+def _git_run(path: Path, *args: str, timeout: int = 60) -> tuple[int, str, str]:
     try:
         completed = subprocess.run(
             ["git", "-C", str(path), *args],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=timeout,
             check=False,
+            stdin=subprocess.DEVNULL,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return completed.stdout.strip() if completed.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 1, "", str(error)
+    return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
+
+
+def _git(path: Path, *args: str) -> str:
+    rc, out, _ = _git_run(path, *args, timeout=20)
+    return out if rc == 0 else ""
 
 
 def _strip_userinfo(url: str) -> str:
     return re.sub(r"^(\w+://)[^/@]+@", r"\1", url)
 
 
-def describe_checkout(role: Literal["installed", "development"], name: str, path: Path) -> Checkout:
+def live_clones(home: Path) -> list[tuple[str, Path]]:
+    """The installed checkouts the review reads and keeps current."""
+    return [
+        ("dotfiles", Path(os.environ.get("DOTFILES_DIR") or home / "dotfiles")),
+        ("agentbot", home / "agentbot"),
+        ("dotfiles-shared", home / "dotfiles-shared"),
+    ]
+
+
+def sync_clone(name: str, path: Path) -> Checkout:
+    """Fetch, then fast-forward a clean clone that is only behind.
+
+    Dirty, ahead or diverged stops the review, the rule `dotfiles fu` applies:
+    those are somebody's work, not something to pull over.
+    """
     if not (path / ".git").exists():
-        return Checkout(role, name, path, missing=True)
-    status = _git(path, "status", "--porcelain")
+        return Checkout(name, path, state="missing", detail="not a Git checkout")
+    rc, _, err = _git_run(path, "fetch", "--quiet", "origin")
+    if rc != 0:
+        return Checkout(name, path, state="fetch-failed", detail=(err.splitlines() or ["fetch failed"])[-1])
+    if _git(path, "status", "--porcelain"):
+        return Checkout(name, path, state="dirty", detail="uncommitted changes")
+    counts = _git(path, "rev-list", "--left-right", "--count", "HEAD...@{u}").split()
+    if len(counts) != 2:
+        return Checkout(name, path, state="no-upstream", detail="branch has no upstream")
+    ahead, behind = int(counts[0]), int(counts[1])
+    state = "current"
+    if ahead and behind:
+        return Checkout(name, path, state="diverged", detail=f"{ahead} ahead, {behind} behind")
+    if ahead:
+        return Checkout(name, path, state="ahead", detail=f"{ahead} unpushed commit(s)")
+    if behind:
+        rc, _, err = _git_run(path, "pull", "--ff-only", "--quiet")
+        if rc != 0:
+            return Checkout(name, path, state="pull-failed", detail=(err.splitlines() or ["pull failed"])[-1])
+        state = "pulled"
     return Checkout(
-        role,
         name,
         path,
+        state=state,
+        detail=f"pulled {behind} commit(s)" if behind else "up to date",
         branch=_git(path, "rev-parse", "--abbrev-ref", "HEAD"),
         head=_git(path, "rev-parse", "--short=12", "HEAD"),
-        dirty=len(status.splitlines()) if status else 0,
         origin=_strip_userinfo(_git(path, "remote", "get-url", "origin")),
     )
 
 
-_PRODUCTS = ("agentbot", "dotfiles", "dotfiles-shared")
+_STOPPING_STATES = frozenset({"fetch-failed", "dirty", "ahead", "diverged", "pull-failed", "no-upstream"})
 
 
-def find_workspace(start: Path) -> Path | None:
-    """The development workspace holding the product submodules, if `start` is in one."""
-    top = _git(start, "rev-parse", "--show-toplevel")
-    for candidate in [Path(top)] if top else []:
-        while True:
-            if all((candidate / name).is_dir() for name in ("agentbot", "dotfiles")):
-                return candidate
-            outer = _git(candidate.parent, "rev-parse", "--show-toplevel")
-            if not outer or Path(outer) == candidate:
-                return None
-            candidate = Path(outer)
-    return None
+def _agentbot(paths: AgentbotPaths) -> list[str]:
+    """Agentbot's own launcher, which picks its own Python environment.
+
+    `sys.executable` is whatever Python started this process, which need not
+    have Agentbot's dependencies: run from another interpreter, `doctor`
+    reported a missing module that the installed Agentbot does not lack.
+    """
+    launcher = paths.root / "bin" / "agentbot"
+    if launcher.is_file():
+        return [str(launcher)]
+    return [sys.executable, "-m", "src.cli", "--root", str(paths.root)]
 
 
-def gather_checkouts(home: Path, workspace: Path | None) -> list[Checkout]:
-    dotfiles_home = Path(os.environ.get("DOTFILES_DIR") or home / "dotfiles")
-    installed = {
-        "agentbot": home / "agentbot",
-        "dotfiles": dotfiles_home,
-        "dotfiles-shared": home / "dotfiles-shared",
-    }
-    checkouts = [describe_checkout("installed", name, path) for name, path in installed.items()]
-    if workspace is not None:
-        for name in (*_PRODUCTS, "agentbot_skills"):
-            path = workspace / name
-            if path.resolve() in {p.resolve() for p in installed.values()}:
-                continue
-            checkouts.append(describe_checkout("development", name, path))
-    return checkouts
+def vault_status(paths: AgentbotPaths) -> str:
+    """One line from `agentbot memory status`; the vault itself is never touched with Git."""
+    try:
+        completed = subprocess.run(
+            [*_agentbot(paths), "memory", "status"],
+            cwd=paths.root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"status not available ({error})"
+    rows = [
+        " ".join(cell.strip() for cell in line.split("|") if cell.strip())
+        for line in re.sub(r"\x1b\[[0-9;]*m", "", completed.stdout).splitlines()
+        if "|" in line and not line.strip().startswith(("component", "-"))
+    ]
+    return "; ".join(rows[:4]) or f"`agentbot memory status` exited {completed.returncode}"
+
+
+_ANSI_CODES = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _table_rows(text: str, limit: int = 60) -> str:
+    rows = [
+        line.rstrip()
+        for line in _ANSI_CODES.sub("", text).splitlines()
+        if "|" in line and not set(line.strip()) <= set("-+| ")
+    ]
+    return "\n".join(rows[:limit])
+
+
+def _command_rows(argv: Sequence[str], *, cwd: Path, timeout: int) -> str:
+    try:
+        completed = subprocess.run(
+            list(argv),
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            env={**os.environ, "NO_COLOR": "1"},
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"(not available: {error})"
+    return _table_rows(completed.stdout) or f"(no table; exit {completed.returncode})"
+
+
+def collect_facts(paths: AgentbotPaths, dotfiles: Path) -> str:
+    """Version and health tables, so the agent spends no budget re-deriving them."""
+    sections = []
+    command = dotfiles / "bin" / "bin" / "dotfiles"
+    if command.is_file():
+        sections.append(
+            "`dotfiles update --dry-run` (installed, available, action; \"latest "
+            "unchecked\" means Dotfiles did not look the latest release up, so you "
+            "should):\n\n```text\n"
+            + _command_rows([str(command), "update", "--dry-run"], cwd=dotfiles, timeout=300)
+            + "\n```"
+        )
+    for name in ("status", "doctor"):
+        sections.append(
+            f"`agentbot {name}`:\n\n```text\n"
+            + _command_rows([*_agentbot(paths), name], cwd=paths.root, timeout=180)
+            + "\n```"
+        )
+    return "\n\n".join(sections)
+
+
+_LOG_LINE = re.compile(r"^- (review_[\w.-]+\.md) - (created|reviewed)\s*$")
+_PREVIOUS_LIMIT = 8000
+
+
+def previous_reviews(dotfiles: Path) -> str:
+    """The review log from Dotfiles' development branch, and the newest unread review."""
+    log = _git(dotfiles, "show", f"origin/development:reviews/{REVIEW_LOG}")
+    entries = [match.groups() for line in log.splitlines() if (match := _LOG_LINE.match(line))]
+    if not entries:
+        return "None filed yet."
+    listed = "\n".join(f"- {name} ({state})" for name, state in entries)
+    unread = [name for name, state in entries if state == "created"]
+    if not unread:
+        return listed
+    newest = unread[-1]
+    body = _git(dotfiles, "show", f"origin/development:reviews/{newest}")
+    if not body:
+        return listed
+    if len(body) > _PREVIOUS_LIMIT:
+        body = body[:_PREVIOUS_LIMIT] + "\n\n[cut: the rest of this earlier review]"
+    return f"{listed}\n\nThe newest one not yet marked reviewed, `{newest}`:\n\n````markdown\n{body}\n````"
 
 
 def prepare_sources(paths: AgentbotPaths, destination: Path) -> list[SourceCopy]:
@@ -378,6 +498,66 @@ def _make_read_only(root: Path) -> None:
 
 # --- Prompt -------------------------------------------------------------------
 
+_SCOPE_TEXT = {
+    "full": "the whole setup: Dotfiles, Agentbot, the shared library both load, "
+    "and every enabled skill source.",
+    "dotfiles": "Dotfiles only. Read Agentbot and the shared library only where "
+    "they meet Dotfiles.",
+    "agentbot": "Agentbot only. Read Dotfiles and the shared library only where "
+    "they meet Agentbot.",
+    "shared": "the shared library (dotfiles-shared) and how Dotfiles and Agentbot "
+    "use it.",
+    "skills": "the curated skill sources Agentbot installs, and nothing else.",
+}
+_SCOPE_CHECKLISTS = {
+    "full": ("dotfiles", "agentbot", "shared", "across"),
+    "dotfiles": ("dotfiles",),
+    "agentbot": ("agentbot",),
+    "shared": ("shared",),
+    "skills": (),
+}
+_SCOPE_REPOS = {
+    "full": "dotfiles, agentbot, dotfiles-shared",
+    "dotfiles": "dotfiles",
+    "agentbot": "agentbot",
+    "shared": "dotfiles-shared",
+    "skills": "agentbot (its skills.sources.yaml)",
+}
+
+_SKILL_SECTION = """
+## Skill-source review
+
+Agentbot installs skills from the sources in `skills.sources.yaml`. Treat
+that file as the list under review, not as permission to install
+everything a source ships. The enabled sources, with a read-only shallow
+copy of each prepared by Agentbot:
+
+{sources}
+
+For every enabled source, open its local copy and list every skill it
+currently contains (each directory with a `SKILL.md`). For each skill,
+decide one of: keep, exclude, replace, or drop-source. Base the decision on
+the skill's own `SKILL.md` and references, not on the repository README,
+and record what it actually does; overlap with skills already selected from
+other sources, including the first-party `agentbot_skills` source; whether
+it is model-listed (its description costs context in every session) or
+manual or path-scoped; and quality, maintenance, license, secret handling,
+network or install side effects, and whether test fixtures or stubs would
+be swept in.
+
+A source declared `skills: all` installs everything it ships without a
+per-skill decision. For each such source, propose an explicit keep list to
+replace `all`, and say whether that named list is safer. Do this for the
+first-party source too when a subset is enough. A new skill you find
+upstream is a candidate only: name it, do not install it.
+"""
+
+_SKILL_REPORT = (
+    "- `## Skill-source review`: one table per source (skill, decision, reason,\n"
+    "  model-listed or not), then the proposed keep list for each `skills: all`\n"
+    "  source.\n"
+)
+
 
 def _template(paths: AgentbotPaths, name: str) -> str:
     return (paths.root / "review" / name).read_text(encoding="utf-8")
@@ -395,13 +575,12 @@ def _fill(template: str, values: Mapping[str, str]) -> str:
 def _format_checkouts(checkouts: Sequence[Checkout]) -> str:
     lines = []
     for item in checkouts:
-        if item.missing:
-            lines.append(f"- {item.role}: {item.name} at `{item.path}` (not a Git checkout)")
+        if item.state == "missing":
+            lines.append(f"- {item.name} at `{item.path}`: not installed here")
             continue
-        dirty = "clean" if not item.dirty else f"{item.dirty} uncommitted path(s)"
         lines.append(
-            f"- {item.role}: {item.name} at `{item.path}`, branch `{item.branch}`, "
-            f"HEAD `{item.head}`, {dirty}, origin `{item.origin}`"
+            f"- {item.name} at `{item.path}`, branch `{item.branch}`, HEAD `{item.head}` "
+            f"({item.detail}), origin `{item.origin}`"
         )
     return "\n".join(lines) or "- (none found)"
 
@@ -419,6 +598,21 @@ def cli_config_files(paths: AgentbotPaths) -> list[Path]:
     return sorted(path for path in (paths.root / "cli").iterdir() if path.is_file())
 
 
+def reviews_skills(scope: Scope) -> bool:
+    return scope in {"full", "skills"}
+
+
+def _checklist(paths: AgentbotPaths, scope: Scope) -> str:
+    names = _SCOPE_CHECKLISTS.get(scope, ())
+    if not names:
+        return ""
+    parts = [
+        (paths.root / "review" / "checklists" / f"{name}.md").read_text(encoding="utf-8").strip()
+        for name in names
+    ]
+    return "## Checklist\n\n" + "\n\n".join(parts) + "\n"
+
+
 def build_prompt(
     paths: AgentbotPaths,
     scope: Scope,
@@ -429,6 +623,9 @@ def build_prompt(
     sources: Sequence[SourceCopy],
     budget_minutes: int,
     budget_sources: int,
+    vault: str = "",
+    facts: str = "",
+    previous: str = "",
 ) -> str:
     common = {
         "prompt_version": PROMPT_VERSION,
@@ -440,27 +637,22 @@ def build_prompt(
     if scope == "cli-config":
         files = "\n".join(f"- `{path}`" for path in cli_config_files(paths))
         return _fill(_template(paths, "cli-config-review.md"), {**common, "cli_files": files})
+    skills = reviews_skills(scope)
     return _fill(
         _template(paths, "setup-review.md"),
-        {**common, "checkouts": _format_checkouts(checkouts), "sources": _format_sources(sources)},
-    )
-
-
-def build_update_prompt(
-    paths: AgentbotPaths, *, run_id: str, report: Path, checkouts: Sequence[Checkout]
-) -> str:
-    development = [item for item in checkouts if item.role == "development"]
-    listed = _format_checkouts(development) if development else (
-        "- (no development checkout was found; propose fixes only, and tell the operator "
-        "to rerun from the development workspace to make them)"
-    )
-    return _fill(
-        _template(paths, "update.md"),
         {
-            "prompt_version": PROMPT_VERSION,
-            "run_id": run_id,
-            "report_path": str(report),
-            "checkouts": listed,
+            **common,
+            "scope_text": _SCOPE_TEXT[scope],
+            "repos": _SCOPE_REPOS[scope],
+            "checkouts": _format_checkouts(checkouts),
+            "vault": vault or "(not checked)",
+            "facts": facts or "(none collected)",
+            "previous": previous or "None filed yet.",
+            "checklist": _checklist(paths, scope),
+            "skill_section": _SKILL_SECTION.format(sources=_format_sources(sources))
+            if skills
+            else "",
+            "skill_report": _SKILL_REPORT if skills else "",
         },
     )
 
@@ -490,7 +682,7 @@ def review_argv(
                 "--", prompt]
     elif key == "cursor":
         # --trust answers Cursor's workspace-trust question for the working
-        # directory alone, which is this run's own private folder; it is not
+        # directory alone, the Dotfiles checkout the review reads; it is not
         # the permission bypass that --force/--yolo are. Plan mode is read-only.
         argv = [exe, "-p", "--mode", "plan", "--trust", "--output-format", "text"]
         for directory in dirs:
@@ -501,34 +693,6 @@ def review_argv(
         for directory in dirs:
             argv += ["--add-dir", directory]
         argv += ["-p", prompt]
-    else:  # pragma: no cover - CLIS is closed
-        raise ValueError(key)
-    assert_no_bypass(cli.spec, argv)
-    return argv
-
-
-def update_argv(cli: ResolvedCli, prompt: str, *, read_dirs: Sequence[Path]) -> list[str]:
-    """An interactive session in the CLI's normal permission mode."""
-    exe = str(cli.executable)
-    dirs = [str(path) for path in read_dirs]
-    key = cli.spec.key
-    if key == "claude":
-        argv = [exe]
-        if dirs:
-            argv += ["--add-dir", *dirs]
-        argv += ["--", prompt]
-    elif key == "codex":
-        argv = [exe, "--", prompt]
-    elif key == "cursor":
-        argv = [exe]
-        for directory in dirs:
-            argv += ["--add-dir", directory]
-        argv += ["--", prompt]
-    elif key == "agy":
-        argv = [exe]
-        for directory in dirs:
-            argv += ["--add-dir", directory]
-        argv += ["--prompt-interactive", prompt]
     else:  # pragma: no cover - CLIS is closed
         raise ValueError(key)
     assert_no_bypass(cli.spec, argv)
@@ -659,6 +823,112 @@ def redact_report(text: str) -> tuple[str, dict[str, int]]:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else ""), counts
 
 
+_EMAIL = re.compile(r"\b(?!git@)[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")
+
+
+@dataclass(frozen=True)
+class Identity:
+    """What makes a report personal: replaced before it is filed anywhere."""
+
+    home: Path
+    user: str
+    host: str
+
+    @classmethod
+    def current(cls, home: Path) -> Identity:
+        import getpass
+        import socket
+
+        try:
+            user = getpass.getuser()
+        except (OSError, KeyError):
+            user = home.name
+        return cls(home=home, user=user, host=socket.gethostname())
+
+
+def depersonalise(text: str, identity: Identity) -> tuple[str, dict[str, int]]:
+    """Home folder, user name, host name and email addresses become placeholders."""
+    counts: dict[str, int] = {}
+
+    def swap(pattern: str, replacement: str, label: str, flags: int = 0) -> None:
+        nonlocal text
+        text, found = re.subn(pattern, replacement, text, flags=flags)
+        if found:
+            counts[label] = counts.get(label, 0) + found
+
+    text, found = _EMAIL.subn("{email}", text)
+    if found:
+        counts["EMAIL"] = found
+    swap(re.escape(str(identity.home)), "/home/{user}", "HOME_PATH")
+    if len(identity.user) >= 3:
+        swap(rf"(?<![\w.-]){re.escape(identity.user)}(?![\w-])", "{user}", "USER_NAME")
+    if len(identity.host) >= 3:
+        swap(rf"(?<![\w.-]){re.escape(identity.host)}(?![\w-])", "{host}", "HOST_NAME")
+    return text, counts
+
+
+# --- Filing -------------------------------------------------------------------
+
+REVIEW_LOG = "review_log.md"
+_LOG_HEADER = """# Setup reviews
+
+One line per review `agentbot setup-review` filed. After reading a review,
+delete its file and change its line from `created` to `reviewed`.
+
+"""
+
+
+def review_file_name(now: datetime, scope: Scope) -> str:
+    return f"review_{now.strftime('%Y%m%d_%H%M%S')}_{scope}.md"
+
+
+def publish_review(dotfiles: Path, name: str, text: str) -> tuple[str, str]:
+    """Commit the review to Dotfiles' development branch from a throwaway worktree.
+
+    The live clone is the running install: it never changes branch and never
+    gets a stray file. Returns (state, detail); state is "published",
+    "push-failed", "skipped" or "failed".
+    """
+    import shutil
+    import tempfile
+
+    if not (dotfiles / ".git").exists():
+        return "skipped", f"no Dotfiles checkout at {dotfiles}"
+    rc, _, err = _git_run(dotfiles, "fetch", "--quiet", "origin", "development")
+    if rc != 0:
+        return "skipped", "Dotfiles has no development branch to file it on"
+    worktree = Path(tempfile.mkdtemp(prefix="agentbot-review-"))
+    try:
+        rc, _, err = _git_run(
+            dotfiles, "worktree", "add", "--quiet", "--detach", str(worktree), "origin/development"
+        )
+        if rc != 0:
+            return "failed", (err.splitlines() or ["worktree add failed"])[-1]
+        reviews = worktree / "reviews"
+        reviews.mkdir(exist_ok=True)
+        write_text_atomic(reviews / name, text)
+        log = reviews / REVIEW_LOG
+        current = log.read_text(encoding="utf-8") if log.is_file() else _LOG_HEADER
+        if not current.endswith("\n"):
+            current += "\n"
+        write_text_atomic(log, f"{current}- {name} - created\n")
+        for args in (
+            ("add", "--", f"reviews/{name}", f"reviews/{REVIEW_LOG}"),
+            ("commit", "--quiet", "-m", f"docs(reviews): add {name}", "--", "reviews"),
+        ):
+            rc, _, err = _git_run(worktree, *args)
+            if rc != 0:
+                return "failed", (err.splitlines() or [f"git {args[0]} failed"])[-1]
+        rc, _, err = _git_run(worktree, "push", "--quiet", "origin", "HEAD:refs/heads/development")
+        if rc != 0:
+            return "push-failed", (err.splitlines() or ["push failed"])[-1]
+        return "published", _git(worktree, "rev-parse", "--short=12", "HEAD")
+    finally:
+        _git_run(dotfiles, "worktree", "remove", "--force", str(worktree))
+        shutil.rmtree(worktree, ignore_errors=True)
+        _git_run(dotfiles, "worktree", "prune")
+
+
 def _private_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.chmod(0o700)
@@ -702,8 +972,11 @@ def write_report(
     finished: datetime,
     version: str,
     timeout_seconds: int,
-) -> tuple[Path, dict[str, int]]:
+    identity: Identity,
+) -> tuple[Path, dict[str, int], str]:
     body, counts = redact_report(outcome.stdout)
+    body, personal = depersonalise(body, identity)
+    counts = {**counts, **personal}
     report = run.run_dir / "report.md"
     header = [
         f"<!-- agentbot setup-review {PROMPT_VERSION} run {run.run_id} -->",
@@ -711,9 +984,11 @@ def write_report(
         f"{started.isoformat()} to {finished.isoformat()} -->",
         "",
     ]
-    _write_private(report, "\n".join(header) + body)
+    text = "\n".join(header) + body
+    _write_private(report, text)
     _write_private(run.run_dir / "prompt.md", run.prompt)
     stderr_tail, stderr_counts = redact_report("\n".join(outcome.stderr.splitlines()[-40:]))
+    stderr_tail, _ = depersonalise(stderr_tail, identity)
     if stderr_tail.strip():
         _write_private(run.run_dir / "cli-stderr.txt", stderr_tail + "\n")
     provenance = {
@@ -736,14 +1011,13 @@ def write_report(
         "stderr_redactions": stderr_counts,
         "checkouts": [
             {
-                "role": item.role,
                 "name": item.name,
                 "path": str(item.path),
+                "state": item.state,
+                "detail": item.detail,
                 "branch": item.branch,
                 "head": item.head,
-                "dirty": item.dirty,
                 "origin": item.origin,
-                "missing": item.missing,
             }
             for item in run.checkouts
         ],
@@ -754,7 +1028,7 @@ def write_report(
         ],
     }
     _write_private(run.run_dir / "run.json", json.dumps(provenance, indent=2) + "\n")
-    return report, counts
+    return report, counts, text
 
 
 # --- Entry point --------------------------------------------------------------
@@ -763,11 +1037,11 @@ def write_report(
 @dataclass(frozen=True)
 class ReviewOptions:
     cli: str | None = None
-    scope: Scope = "setup"
-    workspace: Path | None = None
+    scope: Scope = "full"
     timeout_minutes: int = DEFAULT_TIMEOUT_MINUTES
     source_budget: int = DEFAULT_SOURCE_BUDGET
-    update: bool | None = None  # None: ask at a terminal; False: never
+    #: Already confirmed (the menu asks first, or --yes).
+    confirmed: bool = False
 
 
 def run(
@@ -779,9 +1053,10 @@ def run(
     ask: Callable[[str], str] = input,
     out: Callable[[str], None] = print,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
-    caller_dir: Path | None = None,
+    identity: Identity | None = None,
 ) -> int:
     home = home or Path.home()
+    identity = identity or Identity.current(home)
     if interactive is None:
         interactive = sys.stdin.isatty() and sys.stdout.isatty()
     if os.environ.get(RECURSION_ENV):
@@ -798,6 +1073,14 @@ def run(
     cli = choose_cli(paths, resolved, options.cli, interactive=interactive, ask=ask, out=out)
     if cli is None:
         return EXIT_USAGE
+    if not options.confirmed:
+        if not interactive:
+            out("  [err] pass --yes to run the review without a terminal to confirm on")
+            return EXIT_USAGE
+        answer = ask(f"  Run a {options.scope} review with {cli.spec.label}? [y/N] ")
+        if answer.strip().lower() not in {"y", "yes"}:
+            out("  Nothing was run.")
+            return EXIT_OK
     remember_cli(paths, cli.spec.key)
 
     signed_in, detail = check_auth(cli)
@@ -807,20 +1090,31 @@ def run(
     if signed_in is None:
         out(f"  [info] {cli.spec.label}: {detail}")
 
+    out("  Bringing the installed checkouts up to date (fetch, status, pull --ff-only)...")
+    checkouts = [sync_clone(name, path) for name, path in live_clones(home)]
+    for item in checkouts:
+        out(f"    {item.name:<16} {item.state}: {item.detail}")
+    stopped = [item for item in checkouts if item.state in _STOPPING_STATES]
+    if stopped:
+        out("  [err] review stopped: settle the checkouts above first (nothing was changed).")
+        return EXIT_PREFLIGHT
+    dotfiles = next(item.path for item in checkouts if item.name == "dotfiles")
+
     started = now()
     run_id, run_dir = new_run(paths, cli, options.scope, started)
     timeout_seconds = options.timeout_minutes * 60
-    checkouts: list[Checkout] = []
     sources: list[SourceCopy] = []
-    read_dirs: list[Path] = []
-    if options.scope == "setup":
-        workspace = options.workspace or find_workspace(caller_dir or Path.cwd())
-        checkouts = gather_checkouts(home, workspace)
+    if options.scope != "cli-config":
+        out("  Collecting versions, health and earlier reviews...")
+    if reviews_skills(options.scope):
         out("  Copying the enabled skill sources (read-only, shallow)...")
         sources = prepare_sources(paths, run_dir / "sources")
-        read_dirs = [item.path for item in checkouts if not item.missing]
-    else:
+    if options.scope == "cli-config":
         read_dirs = [paths.root / "cli"]
+    else:
+        read_dirs = [item.path for item in checkouts if item.state != "missing"]
+        if sources:
+            read_dirs.append(run_dir / "sources")
     prompt = build_prompt(
         paths,
         options.scope,
@@ -830,53 +1124,42 @@ def run(
         sources=sources,
         budget_minutes=max(1, options.timeout_minutes - 5),
         budget_sources=options.source_budget,
+        vault="" if options.scope == "cli-config" else vault_status(paths),
+        facts="" if options.scope == "cli-config" else collect_facts(paths, dotfiles),
+        previous="" if options.scope == "cli-config" else previous_reviews(dotfiles),
     )
     argv = review_argv(cli, prompt, read_dirs=read_dirs, timeout_seconds=timeout_seconds)
     review = ReviewRun(run_id, run_dir, options.scope, cli, argv, prompt, checkouts, sources)
     version = cli_version(cli)
+    cwd = dotfiles if (dotfiles / ".git").exists() else run_dir
 
     out(
         f"  Reviewing with {cli.spec.label} ({options.scope}, read-only, "
         f"up to {options.timeout_minutes} min). Ctrl-C cancels."
     )
-    outcome = run_review_process(
-        argv, cwd=run_dir, env=child_env(run_id), timeout_seconds=timeout_seconds
-    )
-    report, counts = write_report(
+    outcome = run_review_process(argv, cwd=cwd, env=child_env(run_id), timeout_seconds=timeout_seconds)
+    report, counts, text = write_report(
         review, outcome, started=started, finished=now(), version=version,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=timeout_seconds, identity=identity,
     )
     if counts:
         summary = ", ".join(f"{rule} x{count}" for rule, count in sorted(counts.items()))
-        out(f"  [warn] masked in the report: {summary}")
+        out(f"  [info] replaced in the report: {summary}")
 
     if outcome.status != "ok":
         return _report_failure(cli, outcome, report, options.timeout_minutes, out)
     if not outcome.stdout.strip():
         out(f"  [err] {cli.spec.label} finished but printed no report. Run folder: {run_dir}")
         return EXIT_FAILED
-    out(f"  Report saved: {report}")
 
-    if options.update is False or not interactive:
-        if options.update and not interactive:
-            out("  The update phase needs a terminal; it was not started.")
-        return EXIT_OK
-    answer = ask(
-        f"  Start an interactive {cli.spec.label} session to plan fixes from this report? [y/N] "
-    )
-    if answer.strip().lower() not in {"y", "yes"}:
-        out("  Update phase skipped. Nothing was changed.")
-        return EXIT_OK
-    update_prompt = build_update_prompt(paths, run_id=run_id, report=report, checkouts=checkouts)
-    development = [item.path for item in checkouts if item.role == "development" and not item.missing]
-    cwd = (options.workspace or (development[0].parent if development else run_dir))
-    session = update_argv(cli, update_prompt, read_dirs=[run_dir, *read_dirs])
-    try:
-        completed = subprocess.run(session, cwd=cwd, env=child_env(run_id), check=False)
-    except KeyboardInterrupt:
-        out("  Update session interrupted.")
-        return EXIT_CANCELLED
-    return EXIT_OK if completed.returncode == 0 else EXIT_FAILED
+    name = review_file_name(datetime.now(), options.scope)
+    state, detail = publish_review(dotfiles, name, text)
+    if state == "published":
+        out(f"  Filed reviews/{name} on Dotfiles' development branch ({detail}).")
+    else:
+        out(f"  [warn] not filed in Dotfiles ({state}: {detail}).")
+    out(f"  Local copy: {report}")
+    return EXIT_OK
 
 
 def _report_failure(

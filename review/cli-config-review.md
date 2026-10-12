@@ -26,7 +26,9 @@ what you print.
    key, or auth value, and no key whose purpose is to hold one. If the
    documentation recommends one, say so in words under "Needs human
    judgment" and give no value.
-5. Budget: stop after about {{budget_minutes}} minutes or {{budget_sources}}
+5. Work alone: do not start subagents, delegate, or run other agent CLIs.
+   Keep your default model and reasoning settings.
+6. Budget: stop after about {{budget_minutes}} minutes or {{budget_sources}}
    documentation pages, whichever comes first.
 
 ## Desired-state files

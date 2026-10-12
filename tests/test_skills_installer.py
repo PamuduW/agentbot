@@ -584,6 +584,64 @@ sources:
             discover.assert_not_called()
             verify.assert_not_called()
 
+    _LISTING = (
+        "\x1b[36m\u25c7\x1b[0m  Available Skills\n\u2502\n"
+        "\u2502    keep-me\n\u2502\n\u2502      Keep me. A description line.\n\u2502\n"
+        "\u2502    drop-me\n\u2502\n\u2502      Excluded in the manifest.\n\u2502\n"
+        "\u2502    also-kept\n\u2502\n"
+        "\u2514  Use --skill <name> to install specific skills\n"
+    )
+
+    def _wildcard_install(self, listing_stdout: str, exclude: list[str]):
+        from src.skills_installer import InstallResult, install_source
+        from src.skills_sources import SkillSourceEntry
+
+        source = SkillSourceEntry(id="w", repo="owner/skills", skills=["*"], exclude=exclude)
+        checkout = self._checkout_with("keep-me", "---\nname: keep-me\n---\n")
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        commands: list[list[str]] = []
+
+        def npx(argv, **_kwargs):
+            commands.append(list(argv))
+            stdout = listing_stdout if "--list" in argv else ""
+            return InstallResult(source_id="w", command=argv, returncode=0, stdout=stdout, stderr="")
+
+        with patch("src.skills_installer.run_install_command", side_effect=npx):
+            install_source(source, agents=["codex"], global_lock_file=lock_file, checkout=checkout)
+        return commands
+
+    def test_wildcard_with_exclusions_never_installs_the_excluded_skills(self) -> None:
+        # Every update installed each excluded skill and deleted it again,
+        # because `skills add --skill '*'` has no exclusion flag.
+        commands = self._wildcard_install(self._LISTING, exclude=["drop-me"])
+
+        listing, install = commands
+        self.assertIn("--list", listing)
+        self.assertIn("--full-depth", listing)
+        selected = [install[i + 1] for i, arg in enumerate(install) if arg == "--skill"]
+        self.assertEqual(["keep-me", "also-kept"], selected)
+        self.assertNotIn("*", install)
+
+    def test_wildcard_falls_back_when_the_listing_cannot_be_read(self) -> None:
+        commands = self._wildcard_install("unrecognised output\n", exclude=["drop-me"])
+
+        install = commands[-1]
+        self.assertEqual("*", install[install.index("--skill") + 1])
+
+    def test_wildcard_falls_back_when_everything_listed_is_excluded(self) -> None:
+        commands = self._wildcard_install(
+            self._LISTING, exclude=["keep-me", "drop-me", "also-kept"]
+        )
+
+        install = commands[-1]
+        self.assertEqual("*", install[install.index("--skill") + 1])
+
+    def test_wildcard_without_exclusions_is_not_listed_first(self) -> None:
+        commands = self._wildcard_install(self._LISTING, exclude=[])
+
+        self.assertEqual(1, len(commands))
+        self.assertEqual("*", commands[0][commands[0].index("--skill") + 1])
+
     @patch("src.skills_installer.run_install_command")
     def test_install_source_wildcard_does_not_lock_checkout_test_fixtures(
         self, mock_install

@@ -556,6 +556,53 @@ def run_install_command(
     )
 
 
+_LISTED_SKILL = re.compile(r"^\W*\s{3,}([a-z0-9][a-z0-9._-]*)\s*$")
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _without_excluded(
+    argv: list[str],
+    source: SkillSourceEntry,
+    checkout: Path,
+    *,
+    npx: str,
+    cwd: Path | None,
+    runner: CommandRunner | None,
+) -> list[str] | None:
+    """Name a `skills: all` source's skills explicitly, minus its exclusions.
+
+    `skills add` has no exclusion flag, so a wildcard install put every
+    excluded skill on disk and the clean-up after it deleted them again, on
+    every update. The Skills CLI's own `--list` says what the wildcard would
+    install; asking it keeps its rules for what counts as a skill (test
+    fixtures in the checkout do not). Returns None when the list cannot be
+    read, and the caller keeps the wildcard: the clean-up still applies, so the
+    worst case is the old behaviour.
+    """
+    if source.skills != ["*"] or not source.exclude:
+        return argv
+    listing = run_install_command(
+        [npx, "--yes", "skills", "add", str(checkout), "--list", "--full-depth"],
+        source_id=source.id,
+        cwd=cwd,
+        runner=runner,
+    )
+    if listing.returncode != 0:
+        return None
+    names: list[str] = []
+    for line in _ANSI.sub("", listing.stdout).splitlines():
+        match = _LISTED_SKILL.match(line)
+        if match and match.group(1) not in names:
+            names.append(match.group(1))
+    if not names:
+        return None
+    selected = [arg for name in names if not source.excludes(name) for arg in ("--skill", name)]
+    if not selected:
+        return None
+    index = argv.index("--skill")
+    return argv[:index] + selected + argv[index + 2 :]
+
+
 def install_source(
     source: SkillSourceEntry,
     *,
@@ -596,6 +643,9 @@ def install_source(
         elif checkout is not None:
             source_revision = _checkout_revision(checkout, runner=runner)
             argv[4] = str(checkout)
+            argv = _without_excluded(
+                argv, source, checkout, npx=npx, cwd=cwd, runner=runner
+            ) or argv
             preexisting: frozenset[str] = frozenset()
             if global_scope:
                 blocked, preexisting = _skills_not_ours_to_replace(
@@ -628,6 +678,9 @@ def install_source(
                 _clone_remote_source(source.repo, checkout, runner=runner)
                 source_revision = _checkout_revision(checkout, runner=runner)
                 argv[4] = str(checkout)
+                argv = _without_excluded(
+                    argv, source, checkout, npx=npx, cwd=cwd, runner=runner
+                ) or argv
                 preexisting = frozenset()
                 if global_scope:
                     blocked, preexisting = _skills_not_ours_to_replace(
