@@ -25,10 +25,10 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # 3.10 on every push: it is the floor this project supports, the version
+      # 3.10 on every run: it is the floor this project supports, the version
       # no developer machine here runs, and the one that caught a timeout bug
       # that 3.12 could not see. 3.12 is covered locally on every gate run, so
-      # it rides the weekly schedule rather than doubling every push.
+      # it joins only on the daily schedule, not on a manual dispatch.
       matrix:
         python-version: ${{ fromJSON(github.event_name == 'schedule' && '["3.10", "3.12"]' || '["3.10"]') }}
 
@@ -88,11 +88,12 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      # Hash-pinned, because the next step holds a GitHub token and anything
+      # installed here runs inside it. Regenerate requirements-ci.lock with
+      # the command at its top when requirements*.txt change.
       - name: Install dependencies
         working-directory: agentbot
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements-dev.txt
+        run: python -m pip install --require-hashes --no-deps -r requirements-ci.lock
       - name: Compare the live descriptors with the frozen contract
         working-directory: agentbot
         env:
@@ -100,8 +101,7 @@ jobs:
           GITHUB_MCP_TOKEN: ${{ secrets.MCP_GITHUB_TOKEN }}
         run: |
           if [ -z "${GITHUB_MCP_TOKEN:-}" ]; then
-            echo "MCP_GITHUB_TOKEN is not set; skipping the live descriptor gate."
-            echo "Add it as a repository secret to turn this job on."
+            echo "::warning title=Live descriptor gate skipped::MCP_GITHUB_TOKEN is not set, so the live MCP descriptors were not compared. Add it as a repository secret to turn this gate on."
             exit 0
           fi
           python -m unittest tests.integration.test_mcp_github_live -v

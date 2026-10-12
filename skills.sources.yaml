@@ -104,40 +104,65 @@ sources:
 
   - id: watermarks-remover
     repo: guillaumemeyer/watermarks-remover
-    skills: all
-    # remove-ai-marks is excluded (2026-09-27 skill review). It needs a separate
-    # HTTP service container, and what it adds beyond clean-user-facing-text is
-    # defeating AI-provenance marks and detectors, which this setup has no use
-    # for. clean-user-facing-text keeps the local invisible-Unicode clean-up.
-    exclude:
-      - remove-ai-marks
+    # An explicit list since the 2026-10-13 setup review, so a skill added
+    # upstream is not swept in. remove-ai-marks stays out (2026-09-27 skill
+    # review): it needs a separate HTTP service container, and what it adds
+    # beyond clean-user-facing-text is defeating AI-provenance marks and
+    # detectors, which this setup has no use for.
+    skills:
+      - clean-user-facing-text
 
   - id: akindu-agent-skills
     repo: Akindu23/my-agent-skills
-    skills: all
-    # This repository ships its own Skills-CLI test fixtures under
-    # cli/test/fixtures/, and `skills: all` sweeps them in. They are not real
-    # skills; excluding them keeps them out of every agent's context. gamma
-    # and delta (bundle-mini-v3) were installed by an older Skills CLI on
-    # 2026-10-07 and stayed; excluded 2026-10-12 so the next update removes them.
-    # `tdd` duplicates superpowers/test-driven-development and, unlike most of
-    # this source, is model-listed -- so it costs description budget twice over.
-    # These four are model-listed (so they cost description budget) but are
-    # niche or overlap skills that are kept: recursive-decomposition and
-    # research overlap council/deep-research, svg-diagrams has a dangling
-    # ../assets/ reference, and prototype is only ever offered optionally by
-    # wayfinder. Their remaining 39 siblings are manual-only or path-scoped
-    # and cost nothing, so they stay installed.
-    exclude:
-      - alpha
-      - beta
-      - gamma
-      - delta
-      - tdd
-      - recursive-decomposition
-      - research
-      - svg-diagrams
-      - prototype
+    # An explicit list since the 2026-10-13 setup review: `skills: all` swept in
+    # the repository's own Skills-CLI test fixtures (cli/test/fixtures/, which
+    # keep growing) and would sweep in any new skill. Left out: tdd duplicates
+    # test-driven-development and is model-listed; research overlaps
+    # deep-research and council; svg-diagrams has a dangling ../assets/
+    # reference; prototype is only offered optionally by wayfinder; afk is an
+    # unattended implement-and-merge run. code-review stays: retro links into
+    # its references/ and implement hands over to it.
+    # The repository has no LICENSE file (2026-10-13); the operator is asking
+    # the author for one.
+    skills:
+      - architecture-decision-records
+      - best-practices-research
+      - break-ui
+      - code-review
+      - codebase-design
+      - codebase-onboarding
+      - commit-msg
+      - council
+      - deep-research
+      - diagnosing-bugs
+      - document
+      - domain-modeling
+      - eli5
+      - explain-code
+      - frontend-design
+      - grill-me
+      - grill-with-docs
+      - grilling
+      - handoff
+      - implement
+      - implement-plan
+      - improve-codebase-architecture
+      - karpathy-guidelines
+      - mermaid-diagrams
+      - plain-ask
+      - pr
+      - remove-slop
+      - retro
+      - show-me
+      - simplify-this
+      - teach
+      - test-audit
+      - to-plan
+      - to-spec
+      - to-tickets
+      - wayfinder
+      - writing-for-agents
+      - yagni
 
   - id: pamudu-agent-bootstrap-skills
     repo: PamuduW/agentbot_skills
