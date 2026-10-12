@@ -1454,3 +1454,93 @@ class BoostConfigNewlineTests(BoostIntegrationTests):
             status = integration.setup_if_cli_available()
 
         self.assertEqual("broken", status.state)
+
+
+class BoostAwarenessCorrectionTests(BoostIntegrationTests):
+    """Boost's awareness text describes shell rewriting, and its Codex copy tells
+    the agent to pipe every command into `boost`. With shell-output filtering
+    pinned off neither holds, and the pipe turns every failing command's exit
+    status into boost's 0. Setup rewrites the text and keeps the version marker.
+    """
+
+    CLAUDE = (
+        "# boost-skill-version: v0.15.4\n# boost-agent: claude\n\n"
+        "Boost is installed. Shell commands are rewritten so Boost can compact noisy\n"
+    )
+    CODEX = (
+        "# Boost (Codex CLI)\n# boost-skill-version: v0.15.4\n\n"
+        "Always pipe shell commands into boost: `(<command>) | boost`.\n"
+    )
+    CURSOR = (
+        "---\ndescription: Boost CLI is installed\nalwaysApply: true\n---\n\n"
+        "# boost-skill-version: v0.15.4\n# boost-agent: cursor\n\n"
+        "Boost is installed. Shell commands are rewritten so Boost can compact noisy\n"
+    )
+
+    def _write(self) -> dict[str, Path]:
+        files = {
+            "claude": self.claude / "rules/boost-awareness.md",
+            "codex": self.codex / "BOOST.md",
+            "cursor": self._cursor() / "rules/boost-awareness.mdc",
+        }
+        for key, path in files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(getattr(self, key.upper()), encoding="utf-8")
+        return files
+
+    def test_policy_pins_shell_filtering_off(self) -> None:
+        from src.boost import BOOST_FEATURE_POLICY
+
+        self.assertIs(False, BOOST_FEATURE_POLICY["boost-cli-filtering"])
+
+    def test_every_host_file_is_rewritten_and_keeps_its_header(self) -> None:
+        integration = self._integration_type()(self._paths())
+        files = self._write()
+
+        rewritten = integration.correct_awareness()
+
+        self.assertEqual(3, len(rewritten))
+        for key, path in files.items():
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(host=key):
+                self.assertIn("# boost-skill-version: v0.15.4", text)
+                self.assertIn("do not pipe them into `boost`", text)
+                self.assertNotIn("Shell commands are rewritten", text)
+                self.assertNotIn("| boost`", text)
+        self.assertTrue(files["cursor"].read_text().startswith("---\ndescription:"))
+        self.assertTrue(files["codex"].read_text().startswith("# Boost (Codex CLI)\n"))
+        self.assertIn("# boost-agent: claude", files["claude"].read_text())
+
+    def test_the_version_marker_still_satisfies_the_stale_check(self) -> None:
+        integration = self._integration_type()(self._paths())
+        files = self._write()
+        integration.correct_awareness()
+
+        with mock.patch.object(
+            integration, "_installed_artifacts", return_value=tuple(files.values())
+        ):
+            self.assertEqual((), integration._stale_artifacts("boost v0.15.4"))
+
+    def test_a_second_run_changes_nothing(self) -> None:
+        integration = self._integration_type()(self._paths())
+        self._write()
+        integration.correct_awareness()
+
+        self.assertEqual((), integration.correct_awareness())
+
+    def test_a_file_without_the_marker_is_left_alone(self) -> None:
+        integration = self._integration_type()(self._paths())
+        path = self.claude / "rules/boost-awareness.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("custom text\n", encoding="utf-8")
+
+        integration.correct_awareness()
+
+        self.assertEqual("custom text\n", path.read_text(encoding="utf-8"))
+
+    def test_with_shell_filtering_on_boosts_text_stays(self) -> None:
+        integration = self._integration_type()(self._paths())
+        files = self._write()
+        with mock.patch.dict("src.boost.BOOST_FEATURE_POLICY", {"boost-cli-filtering": True}):
+            self.assertEqual((), integration.correct_awareness())
+        self.assertEqual(self.CLAUDE, files["claude"].read_text(encoding="utf-8"))

@@ -18,6 +18,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     import tomli as tomllib
 
+from .atomic_io import write_text_atomic
 from .command_runner import CommandRunner
 from .paths import AgentbotPaths
 
@@ -53,6 +54,26 @@ _ARTIFACT_VERSION_RE = re.compile(
     r"^#\s*boost-(?:hook|skill)-version:\s*(v?[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)\s*$",
     re.MULTILINE,
 )
+# What the awareness files say once Agentbot has set Boost up with shell-output
+# filtering off. Boost's own text, written by every `boost init`, describes
+# shell rewriting, and the Codex copy tells the agent to pipe every command into
+# `boost`: without `pipefail` that pipeline exits with boost's status, so a
+# failing command reads as a success. Its version-marker header is kept, because
+# the stale-artifact check reads it.
+_AWARENESS_BODY = """<!-- Rewritten by `agentbot boost setup`: Boost's own text describes shell
+rewriting, which Agentbot's Boost policy turns off (boost-cli-filtering). -->
+
+Boost is installed with shell-output filtering off. Run shell commands as they
+are and do not pipe them into `boost`: a pipe hides the command's exit status.
+
+Boost still compacts file reads and MCP tool output. When a compacted result
+lacks a detail you need, run the `boost retrieve <id>` command its marker shows
+(`--query "..."` or `--lines a-b` narrow a full dump).
+
+To read an Office file (.docx, .xlsx, .pptx, and similar), use
+`boost read <path>`. Notebook (`.ipynb`) reads come back as Markdown with
+truncated outputs; `boost retrieve <id>` returns the rest when a marker shows.
+"""
 _RELEASE_TAG_RE = re.compile(r"v?([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)")
 # Declared Boost feature-flag policy. Boost's report UI writes `user = <bool>`
 # under `[feature_flags."name"]`, and a user value beats JFrog's remote default,
@@ -481,7 +502,38 @@ class BoostIntegration:
                 state="broken",
                 message=f"Boost setup failed: {result.detail()}",
             )
+        self.correct_awareness(selected)
         return self.status()
+
+    def correct_awareness(self, hosts: Iterable[_BoostHost] | None = None) -> tuple[Path, ...]:
+        """Replace Boost's awareness text where Agentbot's policy contradicts it.
+
+        Only while `boost-cli-filtering` is pinned off; with it on, Boost's text
+        is accurate and stays. A file without Boost's version marker is left
+        alone: its format is unknown, and the marker is what this keeps.
+        """
+        if BOOST_FEATURE_POLICY.get("boost-cli-filtering", True):
+            return ()
+        rewritten: list[Path] = []
+        for host in hosts if hosts is not None else self._hosts():
+            path = host.awareness
+            if not path.is_file() or path.is_symlink():
+                continue
+            lines = path.read_text(encoding="utf-8").splitlines()
+            marker = next(
+                (i for i, line in enumerate(lines) if _ARTIFACT_VERSION_RE.match(line)),
+                None,
+            )
+            if marker is None:
+                continue
+            end = marker
+            while end + 1 < len(lines) and lines[end + 1].startswith("#"):
+                end += 1
+            text = "\n".join(lines[: end + 1]) + "\n\n" + _AWARENESS_BODY
+            if path.read_text(encoding="utf-8") != text:
+                write_text_atomic(path, text)
+                rewritten.append(path)
+        return tuple(rewritten)
 
     def setup_if_cli_available(self) -> BoostStatus:
         current = self.status()

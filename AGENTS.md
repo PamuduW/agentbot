@@ -23,6 +23,10 @@ Skills CLI through `npx`.
 | `base/` | Product templates rendered into managed repositories; not development policy |
 | `global/` | Authored machine-policy and Claude statusline sources |
 | `agentos.yaml` | Safe-default workspace profile and output allowlist |
+| `cli/` | Declared agent CLI settings (`cli-config`) |
+| `mcp/` | MCP server catalog and pinned contracts |
+| `review/` | Versioned `setup-review` prompts and checklists |
+| `vscode.yaml`, `vscode/` | Selected VS Code extensions and owned settings |
 | `docs/` | Current technical documentation and product roadmap |
 | `tests/` | Python and shell regression suites |
 
@@ -55,7 +59,5 @@ focused checks. Run the complete gate before handoff.
   either product's scope.
 - Keep workspace mutation preview-first. Removing a workspace registration
   must never delete workspace files.
-- Archived MCP JSON and catalog data are research inputs. No active command may
-  load them until a new, tested ownership design is implemented.
 - Do not restore retired commands or the old catalog control plane without an
   approved design and migration plan.
