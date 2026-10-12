@@ -43,7 +43,7 @@ read-only mode:
 | CLI | Review command |
 |---|---|
 | Claude Code | `claude -p --permission-mode plan --add-dir … --allowedTools WebSearch WebFetch -- PROMPT` |
-| Codex | `codex exec --sandbox read-only --skip-git-repo-check --search -- PROMPT` |
+| Codex | `codex --search exec --sandbox read-only --skip-git-repo-check -- PROMPT` |
 | Cursor CLI | `cursor-agent -p --mode plan --trust --output-format text --add-dir … -- PROMPT` |
 | Antigravity | `agy --mode plan --print-timeout Ns --add-dir … -p PROMPT` |
 
