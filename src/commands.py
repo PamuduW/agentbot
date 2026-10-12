@@ -487,6 +487,38 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("cli-config status", "cli-config apply"),
     ),
     CommandSpec(
+        "setup-review",
+        "agentbot setup-review [--cli claude|codex|cursor|agy] [--scope setup|cli-config]",
+        "mutating",
+        "Have an agent CLI review Dotfiles, Agentbot and every enabled skill source.",
+        (
+            option(
+                "--cli NAME",
+                "Agent CLI to run: claude, codex, cursor or agy. Remembered for the next run.",
+                "last used, else ask",
+            ),
+            option(
+                "--scope NAME",
+                "setup reviews everything; cli-config checks only the declared cli/ keys "
+                "against each CLI's documentation.",
+                "setup",
+            ),
+            option("--workspace PATH", "Development workspace with the product checkouts.", "detected"),
+            option("--timeout MINUTES", "Stop the review after this long.", "45"),
+            option("--source-budget N", "Most external pages the review may read.", "40"),
+            option("--no-update", "Never offer the update phase.", "offer at a terminal"),
+        ),
+        "Runs the chosen CLI read-only and saves its report under ~/.config/agentbot/setup-reviews; "
+        "an interactive update session starts only after you answer yes.",
+        (
+            "agentbot setup-review --cli codex",
+            "agentbot setup-review --scope cli-config --no-update",
+        ),
+        ("cli-config", "skills"),
+        "public",
+        ("setup-review",),
+    ),
+    CommandSpec(
         "cursor",
         "agentbot cursor status|statusline",
         "mutating",

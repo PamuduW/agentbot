@@ -508,6 +508,7 @@ Usage: ./install.sh <command> [args]
   cli-config status|apply    Merge the declared agent CLI configuration keys
   cursor status|statusline   Inspect or install the managed Cursor statusline
   vscode status|seed|apply   Reconcile VS Code extensions and owned settings
+  setup-review [--cli NAME]  Review the setup with an agent CLI (report first, edits on yes)
   help                       Show this rescue summary
 
 For the complete command and option reference, run: agentbot help
@@ -573,7 +574,7 @@ main() {
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;
-	cli-config | cursor | vscode)
+	cli-config | cursor | vscode | setup-review)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;

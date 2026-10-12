@@ -362,6 +362,11 @@ agentbot cursor status|statusline     # the managed Cursor CLI statusline
 agentbot cli-config status|apply      # declared Claude, Codex, Cursor keys
 ```
 
+`agentbot setup-review` has an agent CLI you choose review the whole setup and
+every enabled skill source, read-only, and saves the report under
+`~/.config/agentbot/setup-reviews`; edits happen only in a session you start
+afterwards. See [Setup review](docs/setup-review.md).
+
 The menu and direct CLI share the same command model and lifecycle code. Token
 input is masked, and normal output shows only a fingerprint.
 
@@ -587,6 +592,7 @@ See [Workspaces and rendering](docs/workspaces-and-rendering.md).
 - [VS Code](docs/vscode.md)
 - [Cursor statusline](docs/cursor-statusline.md)
 - [Agent CLI configuration](docs/cli-config.md)
+- [Setup review](docs/setup-review.md)
 - [Validation](docs/validation.md)
 - [Roadmap](docs/roadmap.md)
 - [Quick start](QUICKSTART.md)

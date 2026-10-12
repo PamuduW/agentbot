@@ -91,10 +91,13 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     # `statusLine` block wholesale, so two owners would overwrite each other --
     # the same collision that keeps BoostGraph off.
     "boost-claude-status-line": False,
-    # The product: rewrite supported CLI commands and filter their output. On
-    # by remote default, pinned because the whole integration is pointless
-    # without it and a remote flip would disable it silently.
-    "boost-cli-filtering": True,
+    # Rewrites supported shell commands into `cmd | boost` to filter their
+    # output. Off by the user's decision of 2026-10-12: Boost's hook answers
+    # every rewrite with permissionDecision "allow" in Claude Code and Codex,
+    # so `git push` or `curl | sh` ran without a permission prompt, for a
+    # measured saving under 1%. Off also means shell output is no longer
+    # redacted; file reads and MCP output still are.
+    "boost-cli-filtering": False,
     # Aimed at article and paper prose. This is a code workspace: negligible
     # gain, and it makes what the agent reads a lossy abbreviation of what the
     # tool printed.

@@ -246,6 +246,26 @@ def _handle_cli_config(context: CommandContext) -> int:
     return 1 if report.failures else 0
 
 
+def _handle_setup_review(context: CommandContext) -> int:
+    from . import setup_review
+
+    args = context.args
+    workspace = getattr(args, "workspace", None)
+    caller = os.environ.get("AGENTBOT_CALLER_PWD")
+    options = setup_review.ReviewOptions(
+        cli=args.review_cli,
+        scope=args.review_scope,
+        workspace=Path(workspace).expanduser().resolve() if workspace else None,
+        timeout_minutes=args.review_timeout,
+        source_budget=args.source_budget,
+        update=False if args.no_update else None,
+    )
+    print_header("Setup review", "Agentbot \u203a Setup review")
+    return setup_review.run(
+        context.paths, options, caller_dir=Path(caller) if caller else None
+    )
+
+
 def _handle_cursor(context: CommandContext) -> int:
     from .cursor_statusline import inspect_cursor_statusline, install_cursor_statusline
 
@@ -1455,6 +1475,7 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "memory": _handle_memory,
     "cli-config": _handle_cli_config,
     "cursor": _handle_cursor,
+    "setup-review": _handle_setup_review,
     "vscode": _handle_vscode,
     "update": _handle_update,
     "workspace": _handle_workspace,
@@ -1464,6 +1485,56 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "install": _handle_install,
     "skills": _handle_skills,
 }
+
+
+def _add_agent_cli_parsers(subparsers: argparse._SubParsersAction) -> None:
+    cli_config = subparsers.add_parser("cli-config", help="Manage agent CLI configuration")
+    cli_config_sub = cli_config.add_subparsers(dest="cli_config_command")
+    cli_config_sub.add_parser("status", help="Preview CLI config changes without writing")
+    cli_config_sub.add_parser("apply", help="Merge declared keys into each CLI config")
+    cursor = subparsers.add_parser("cursor", help="Inspect or install the Cursor statusline")
+    cursor_sub = cursor.add_subparsers(dest="cursor_command")
+    cursor_sub.add_parser("status", help="Report the Cursor statusline state")
+    cursor_sub.add_parser("statusline", help="Install the managed Cursor statusline")
+    _add_setup_review_parser(subparsers)
+
+
+def _add_setup_review_parser(subparsers: argparse._SubParsersAction) -> None:
+    review = subparsers.add_parser(
+        "setup-review", help="Review Dotfiles, Agentbot and skill sources with an agent CLI"
+    )
+    review.add_argument(
+        "--cli",
+        dest="review_cli",
+        choices=("claude", "codex", "cursor", "agy"),
+        help="Agent CLI to run; remembered for the next review",
+    )
+    review.add_argument(
+        "--scope",
+        dest="review_scope",
+        choices=("setup", "cli-config"),
+        default="setup",
+        help="setup: the whole setup and skill sources; cli-config: only the cli/ desired state",
+    )
+    review.add_argument("--workspace", help="Development workspace holding the product checkouts")
+    review.add_argument(
+        "--timeout",
+        dest="review_timeout",
+        type=int,
+        default=45,
+        metavar="MINUTES",
+        help="Stop the review after this many minutes",
+    )
+    review.add_argument(
+        "--source-budget",
+        type=int,
+        default=40,
+        metavar="N",
+        help="Most external pages the review may read",
+    )
+    review.add_argument(
+        "--no-update", action="store_true", help="Save the report and never offer the update phase"
+    )
 
 
 def _add_gitlab_token_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -1774,14 +1845,7 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_restore.add_argument("--yes", action="store_true", dest="confirm")
     mcp_serve = mcp_sub.add_parser("serve", help=argparse.SUPPRESS)
     mcp_serve.add_argument("--catalog-id", required=True)
-    cli_config = subparsers.add_parser("cli-config", help="Manage agent CLI configuration")
-    cli_config_sub = cli_config.add_subparsers(dest="cli_config_command")
-    cli_config_sub.add_parser("status", help="Preview CLI config changes without writing")
-    cli_config_sub.add_parser("apply", help="Merge declared keys into each CLI config")
-    cursor = subparsers.add_parser("cursor", help="Inspect or install the Cursor statusline")
-    cursor_sub = cursor.add_subparsers(dest="cursor_command")
-    cursor_sub.add_parser("status", help="Report the Cursor statusline state")
-    cursor_sub.add_parser("statusline", help="Install the managed Cursor statusline")
+    _add_agent_cli_parsers(subparsers)
     vscode = subparsers.add_parser("vscode", help="Manage VS Code extensions and settings")
     vscode_sub = vscode.add_subparsers(dest="vscode_command")
     vscode_sub.add_parser("status", help="Preview VS Code changes without writing")
