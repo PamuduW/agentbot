@@ -121,7 +121,7 @@ What it is told:
   outdated, improvements), across repositories, the skill-source review
   (full and skills scopes), still open from earlier reviews, rejected noise,
   questions for the operator, checklist items not reached, and sources;
-  about 2,500 words at most, cutting the lowest severity first.
+  readable in one sitting, cutting the lowest severity first.
 
 ## After a review
 

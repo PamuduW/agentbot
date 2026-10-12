@@ -1,7 +1,7 @@
 # Global Agent Baseline
 
 Machine-level behavior for Agentbot-managed coding agents. Repository policy
-owns project-specific engineering rules. Keep this provider-neutral and concise.
+owns project-specific engineering rules.
 
 ## Safety and evidence
 

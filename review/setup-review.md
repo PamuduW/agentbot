@@ -139,9 +139,9 @@ Do not report:
 ## Report format
 
 Print the report as Markdown and nothing else, with these headings in this
-order. Write "None." under a heading with nothing in it. Keep the whole
-report under about 2,500 words: rank, and cut the lowest-severity findings
-first, listing what you cut in one line at the end.
+order. Write "None." under a heading with nothing in it. Keep the report
+readable in one sitting: rank findings, cut the lowest-severity ones first,
+and list what you cut in one line at the end.
 
 - `## Summary`: at most five lines; the most important finding first, then
   the counts per severity.

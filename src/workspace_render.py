@@ -303,7 +303,7 @@ def resolve_agents_policy(
 def render_claude() -> str:
     return (
         f"{GENERATED_HEADER}\n\n"
-        "IMPORTANT: Read and follow all instructions in AGENTS.md before starting any task.\n\n"
+        "Repository policy is in AGENTS.md, imported below.\n\n"
         "@AGENTS.md\n"
     )
 
@@ -326,9 +326,8 @@ def render_cursor() -> str:
         "alwaysApply: true\n"
         "---\n\n"
         f"{GENERATED_HEADER}\n\n"
-        "IMPORTANT: Read and follow all instructions in AGENTS.md at the "
-        "repository root before starting any task. It is the canonical policy "
-        "for this repository; this file adds nothing to it.\n"
+        "Follow AGENTS.md at the repository root: it is the canonical policy "
+        "for this repository, and this file adds nothing to it.\n"
     )
 
 
