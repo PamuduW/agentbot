@@ -425,9 +425,18 @@ class IntegrationRefreshTests(unittest.TestCase):
 
         self.assertEqual(["vscode", "cursor"], surfaced)  # CLI config is merged once, earlier
         self.assertEqual(
-            ["boost", "vscode", "cursor", "codex-remote", "memory-backup", "vault-hooks"],
+            [
+                "boost",
+                "vscode",
+                "cursor",
+                "codex-remote",
+                "memory-backup",
+                "vault-hooks",
+                "skill-adaptations",
+            ],
             [o.key for o in outcomes],
         )
+        self.assertIn("Adapted skills", [o.label for o in outcomes])
         backup.assert_called_once_with(lifecycle.paths.root, lifecycle.paths.config_home)
         boost.setup_if_cli_available.assert_called_once_with()
         with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
