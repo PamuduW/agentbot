@@ -215,6 +215,16 @@ class EveryCliTests(SetupReviewTestCase):
                 self.assertEqual(0o700, stat.S_IMODE(run_dir.stat().st_mode))
                 self.assertEqual(0o600, stat.S_IMODE((run_dir / "report.md").stat().st_mode))
 
+    def test_codex_search_comes_before_exec(self) -> None:
+        # `codex exec --search` exits 2 ("unexpected argument"); found in the
+        # first live Codex run after the merge.
+        self.install("codex")
+
+        self.assertEqual(0, self.run_review(cli="codex"))
+
+        argv = self.review_calls()[0]["argv"]
+        self.assertEqual(["--search", "exec"], argv[1:3])
+
     def test_unavailable_cli_is_reported_not_substituted(self) -> None:
         self.install("codex")
 

@@ -485,7 +485,8 @@ def review_argv(
             argv += ["--add-dir", *dirs]
         argv += ["--allowedTools", "WebSearch", "WebFetch", "--", prompt]
     elif key == "codex":
-        argv = [exe, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--search",
+        # --search is an option of `codex` itself; `codex exec` rejects it.
+        argv = [exe, "--search", "exec", "--sandbox", "read-only", "--skip-git-repo-check",
                 "--", prompt]
     elif key == "cursor":
         # --trust answers Cursor's workspace-trust question for the working
