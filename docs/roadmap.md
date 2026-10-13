@@ -5,7 +5,11 @@ on 2026-09-15 and made MCP an install component. Phase 4 delivered durable
 memory as the workspace's file-first, two-tier design (ADR-0009): a private Git
 vault read at schema 3 only, with automatic sync, tracked core proposals, and
 backup. The core has one Python lifecycle backend, one diagnostics snapshot,
-one command model, and focused shell adapters and tests.
+one command model, and focused shell adapters and tests. Since then the
+workspace's capability-tools roadmap added the agent-run setup review, four
+managed agent CLIs (Antigravity joined on 2026-10-11), upstream tracking for
+adapted skills, and the stage 10 pilot fixes; its decisions are in the
+workspace `docs/roadmap/capability-tools.md`.
 
 This is a living roadmap. The runtime source and operational documentation are
 the authority; this file records the delivered contracts and the future
@@ -28,8 +32,11 @@ must use Agentbot and agentbot.
 | Local registration and resync | src/workspace_state.py, src/workspace_service.py | Live |
 | Workspace commands | src/cli.py, install.sh | Live |
 | Workspaces menu | scripts/menus/workspaces.sh | Live |
-| Global machine baseline | global/AGENTS.md and install.sh global | Live |
-| Curated skills | skills.sources.yaml and install.sh skills ... | Live |
+| Global machine baseline | global/AGENTS.md and `agentbot global` | Live |
+| Curated skills | skills.sources.yaml and `agentbot skills ...` (`./install.sh skills ...` before the launcher exists) | Live; a skills-only update reconciles first, like a full update |
+| Adapted skills | src/skill_adaptations.py, a source's adaptations.yaml | Live: reports when an adapted skill's upstream changes |
+| Setup review | src/setup_review.py, review/ | Live: an agent CLI reviews the setup read-only and files the report in Dotfiles |
+| Antigravity CLI surface | src/antigravity.py | Live: policy, shared skill store and MCP for `agy` |
 | Dotfiles integration | sibling dotfiles Agentbot bridge | Live |
 | Provider-neutral MCP management | mcp/catalog.json and src/mcp_* | Live; five servers admitted (BoostGraph admitted and rejected 2026-10-08), MCP is an install component |
 | Durable memory | src/memory*.py, `agentbot memory` | Live: two-tier vault, schema 3 (workspace ADR-0009) |
@@ -391,3 +398,6 @@ removed control-plane code directly into the live lifecycle.
 | 2026-09-13 | Delivered Phase 3 Gate 5.1A with an empty default-off catalog, native renderers, private ownership, atomic reconciliation, CLI, menu, and Doctor integration |
 | 2026-09-15 | Phase 3 admitted all five MCP candidates and made MCP an install component |
 | 2026-09-29 | Phase 4 delivered as the two-tier memory vault (schema 3, ADR-0009); roadmap reconciled before the merge to `main` |
+| 2026-10-11 | Antigravity CLI (`agy`) added as the fourth managed agent: rendered policy, shared skill store, MCP client |
+| 2026-10-12 | `agentbot setup-review` redesigned (menu entry, synced checkouts, reports filed in Dotfiles); Boost's CLI filtering turned off and its agent instructions corrected; first-party brainstorming and test-driven-development with upstream tracking |
+| 2026-10-13 | Stage 10 pilot fixes: skill handover between sources, skills update through reconcile, report redaction of table rows, source-ID validation; `agentbot skills` and `agentbot global` became launcher commands |
