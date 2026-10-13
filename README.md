@@ -550,7 +550,8 @@ and isolated Claude, Codex, and Cursor launches pass with the same credential.
 [`skills.sources.yaml`](skills.sources.yaml) is the canonical source manifest.
 Global installs and pins live under `~/.agents/`; the committed
 [`skills-lock.json`](skills-lock.json) is a project-level stub, not a copy of
-the global lock.
+the global lock. The installed launcher takes the same commands
+(`agentbot skills list`); it hands them to `install.sh`.
 
 ```bash
 ./install.sh skills install
