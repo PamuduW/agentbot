@@ -121,6 +121,16 @@ assistant links and managed outputs. A missing CLI is a valid skip. Agentbot
 does not build project graphs, install hooks, or add Graphify to the curated
 Git-source manifest.
 
+## Archify
+
+`tt-a1i/archify` is a curated source for presentation-grade architecture,
+workflow and trust-boundary diagrams (workspace roadmap item 10.12); Mermaid
+stays the default for repository documentation. The skill's `finalize` gate
+needs a Chrome: Dotfiles installs Chrome for Testing's headless shell and its
+`.bashrc` exports `ARCHIFY_CHROME`, plus `ARCHIFY_UPDATE_CHECK_DISABLED=1` so
+the skill does not check GitHub for a newer release on every render. Agentbot
+installs only the skill; it is name-only in Claude.
+
 ## Boost
 
 Dotfiles owns the verified `boost` executable. Agentbot owns Claude, Codex,

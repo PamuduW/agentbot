@@ -177,6 +177,17 @@ sources:
     skills:
       - gitlab-ci-skill
 
+  - id: archify
+    # Roadmap item 10.12 (2026-10-13): promoted for presentation-grade
+    # architecture, workflow and trust-boundary diagrams (FYP report and viva);
+    # Mermaid stays the default for repository documentation. Its finalize gate
+    # drives the Chrome headless shell Dotfiles installs, through ARCHIFY_CHROME,
+    # and Dotfiles' .bashrc sets ARCHIFY_UPDATE_CHECK_DISABLED=1 so it does not
+    # check GitHub on every render. Name-only in Claude (cli/claude.settings.json).
+    repo: tt-a1i/archify
+    skills:
+      - archify
+
   - id: obsidian
     # Obsidian's own creator. Six skills: obsidian-markdown is the one the
     # memory vault needs -- wikilinks, properties, callouts, embeds, tags --
