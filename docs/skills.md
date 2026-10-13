@@ -86,8 +86,9 @@ lock's `skillFolderHash`, recorded at install, is the receipt:
 A source may publish adaptations of another source's skills, listed in an
 `adaptations.yaml` at its root with the upstream repository, the skill's path
 there, the commit the adaptation was made from, and that path's Git tree hash
-at that commit. Every update compares the recorded hash with the same path in
-the upstream source's verified clone and records the result in
+at that commit. Every applied update (not a dry run or a declined plan)
+compares the recorded hash with the same path in the upstream source's
+verified clone and records the result in
 `~/.config/agentbot/skill-adaptations.json`; the update table and
 `agentbot status` show it as "Adapted skills", for example
 `brainstorming: superpowers changed since bb92a77`. A change elsewhere in the
