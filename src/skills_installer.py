@@ -862,8 +862,35 @@ def apply_skill_update(
     if current_manifest != plan.manifest_sha256 or current_lock != plan.lock_sha256:
         raise SkillsInstallError("managed skill state changed after preview; preview again")
     config = load_skills_sources(paths.skills_sources_file)
+    # The same transaction a full update runs: reconcile first (it hands a
+    # skill moving between sources to the source that now selects it), and the
+    # install as its validation step, so a failed install rolls both back.
+    from .skill_reconcile import apply_reconcile_plan, build_reconcile_plan
+
+    lock = json.loads(lock_file.read_text(encoding="utf-8")) if lock_file.is_file() else {}
+    reconcile_plan = build_reconcile_plan(
+        config,
+        discovered={catalog.source_id: catalog.skills for catalog in plan.catalogs},
+        lock=lock,
+    )
+    results: list[InstallResult] = []
     with verified_source_checkouts(config, plan.catalogs, runner=runner) as checkouts:
-        return install_skills(paths, checkouts=checkouts, runner=runner)
+
+        def install() -> None:
+            results.extend(install_skills(paths, checkouts=checkouts, runner=runner))
+
+        outcome = apply_reconcile_plan(
+            paths,
+            config,
+            reconcile_plan,
+            checkouts=checkouts,
+            confirm=True,
+            validate=install,
+            runner=runner,
+        )
+    if outcome.status not in {"applied", "applied-with-local-changes"}:
+        raise SkillsInstallError(f"skill update was not applied: {outcome.message or outcome.status}")
+    return results
 
 
 def restore_skills(

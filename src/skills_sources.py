@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -129,6 +130,12 @@ def validate_skills_sources(
         source_id = item.get("id")
         if not isinstance(source_id, str) or not source_id.strip():
             raise SkillsSourcesError(f"{label}: sources[{index}].id must be a non-empty string")
+        # IDs become folder names, so one must never be able to name a path.
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", source_id) or ".." in source_id:
+            raise SkillsSourcesError(
+                f"{label}: sources[{index}].id {source_id!r} must be letters, digits, "
+                "'.', '_' or '-', starting with a letter or digit"
+            )
         if source_id in seen_ids:
             raise SkillsSourcesError(f"{label}: duplicate source id {source_id!r}")
         seen_ids.add(source_id)

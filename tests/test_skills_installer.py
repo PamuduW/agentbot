@@ -546,6 +546,55 @@ sources:
                 plan_skill_update(paths)
             discover.assert_not_called()
 
+    def test_skill_update_installs_inside_the_reconcile_transaction(self) -> None:
+        """Break caught in pilot 10.7: the skills-only update installed directly,
+        so a skill moving between sources never got the reconcile handover and
+        the install refused it, as the full update did before its fix."""
+        from contextlib import contextmanager
+        from hashlib import sha256
+
+        from src.skill_catalog import SourceCatalog
+        from src.skill_reconcile import ReconcileResult
+        from src.skills_installer import SkillUpdatePlan, apply_skill_update
+
+        paths = self._paths()
+        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
+        lock_file.parent.mkdir(parents=True)
+        lock_file.write_text('{"skills": {}}\n', encoding="utf-8")
+        catalog = SourceCatalog("wild", "owner/all", "a" * 40, ("moved",))
+        plan = SkillUpdatePlan(
+            (catalog,),
+            (),
+            sha256(paths.skills_sources_file.read_bytes()).hexdigest(),
+            sha256(lock_file.read_bytes()).hexdigest(),
+        )
+        events: list[str] = []
+
+        @contextmanager
+        def checkouts(*_args, **_kwargs):
+            yield {"wild": self.root / "checkout"}
+
+        def reconcile(_paths, _config, reconcile_plan, **kwargs):
+            events.append("reconcile")
+            self.assertTrue(kwargs["confirm"])
+            self.assertEqual({"wild": self.root / "checkout"}, kwargs["checkouts"])
+            kwargs["validate"]()
+            return ReconcileResult("applied", (), (), ("moved",))
+
+        def install(*_args, **_kwargs):
+            events.append("install")
+            return []
+
+        with (
+            patch.object(type(paths), "global_skill_lock", new_callable=lambda: property(lambda _: lock_file)),
+            patch("src.skills_installer.verified_source_checkouts", checkouts),
+            patch("src.skill_reconcile.apply_reconcile_plan", reconcile),
+            patch("src.skills_installer.install_skills", install),
+        ):
+            apply_skill_update(paths, plan)
+
+        self.assertEqual(["reconcile", "install"], events)
+
     def test_revision_operations_reject_symlinked_lock_before_network(self) -> None:
         from hashlib import sha256
 

@@ -550,17 +550,17 @@ and isolated Claude, Codex, and Cursor launches pass with the same credential.
 [`skills.sources.yaml`](skills.sources.yaml) is the canonical source manifest.
 Global installs and pins live under `~/.agents/`; the committed
 [`skills-lock.json`](skills-lock.json) is a project-level stub, not a copy of
-the global lock. The installed launcher takes the same commands
-(`agentbot skills list`); it hands them to `install.sh`.
+the global lock. Before the launcher is installed, run the same commands
+from a checkout as `./install.sh skills ...`.
 
 ```bash
-./install.sh skills install
-./install.sh skills update
-./install.sh skills list
-./install.sh skills doctor
-./install.sh skills prune             # preview source reconciliation
-./install.sh skills prune --yes       # remove selected managed candidates
-./install.sh skills remove-manual     # preview user-placed skills
+agentbot skills install
+agentbot skills update
+agentbot skills list
+agentbot skills doctor
+agentbot skills prune             # preview source reconciliation
+agentbot skills prune --yes       # remove selected managed candidates
+agentbot skills remove-manual     # preview user-placed skills
 ```
 
 Graphify is installed through its own CLI and is not a curated Git source.

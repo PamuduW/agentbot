@@ -250,13 +250,14 @@ test_command_lib_selects_one_detail() (
 	[[ "$(<"$capture")" == command_lib ]] || return 1
 	[[ "$output" == *'Agentbot › Help › boot'* && "$output" == *'agentbot boot'* ]] || return 1
 
-	# And the derived menu carries the public commands plus the way into the
-	# bootstrap ones: a command added to src/commands.py appears here with
-	# nothing edited, which is the reason it is derived at all.
+	# And the derived menu carries every launcher command: a command added to
+	# src/commands.py appears here with nothing edited, which is the reason it
+	# is derived at all. The skills commands are launcher commands now, and
+	# with no bootstrap-only command left there is no entry leading to one.
 	agentbot_menu_load command_lib || return 1
 	[[ "${MENU_SIMPLE_LABELS[*]}" == *'status [read-only]'* ]] || return 1
-	[[ "${MENU_SIMPLE_LABELS[*]}" == *'Bootstrap commands'* ]] || return 1
-	[[ "${MENU_SIMPLE_KEYS[*]}" == *__bootstrap__* ]]
+	[[ "${MENU_SIMPLE_LABELS[*]}" == *'skills install'* ]] || return 1
+	[[ "${MENU_SIMPLE_KEYS[*]}" != *__bootstrap__* ]]
 )
 
 test_graphify_library_is_data_driven_and_supported() (

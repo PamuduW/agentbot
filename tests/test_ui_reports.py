@@ -785,10 +785,12 @@ class StatusSummaryTests(unittest.TestCase):
 
 
 class CommandHelpTests(unittest.TestCase):
-    def test_full_catalog_lists_both_surfaces(self):
+    def test_full_catalog_lists_every_launcher_command(self):
         text, _ = _capture(print_command_help)
         self.assertIn("Commands", text)
-        self.assertIn("Bootstrap commands", text)
+        self.assertIn("skills install", text)
+        # No bootstrap-only command is left, so no empty section for one.
+        self.assertNotIn("Bootstrap commands", text)
 
     def test_a_single_command_renders_its_detail(self):
         from src.commands import command_by_name

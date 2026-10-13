@@ -12,9 +12,11 @@ records the repository, manifest, global lock, and remote revisions, then
 checks those inputs again before apply. A source failure makes the operation
 fail even if other sources installed successfully.
 
-For a skills-only update, run `./install.sh skills update` to preview source
+For a skills-only update, run `agentbot skills update` to preview source
 revisions and the review ID. Apply that exact preview with
-`./install.sh skills update --yes --plan-sha256 <review-id>`. Apply rechecks the
+`agentbot skills update --yes --plan-sha256 <review-id>`. Apply runs the same
+transaction as a full update (reconcile, then the install as its validation
+step), so a skill moving between sources is handed over. It rechecks the
 manifest, lock, source revisions, and discovered source inventory before it
 installs anything. If any changed, preview again. Preview clones into temporary directories and does not change installed
 skills or the lock.
@@ -36,7 +38,7 @@ prior reviewed selection per changed source. A legacy lock without source
 commits remains readable, but exact restore is unavailable until a reviewed
 install or update records those commits.
 
-`./install.sh skills restore` previews the pinned revisions. Add `--yes` to
+`agentbot skills restore` previews the pinned revisions. Add `--yes` to
 clone those exact commits and reinstall only the recorded curated selections.
 Use `skills restore --previous` to preview the prior reviewed selection, then
 add `--yes` to apply it. Sources without a previous snapshot keep their current

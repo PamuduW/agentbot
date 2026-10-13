@@ -431,9 +431,20 @@ class CliTests(unittest.TestCase):
                 "setup-review",
                 "vscode",
                 "help",
+                # Launcher commands since 2026-10-13; they were bootstrap-only,
+                # which the help explained and people still typed.
+                "skills install",
+                "skills update",
+                "skills restore",
+                "skills list",
+                "skills doctor",
+                "skills prune",
+                "skills remove-manual",
+                "global",
             },
             {spec.name for spec in commands_for_surface("public")},
         )
+        self.assertEqual((), commands_for_surface("bootstrap"))
 
     def test_every_command_spec_has_a_help_detail(self) -> None:
         from src.commands import COMMANDS

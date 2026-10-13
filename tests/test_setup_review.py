@@ -577,6 +577,27 @@ class SafetyTests(SetupReviewTestCase):
         self.assertEqual(2, report.count("[refused: credential-shaped setting"))
         self.assertIn("model = gpt-6", report)
 
+    def test_credential_settings_in_table_rows_are_refused(self) -> None:
+        # The report format asks for Markdown tables, and a row has no ':' or
+        # '=' after its key, so the setting rule never saw it (pilot 10.7).
+        text = (
+            "| Setting | Value | Source |\n"
+            "|---|---|---|\n"
+            "| `apiKey` | opaque-value-123 | cli/codex.config.toml |\n"
+            "| model | gpt-6 | cli/codex.config.toml |\n"
+            "| password | hunter2 |\n"
+        )
+
+        report, counts = setup_review.redact_report(text)
+
+        self.assertNotIn("opaque-value-123", report)
+        self.assertNotIn("hunter2", report)
+        self.assertEqual(2, counts["REFUSED_CREDENTIAL_SETTING"])
+        self.assertIn("| model | gpt-6 | cli/codex.config.toml |", report)
+        self.assertIn("| Setting | Value | Source |", report)
+        # The other columns of a refused row survive.
+        self.assertIn("cli/codex.config.toml |", report.splitlines()[2])
+
     def test_the_review_never_installs_or_prunes_skills(self) -> None:
         self.install("claude")
         with (
