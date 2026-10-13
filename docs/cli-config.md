@@ -68,15 +68,28 @@ skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
 Agentbot owns that whole object, so add personal overrides in
 `cli/claude.settings.json` rather than in `~/.claude/settings.json`.
 
+Codex's desired state sets `approvals_reviewer = "auto_review"`, a decision
+recorded on 2026-10-13 after the setup review found it undocumented. When
+Codex would stop to ask -- an escalated shell command, a blocked network
+request, an edit outside the writable roots, an MCP tool approval -- it routes
+the request to a separate reviewer agent instead of to the operator. It cannot
+widen the sandbox: the sandbox and the allow-lists still bound what any
+approval can grant. It is kept because Codex runs long unattended tasks here
+(co-council, Remote Control), where a person is often not watching the prompt.
+Set it to `"user"` to have Codex ask the operator again. Source: OpenAI's
+auto-review page, `learn.chatgpt.com/docs/sandboxing/auto-review`.
+
 Antigravity's desired state holds `agentMode: accept-edits`,
 `artifactReviewPolicy: agent-decides`, verbosity, notifications, the
-feedback survey, and `enableTelemetry: false` (on by default in `agy`; keys
-from the official settings page,
+feedback survey, `enableTelemetry: false` (on by default in `agy`), and
+`toolPermission: request-review` (keys from the official settings page,
 `antigravity.google/docs/settings?tab=cli`; `agy` writes only values that
 differ from its defaults). Edits and plans are reviewable after the fact, so
-those two are shared. `toolPermission` stays per machine: it decides whether
-`agy` runs shell commands without asking, and a committed value would grant
-that on a machine before anyone has looked at it. `trustedWorkspaces` stays
+those two are shared. `toolPermission` decides whether `agy` runs write, shell
+and web tools without asking; `request-review` asks first, as the other three
+clients do. It was per machine until the 2026-10-13 setup review found
+`always-proceed` on the home PC, and the operator chose to declare the asking
+value everywhere (declaring it grants nothing). `trustedWorkspaces` stays
 per machine too, because it lists local paths. Antigravity has no setting that
 turns off its own memory, which stays advisory (ADR-0008).
 
@@ -92,7 +105,7 @@ settings schema (2026.10.01), so they stay.
 the top-level `effortLevel` is the older form: Opus 5.5 and later models ignore
 it and start at their own default, so `model: opus` was not getting the
 declared `medium`. The desired state now also declares `modelSettings` with
-`medium` for `claude-opus-5-5` and `claude-sonnet-5`; the top-level key stays
+`medium` for `claude-opus-5-5`, `claude-sonnet-5` and `claude-sonnet-5-5` (keys are full model IDs, so each Sonnet release needs its own); the top-level key stays
 for older models. Agentbot owns `modelSettings` as a whole, so a level saved
 with `/effort` lasts until the next update; change it here instead. Two other
 suggestions from the same review were not taken: Cursor's `version` is
