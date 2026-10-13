@@ -130,6 +130,40 @@ class SkillAdaptationTests(unittest.TestCase):
         self.assertEqual("unknown", result.state)
         self.assertIn("skills/gone not found upstream", result.detail)
 
+    def test_an_entry_missing_a_field_is_reported_incomplete(self) -> None:
+        for missing in ("skill", "upstream", "path", "tree"):
+            with self.subTest(missing=missing):
+                self._manifest(**{missing: ""})
+
+                (result,) = skill_adaptations.check(self.config, self.checkouts)
+
+                self.assertEqual(("unknown", "incomplete entry"), (result.state, result.detail))
+                self.assertEqual("?" if missing == "skill" else "brainstorming", result.skill)
+
+    def test_a_managed_upstream_not_checked_out_in_this_update_is_unknown(self) -> None:
+        # Its repository is in the manifest, but this update has no clone of it.
+        (result,) = skill_adaptations.check(self.config, {"mine": self.first_party})
+
+        self.assertEqual(
+            ("unknown", "upstream is not a managed source"), (result.state, result.detail)
+        )
+
+    def test_record_creates_the_state_directory_and_overwrites(self) -> None:
+        self.paths = AgentbotPaths(
+            root=self.root,
+            codex_home=self.root / ".codex",
+            claude_home=self.root / ".claude",
+            cursor_home=self.root / ".cursor",
+            config_home=self.root / "not" / "yet" / "there",
+            agents_home=self.root / ".agents",
+        )
+        results = skill_adaptations.check(self.config, self.checkouts)
+
+        skill_adaptations.record(self.paths, results)
+        skill_adaptations.record(self.paths, results)
+
+        self.assertEqual(("1 current with upstream", "ok"), skill_adaptations.summary(self.paths))
+
     def test_a_source_without_a_manifest_has_nothing_to_check(self) -> None:
         (self.first_party / "adaptations.yaml").unlink()
 

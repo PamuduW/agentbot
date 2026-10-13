@@ -798,6 +798,19 @@ _SETTING_LINE = re.compile(
 )
 
 
+# The same setting as a Markdown table row, which the report format asks for:
+# no ':' or '=' follows the key, so the line rule above never sees it.
+_SETTING_ROW = re.compile(
+    r"""^(?P<lead>\s*\|\s*[`"']?)(?P<key>[A-Za-z_][\w.-]*)(?P<mid>[`"']?\s*\|\s*)"""
+    r"""(?P<value>[^|]*[^|\s][^|]*?)(?P<tail>\s*(?:\|.*)?)$"""
+)
+
+
+def _credential_key(key: str) -> bool:
+    leaf = key.rsplit(".", 1)[-1]
+    return bool(_SECRET_NAME.search(leaf)) or leaf.lower() in _CREDENTIAL_KEYS
+
+
 def redact_report(text: str) -> tuple[str, dict[str, int]]:
     """Mask secret-shaped values and refuse credential-shaped settings.
 
@@ -810,15 +823,18 @@ def redact_report(text: str) -> tuple[str, dict[str, int]]:
             counts[rule.id] = counts.get(rule.id, 0) + found
     lines = []
     for line in text.splitlines():
+        refused = "[refused: credential-shaped setting; Agentbot never manages one]"
         match = _SETTING_LINE.match(line)
-        if match:
-            leaf = match.group("key").rsplit(".", 1)[-1]
-            if _SECRET_NAME.search(leaf) or leaf.lower() in _CREDENTIAL_KEYS:
-                line = (
-                    f"{match.group('lead')}{match.group('key')}{match.group('mid')}"
-                    "[refused: credential-shaped setting; Agentbot never manages one]"
-                )
-                counts["REFUSED_CREDENTIAL_SETTING"] = counts.get("REFUSED_CREDENTIAL_SETTING", 0) + 1
+        row = None if match else _SETTING_ROW.match(line)
+        if match and _credential_key(match.group("key")):
+            line = f"{match.group('lead')}{match.group('key')}{match.group('mid')}{refused}"
+            counts["REFUSED_CREDENTIAL_SETTING"] = counts.get("REFUSED_CREDENTIAL_SETTING", 0) + 1
+        elif row and _credential_key(row.group("key")):
+            line = (
+                f"{row.group('lead')}{row.group('key')}{row.group('mid')}"
+                f"{refused}{row.group('tail')}"
+            )
+            counts["REFUSED_CREDENTIAL_SETTING"] = counts.get("REFUSED_CREDENTIAL_SETTING", 0) + 1
         lines.append(line)
     return "\n".join(lines) + ("\n" if text.endswith("\n") else ""), counts
 

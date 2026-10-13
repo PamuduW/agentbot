@@ -58,10 +58,12 @@ class MenuDefinitionTests(unittest.TestCase):
         public = {spec.name for spec in COMMANDS if spec.surface == "public"}
         keys = set(menus.menu("command_lib").keys)
         self.assertEqual(public, keys - {"__bootstrap__"})
-        self.assertIn("__bootstrap__", keys)
 
         bootstrap = {spec.name for spec in COMMANDS if spec.surface == "bootstrap"}
         self.assertEqual(bootstrap, set(menus.menu("command_lib_bootstrap").keys))
+        # The way into the bootstrap list exists exactly when it has commands
+        # (none since skills and global became launcher commands).
+        self.assertEqual(bool(bootstrap), "__bootstrap__" in keys)
 
     def test_the_graphify_menus_key_on_the_command_itself(self) -> None:
         for section in ("assistant", "shell", "platform"):

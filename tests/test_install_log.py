@@ -93,13 +93,29 @@ class InstallLogTests(unittest.TestCase):
         self.assertEqual(["  [STEP] Running diagnostics", "  [OK] Running diagnostics (2s)"], lines)
 
     def test_the_legend_names_every_marker_the_run_can_print(self):
+        import re
+        from pathlib import Path
+
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             log_legend()
         legend = buffer.getvalue()
-        for marker in ("STEP", "OK", "SKIP", "WARN"):
-            self.assertIn(f"{marker}=", legend)
         self.assertTrue(legend.startswith("  "), legend)
+        # The legend keeps the sibling product's four words. A marker outside
+        # them must be named here with its reason, so a new one cannot reach
+        # the screen unexplained. FAIL ends a step that failed and reads as
+        # itself.
+        exempt = {"FAIL"}
+        src = Path(__file__).resolve().parents[1] / "src"
+        printed = {
+            marker
+            for path in src.rglob("*.py")
+            for marker in re.findall(r"\[(STEP|OK|SKIP|WARN|FAIL|ERR|INFO)\]", path.read_text())
+        }
+        self.assertIn("STEP", printed)  # the scan itself works
+        for marker in sorted(printed - exempt):
+            with self.subTest(marker=marker):
+                self.assertIn(f"{marker}=", legend)
 
     def test_durations_read_as_minutes_once_they_are_minutes(self):
         self.assertEqual("0s", duration(0.4))

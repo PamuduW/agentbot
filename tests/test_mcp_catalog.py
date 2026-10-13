@@ -75,17 +75,20 @@ class McpCatalogTests(unittest.TestCase):
         )
 
     def test_static_headers_reject_credential_values(self) -> None:
-        entry = self.valid_entry()
-        entry["clients"] = {
-            client: {
-                "enabled": True,
-                "static_headers": {"Private-Token": "literal-secret"},
-            }
-            for client in ("claude", "codex", "cursor")
-        }
-        self.write_catalog({"version": 1, "entries": [entry]})
-        with self.assertRaisesRegex(ValueError, "unsupported public control header"):
-            load_mcp_catalog(self.catalog_path)
+        # One client at a time, the others clean: with all of them carrying the
+        # header, the first client's error satisfied the test and the rest,
+        # Antigravity included, were never checked.
+        from src.mcp_catalog import _CLIENTS
+
+        self.assertEqual(4, len(_CLIENTS))
+        for leaking in _CLIENTS:
+            with self.subTest(client=leaking):
+                entry = self.valid_entry()
+                entry["clients"] = {client: {"enabled": True} for client in _CLIENTS}
+                entry["clients"][leaking]["static_headers"] = {"Private-Token": "literal-secret"}
+                self.write_catalog({"version": 1, "entries": [entry]})
+                with self.assertRaisesRegex(ValueError, "unsupported public control header"):
+                    load_mcp_catalog(self.catalog_path)
 
     def test_unknown_top_level_key_fails_closed(self) -> None:
         self.write_catalog({"version": 1, "entries": [], "mystery": True})

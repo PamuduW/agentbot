@@ -55,6 +55,30 @@ class SkillsSourcesTests(unittest.TestCase):
         self.assertEqual(["*"], config.sources[0].skills)
         self.assertEqual(["*"], config.sources[1].skills)
 
+    def test_source_ids_cannot_name_a_path(self) -> None:
+        # Source IDs become folder names (setup review's source copies), so an
+        # ID that is a path could write outside the folder (pilot 10.7).
+        from src.skills_sources import SkillsSourcesError, validate_skills_sources
+
+        for bad in ("../outside", "a/b", "/abs", "..", ".hidden", "with space", "-dash"):
+            with self.subTest(id=bad), self.assertRaisesRegex(SkillsSourcesError, "id"):
+                validate_skills_sources(
+                    {
+                        "version": 1,
+                        "agents": ["codex"],
+                        "sources": [{"id": bad, "repo": "owner/repo", "skills": "all"}],
+                    }
+                )
+        for good in ("superpowers", "devops-anmol", "a.b_c-1"):
+            with self.subTest(id=good):
+                validate_skills_sources(
+                    {
+                        "version": 1,
+                        "agents": ["codex"],
+                        "sources": [{"id": good, "repo": "owner/repo", "skills": "all"}],
+                    }
+                )
+
     def test_active_sources_skips_disabled_empty_or_missing_repo(self) -> None:
         from src.skills_sources import load_skills_sources
 

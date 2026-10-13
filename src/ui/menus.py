@@ -267,15 +267,25 @@ def _command_lib() -> Menu:
     with a real command name.
     """
     entries = _command_entries("public")
+    # Only offered while a bootstrap-only command exists; since 2026-10-13
+    # there is none, and an entry that opens an empty list is a dead end.
+    bootstrap = (
+        (
+            (
+                "Bootstrap commands",
+                "__bootstrap__",
+                "Commands exposed by install.sh for setup and repair.",
+            ),
+        )
+        if _command_entries("bootstrap")
+        else ()
+    )
     return Menu(
         title="Command lib",
         breadcrumb="Agentbot › Command lib",
-        labels=(*(label for _, label, _ in entries), "Bootstrap commands"),
-        keys=(*(name for name, _, _ in entries), "__bootstrap__"),
-        descs=(
-            *(desc for _, _, desc in entries),
-            "Commands exposed by install.sh for setup and repair.",
-        ),
+        labels=(*(label for _, label, _ in entries), *(label for label, _, _ in bootstrap)),
+        keys=(*(name for name, _, _ in entries), *(key for _, key, _ in bootstrap)),
+        descs=(*(desc for _, _, desc in entries), *(desc for _, _, desc in bootstrap)),
     )
 
 

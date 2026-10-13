@@ -42,13 +42,15 @@ def print_command_help(spec: CommandSpec | None = None) -> None:
             ("bootstrap", "── Bootstrap commands ──"),
         )
         for surface, label in surfaces:
+            # skills and global became launcher commands on 2026-10-13: the
+            # index listed them by bare name, both the operator and a reviewing
+            # agent typed `agentbot skills ...`, and the launcher hands them to
+            # install.sh like every other command. A bootstrap command, if one
+            # is ever added again, is install.sh only and says so.
+            if not commands_for_surface(surface):
+                continue
             print()
             print_section(label)
-            # Bootstrap commands are not launcher commands. Their CommandSpec
-            # usage says "./install.sh skills install", but this index showed
-            # only the bare name, so they read as `agentbot skills install` --
-            # which the launcher rejects. Both the operator and a reviewing
-            # agent tried exactly that.
             if surface == "bootstrap":
                 print(f"  {_c('Run with ./install.sh, not agentbot.', DIM)}")
             print()
