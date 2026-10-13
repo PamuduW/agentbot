@@ -122,8 +122,8 @@ sources:
     # reference; prototype is only offered optionally by wayfinder; afk is an
     # unattended implement-and-merge run. code-review stays: retro links into
     # its references/ and implement hands over to it.
-    # The repository has no LICENSE file (2026-10-13); the operator is asking
-    # the author for one.
+    # The repository has no LICENSE file (2026-10-13); the operator accepts
+    # using it as is.
     skills:
       - architecture-decision-records
       - best-practices-research
