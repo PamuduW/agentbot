@@ -21,7 +21,7 @@ Skills CLI through `npx`.
 | `src/` | CLI, lifecycle, reconciliation, rendering, diagnostics, and workspace services |
 | `skills.sources.yaml` | Canonical curated-source manifest; global pins live in `~/.agents/.skill-lock.json` |
 | `base/` | Product templates rendered into managed repositories; not development policy |
-| `global/` | Authored machine-policy and Claude statusline sources |
+| `global/` | Authored machine-policy, Claude statusline and VibeWise hook sources |
 | `agentos.yaml` | Safe-default workspace profile and output allowlist |
 | `cli/` | Declared agent CLI settings (`cli-config`) |
 | `mcp/` | MCP server catalog and pinned contracts |
@@ -47,9 +47,12 @@ focused checks. Run the complete gate before handoff.
 
 - Keep product behavior in the Python CLI. Bash owns bootstrap, repository
   self-update, terminal presentation, secret scoping, and process adapters.
-- `base/AGENTS.md`, `base/CLAUDE.md`, `global/AGENTS.md`, and
-  `global/claude/statusline-command.sh` are canonical product sources. Do not
-  confuse them with this development overlay or edit their generated outputs.
+- `base/AGENTS.md`, `base/CLAUDE.md`, `global/AGENTS.md`,
+  `global/claude/statusline-command.sh` and the VibeWise hook
+  (`global/claude/hooks/vibe-wise-session-start.py`) are
+  canonical product sources. The hook is an adapted upstream file; keep its
+  provenance header current when it is re-adapted. Do not confuse them with
+  this development overlay or edit their generated outputs.
 - Preserve the managed-block contract: resync may replace only the marked
   Agentbot prefix and must preserve project-owned content.
 - Use `skills.sources.yaml` and the global Skills CLI flow; do not vendor

@@ -13,6 +13,7 @@ from .claude_statusline import (
     doctor_claude_statusline,
     inspect_claude_statusline,
 )
+from .claude_vibewise_hook import doctor_vibewise_hook
 from .cli_config import doctor_cli_configs
 from .cursor_statusline import doctor_cursor_statusline
 from .graphify import GraphifyIntegration, GraphifyStatus
@@ -112,6 +113,7 @@ class Diagnostics:
             )
 
         issues.extend(doctor_claude_statusline(self.paths, state=facts.statusline))
+        issues.extend(doctor_vibewise_hook(self.paths))
         issues.extend(doctor_cursor_statusline(self.paths))
         issues.extend(doctor_antigravity(self.paths))
         for component, detail, result in doctor_cli_configs(self.paths):
