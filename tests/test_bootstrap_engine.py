@@ -280,9 +280,9 @@ class SlimBootstrapEngineTests(unittest.TestCase):
                     render_global_outputs(paths)
                     service = Diagnostics(paths)
                     service.doctor_issues()
-                    summary = service.status_summary()
+                    snapshot = service.collect()
 
-                self.assertEqual(-1, summary["global_lock_skills"])
+                self.assertEqual(-1, snapshot.global_lock_skills)
 
     def test_doctor_reports_missing_managed_link_and_manual_provenance(self) -> None:
         from src.diagnostics import Diagnostics
@@ -410,21 +410,18 @@ sources:
         messages = [issue.message for issue in service.doctor_issues()]
         self.assertTrue(any("Missing global baseline" in message for message in messages))
 
-    def test_slim_status_summary_counts_installed_skills(self) -> None:
+    def test_slim_status_counts_installed_skills(self) -> None:
         from src.diagnostics import Diagnostics
 
         paths = self._paths()
         service = Diagnostics(paths)
 
         with mock.patch.object(service, "list_skills", return_value=["alpha-skill", "beta-skill"]):
-            summary = service.status_summary()
+            snapshot = service.collect()
 
-        self.assertEqual(2, summary["installed_skills"])
-        self.assertTrue(summary["global_agents_exists"])
-        self.assertTrue(summary["skills_sources_exists"])
-        self.assertIn("enabled_sources", summary)
-        self.assertIn("global_lock_skills", summary)
-        self.assertIn("doctor_issue_count", summary)
+        self.assertEqual(2, len(snapshot.installed_skills))
+        self.assertTrue(snapshot.global_agents_exists)
+        self.assertTrue(snapshot.skills_sources_exists)
 
     def test_status_counts_all_prune_candidates_except_official_graphify(self) -> None:
         from src.diagnostics import Diagnostics
@@ -444,12 +441,12 @@ sources:
             "agents_skills_home",
             new_callable=lambda: property(lambda self: self.root / "home" / ".agents" / "skills"),
         ):
-            summary = Diagnostics(paths).status_summary()
+            snapshot = Diagnostics(paths).collect()
 
         # Four manual directories plus two stale pins already present in this
         # fixture; the stamped Graphify integration is protected.
-        self.assertEqual(6, summary["manual_skill_count"])
-        self.assertEqual(6, summary["prune_candidate_count"])
+        self.assertEqual(6, snapshot.manual_skill_count)
+        self.assertEqual(6, snapshot.prune_candidate_count)
 
 
 if __name__ == "__main__":

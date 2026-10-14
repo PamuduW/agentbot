@@ -377,7 +377,7 @@ class CliTests(unittest.TestCase):
         import argparse
 
         from src.cli import build_parser
-        from src.commands import COMMANDS, commands_for_surface
+        from src.commands import COMMANDS
 
         parser = build_parser()
         subparsers = next(
@@ -442,9 +442,8 @@ class CliTests(unittest.TestCase):
                 "skills remove-manual",
                 "global",
             },
-            {spec.name for spec in commands_for_surface("public")},
+            {spec.name for spec in COMMANDS},
         )
-        self.assertEqual((), commands_for_surface("bootstrap"))
 
     def test_every_command_spec_has_a_help_detail(self) -> None:
         from src.commands import COMMANDS

@@ -385,15 +385,6 @@ def normalize_origin(url: str) -> str:
     return f"{host}/{path}"
 
 
-def resolve_project(root: Path, origin_url: str) -> dict[str, Any] | None:
-    """The registry entry whose origin or alias matches, or None."""
-    wanted = normalize_origin(origin_url)
-    for entry in _registry(root)["projects"]:
-        if wanted == entry["origin"] or wanted in entry.get("aliases", []):
-            return entry
-    return None
-
-
 def _project_id(root: Path, folder: str) -> str:
     for entry in _registry(root)["projects"]:
         if entry["folder"] == folder:

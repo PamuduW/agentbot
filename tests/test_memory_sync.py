@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from src import memory_sync as sync
 from src.memory import MemoryVaultError, scan_secrets, validate
@@ -74,6 +75,15 @@ def record(where: str, title: str, body: str | None = None) -> bytes:
 
 def at(project: str, rel: str) -> str:
     return f"projects/{project}/{rel}"
+
+
+def _resolve_project(root: Path, origin_url: str) -> dict[str, Any] | None:
+    """The registry entry whose origin or alias matches, or None."""
+    wanted = sync.normalize_origin(origin_url)
+    for entry in sync._registry(root)["projects"]:
+        if wanted == entry["origin"] or wanted in entry.get("aliases", []):
+            return entry
+    return None
 
 
 class Fleet:
@@ -328,20 +338,20 @@ class DeterministicCases(FleetTestCase):
     def test_09_ssh_and_https_origins_resolve_to_one_project(self) -> None:
         sync.register_origin(self.a, "git@github.com:PamuduW/FreePlayground.git", "freeplayground")
         self.converged()
-        entry = sync.resolve_project(self.b, "https://github.com/pamuduw/freeplayground.git")
+        entry = _resolve_project(self.b, "https://github.com/pamuduw/freeplayground.git")
         self.assertIsNotNone(entry)
         assert entry is not None
         self.assertEqual("freeplayground", entry["folder"])
         self.assertEqual(
-            entry, sync.resolve_project(self.b, "ssh://git@github.com/PamuduW/freeplayground")
+            entry, _resolve_project(self.b, "ssh://git@github.com/PamuduW/freeplayground")
         )
 
     def test_10_a_rename_keeps_the_same_project(self) -> None:
-        hot = sync.resolve_project(self.a, "https://github.com/fixture/hot")
+        hot = _resolve_project(self.a, "https://github.com/fixture/hot")
         assert hot is not None
         sync.register_origin(self.a, "https://github.com/fixture/hot-renamed", "hot", hot["id"])
         self.converged()
-        renamed = sync.resolve_project(self.b, "git@github.com:fixture/hot-renamed.git")
+        renamed = _resolve_project(self.b, "git@github.com:fixture/hot-renamed.git")
         self.assertEqual(
             (hot["id"], "hot"), (renamed["id"], renamed["folder"]) if renamed else None
         )

@@ -595,7 +595,6 @@ See [Workspaces and rendering](docs/workspaces-and-rendering.md).
 - [Agent CLI configuration](docs/cli-config.md)
 - [Setup review](docs/setup-review.md)
 - [Validation](docs/validation.md)
-- [Roadmap](docs/roadmap.md)
 - [Quick start](QUICKSTART.md)
 
 ## Development

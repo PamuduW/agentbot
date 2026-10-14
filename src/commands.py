@@ -21,7 +21,6 @@ class CommandSpec:
     effects: str
     examples: tuple[str, ...]
     related: tuple[str, ...]
-    surface: Literal["public", "bootstrap"]
     parser_commands: tuple[str, ...] = ()
 
 
@@ -39,7 +38,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Reads skills, locks, links, rendered outputs, and Doctor state.",
         ("agentbot status", "agentbot status --json"),
         ("doctor", "update"),
-        "public",
         ("status",),
     ),
     CommandSpec(
@@ -66,7 +64,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "agentbot install --menu",
         ),
         ("status", "doctor"),
-        "public",
         ("install",),
     ),
     CommandSpec(
@@ -81,7 +78,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         # being a Python subcommand.
         ("agentbot full",),
         ("install", "update"),
-        "public",
     ),
     CommandSpec(
         "update",
@@ -100,7 +96,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "memory backup.",
         ("agentbot update --dry-run", "agentbot update --yes"),
         ("install", "status"),
-        "public",
         ("update",),
     ),
     CommandSpec(
@@ -112,7 +107,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Writes only the private Agentbot token file after confirmation.",
         ("agentbot token",),
         ("skills install", "update"),
-        "public",
     ),
     CommandSpec(
         "boot",
@@ -136,7 +130,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "and register the repository's project memory in the vault (synced).",
         ("agentbot boot", "agentbot boot --cursor /path/to/repo"),
         ("workspace", "workspaces"),
-        "public",
         ("boot",),
     ),
     CommandSpec(
@@ -155,7 +148,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Preview reads target files; --yes may write managed outputs and update the private registry.",
         ("agentbot workspace /path/to/repo", "agentbot workspace --yes /path/to/repo"),
         ("boot", "workspaces", "resync"),
-        "public",
         ("workspace",),
     ),
     CommandSpec(
@@ -174,7 +166,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Listing is read-only; --remove changes only the private registry.",
         ("agentbot workspaces",),
         ("workspace", "resync"),
-        "public",
         ("workspaces",),
     ),
     CommandSpec(
@@ -191,7 +182,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Preview reads managed surfaces; --yes may update them.",
         ("agentbot resync --dry-run --all", "agentbot resync --yes --all"),
         ("workspace", "workspaces"),
-        "public",
         ("resync",),
     ),
     CommandSpec(
@@ -203,7 +193,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Reads local Agentbot-managed state without repairing it.",
         ("agentbot doctor",),
         ("status", "update"),
-        "public",
         ("doctor",),
     ),
     CommandSpec(
@@ -218,7 +207,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Status is read-only; setup may write the generic Graphify skill and managed links.",
         ("agentbot graphify status",),
         ("install", "update"),
-        "public",
         ("graphify status", "graphify setup"),
     ),
     CommandSpec(
@@ -238,7 +226,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Status is read-only; setup/off may update Boost config and agent hooks.",
         ("agentbot boost status",),
         ("install", "doctor"),
-        "public",
         ("boost status", "boost setup", "boost off"),
     ),
     CommandSpec(
@@ -266,7 +253,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "agentbot mcp plan --select github --targets claude codex",
         ),
         ("doctor", "status"),
-        "public",
         (
             "mcp catalog",
             "mcp status",
@@ -301,7 +287,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Stores one mode-0600 file outside this repository; the token never appears in an argument vector, a log, or a report.",
         ("agentbot gitlab-token status", "agentbot gitlab-token check"),
         ("mcp status",),
-        "public",
         (
             "gitlab-token status",
             "gitlab-token set",
@@ -434,7 +419,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Exit 2 means no vault is configured.",
         ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
         ("status", "doctor"),
-        "public",
         (
             "memory setup",
             "memory sync",
@@ -483,7 +467,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Status is read-only; apply merges owned keys into each CLI config after backing it up.",
         ("agentbot cli-config status", "agentbot cli-config apply"),
         ("doctor", "status"),
-        "public",
         ("cli-config status", "cli-config apply"),
     ),
     CommandSpec(
@@ -515,7 +498,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "agentbot setup-review --cli codex --scope dotfiles --yes",
         ),
         ("cli-config", "skills"),
-        "public",
         ("setup-review",),
     ),
     CommandSpec(
@@ -532,7 +514,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Status is read-only; statusline writes ~/.cursor/statusline-command.sh and the statusLine block in cli-config.json.",
         ("agentbot cursor status", "agentbot cursor statusline"),
         ("doctor", "status"),
-        "public",
         ("cursor status", "cursor statusline"),
     ),
     CommandSpec(
@@ -550,7 +531,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Status is read-only; apply installs extensions and merges owned settings after backing files up.",
         ("agentbot vscode status", "agentbot vscode seed", "agentbot vscode apply"),
         ("doctor", "status"),
-        "public",
         ("vscode status", "vscode seed", "vscode apply"),
     ),
     CommandSpec(
@@ -558,11 +538,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "agentbot help [COMMAND]",
         "read-only",
         "Show the command index or one command's complete reference.",
-        (option("COMMAND", "Select one public or bootstrap command.", "all commands"),),
+        (option("COMMAND", "Select one command.", "all commands"),),
         "Prints local metadata and performs no external action.",
         ("agentbot help", "agentbot help workspace"),
         (),
-        "public",
         ("help",),
     ),
     CommandSpec(
@@ -574,7 +553,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "May update the global skill store, lock, and managed assistant links.",
         ("agentbot skills install",),
         ("skills update", "skills prune", "skills doctor"),
-        "public",
         ("skills install",),
     ),
     CommandSpec(
@@ -589,7 +567,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Preview clones sources into temporary directories; apply updates managed skills and links.",
         ("agentbot skills update", "agentbot skills update --yes --plan-sha256 REVIEW_ID"),
         ("update", "skills restore", "skills prune", "skills list"),
-        "public",
         ("skills update",),
     ),
     CommandSpec(
@@ -604,7 +581,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Apply clones pinned commits; it does not remove manual skills.",
         ("agentbot skills restore", "agentbot skills restore --previous --yes"),
         ("skills update", "skills doctor"),
-        "public",
         ("skills restore",),
     ),
     CommandSpec(
@@ -616,7 +592,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Reads the global skill store.",
         ("agentbot skills list",),
         ("skills install", "skills prune", "skills doctor"),
-        "public",
         ("skills list",),
     ),
     CommandSpec(
@@ -628,7 +603,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Reads the manifest, lock, installed store, and tool availability.",
         ("agentbot skills doctor",),
         ("doctor", "skills install", "skills prune"),
-        "public",
         ("skills doctor",),
     ),
     CommandSpec(
@@ -660,7 +634,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "agentbot skills prune gitlab-ci terraform --yes",
         ),
         ("skills doctor", "skills update", "skills list"),
-        "public",
         ("skills prune",),
     ),
     CommandSpec(
@@ -681,7 +654,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "agentbot skills remove-manual gpt-taste mermaid --yes",
         ),
         ("skills prune", "skills install", "skills doctor"),
-        "public",
         ("skills remove-manual",),
     ),
     CommandSpec(
@@ -693,7 +665,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Writes Agentbot-managed global outputs from canonical sources.",
         ("agentbot global",),
         ("status", "doctor"),
-        "public",
         ("global",),
     ),
 )
@@ -705,7 +676,3 @@ def command_by_name(name: str) -> CommandSpec:
         if normalized == command.name:
             return command
     raise KeyError(name)
-
-
-def commands_for_surface(surface: Literal["public", "bootstrap"]) -> tuple[CommandSpec, ...]:
-    return tuple(command for command in COMMANDS if command.surface == surface)

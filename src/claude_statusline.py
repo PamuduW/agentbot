@@ -71,17 +71,6 @@ class StatuslineState:
             return "needs jq"
         return "ok"
 
-    @property
-    def status_result(self) -> str:
-        label = self.status_label
-        if label == "ok":
-            return "ok"
-        if label in {"user-owned", "script only", "boost-wrapped"}:
-            return "check"
-        if label == "needs jq":
-            return "check"
-        return "missing" if label in {"missing source", "not installed"} else "check"
-
 
 @dataclass(frozen=True)
 class StatuslineInstallResult:

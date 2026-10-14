@@ -178,8 +178,7 @@ sources:
       - gitlab-ci-skill
 
   - id: archify
-    # Roadmap item 10.12 (2026-10-13): promoted for presentation-grade
-    # architecture, workflow and trust-boundary diagrams (FYP report and viva);
+    # Presentation-grade architecture, workflow and trust-boundary diagrams;
     # Mermaid stays the default for repository documentation. Its finalize gate
     # drives the Chrome headless shell Dotfiles installs, through ARCHIFY_CHROME,
     # and Dotfiles' .bashrc sets ARCHIFY_UPDATE_CHECK_DISABLED=1 so it does not
@@ -189,9 +188,8 @@ sources:
       - archify
 
   - id: claudex-loop
-    # Roadmap item 10.7 (promoted 2026-10-13, adopted in item 12): Claude plans,
-    # Codex reviews, for high-consequence plans only, at most two rounds, by
-    # hand. codex-review reads its sibling claudex-loop's files, so the two come
+    # Claude plans, Codex reviews, for high-consequence plans only, at most two
+    # rounds, by hand. codex-review reads its sibling claudex-loop's files, so the two come
     # together; codex-build (Codex writes the code), claudex-route and legacy/
     # stay out. Name-only in Claude.
     repo: chaseai-yt/claudex-loop
@@ -200,7 +198,7 @@ sources:
       - codex-review
 
   - id: oaustegard-skills
-    # Roadmap item 10.10: of 104 skills, only declaring-invariants earned a
+    # Of 104 skills, only declaring-invariants earned a
     # place (a fast, read-only check that found two real test gaps in
     # agentbot). gating waits on its stale-bytecode defect upstream;
     # verifying-claims added nothing; the rest overlap, assume claude.ai paths
@@ -210,7 +208,7 @@ sources:
       - declaring-invariants
 
   - id: vibe-wise
-    # Roadmap item 10.8: an opt-in learning mode (the agent asks for your
+    # An opt-in learning mode (the agent asks for your
     # approach before writing code). learn is manual-only by its own
     # frontmatter and stays user-invocable-only in Claude, as does reset. It
     # keeps notes in the project's .vibe-wise/, a recorded ADR-0009 exception;

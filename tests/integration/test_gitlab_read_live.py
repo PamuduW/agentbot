@@ -85,7 +85,7 @@ class GitLabReadLiveTests(unittest.IsolatedAsyncioTestCase):
         return payload["data"]
 
     async def test_all_fifteen_read_operations(self) -> None:
-        self.assertEqual(EXPECTED_TOOLS, self.facade.tool_names())
+        self.assertEqual(EXPECTED_TOOLS, tuple(tool.name for tool in self.facade.tools()))
         self.assertIn(self.tier, {"free", "premium", "ultimate"})
         self.assertIn(self.token_kind, {"project", "group", "personal"})
         self.assertTrue(self.instance_version.strip())

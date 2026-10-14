@@ -4,7 +4,7 @@ set -uo pipefail
 
 # One left edge, swept from the source.
 #
-# docs/designs/presentation/README.md: every line a run prints starts at two
+# The presentation contract (dotfiles-shared docs/presentation.md): every line a run prints starts at two
 # spaces, the column the shared header and the report tables already use. The
 # rule was established by sweeping the product by hand, which is why it drifted
 # back -- the menus and bindings each print their own variants of the same

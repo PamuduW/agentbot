@@ -8,9 +8,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Literal
 
-from ..commands import CommandSpec, commands_for_surface
+from ..commands import COMMANDS, CommandSpec
 from ..mcp_models import McpCatalog, McpPlan, McpStatusReport
 from ..memory_retrieve import DATA_NOTICE
 from ..models import Table, TableSection
@@ -37,31 +36,14 @@ def print_command_help(spec: CommandSpec | None = None) -> None:
     if spec is None:
         print_header("Agentbot help", "Agentbot › Help")
         print("  Usage: agentbot <command> [options]")
-        surfaces: tuple[tuple[Literal["public", "bootstrap"], str], ...] = (
-            ("public", "── Commands ──"),
-            ("bootstrap", "── Bootstrap commands ──"),
+        print()
+        print_section("── Commands ──")
+        print()
+        print_table(
+            [(item.name, item.summary, item.behavior) for item in COMMANDS],
+            headers=("command", "description", "behavior"),
+            wrap_details=True,
         )
-        for surface, label in surfaces:
-            # skills and global became launcher commands on 2026-10-13: the
-            # index listed them by bare name, both the operator and a reviewing
-            # agent typed `agentbot skills ...`, and the launcher hands them to
-            # install.sh like every other command. A bootstrap command, if one
-            # is ever added again, is install.sh only and says so.
-            if not commands_for_surface(surface):
-                continue
-            print()
-            print_section(label)
-            if surface == "bootstrap":
-                print(f"  {_c('Run with ./install.sh, not agentbot.', DIM)}")
-            print()
-            print_table(
-                [
-                    (item.name, item.summary, item.behavior)
-                    for item in commands_for_surface(surface)
-                ],
-                headers=("command", "description", "behavior"),
-                wrap_details=True,
-            )
         print()
         print_section("── Environment ──")
         print()

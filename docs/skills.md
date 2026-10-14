@@ -124,16 +124,16 @@ Git-source manifest.
 ## Archify
 
 `tt-a1i/archify` is a curated source for presentation-grade architecture,
-workflow and trust-boundary diagrams (workspace roadmap item 10.12); Mermaid
+workflow and trust-boundary diagrams; Mermaid
 stays the default for repository documentation. The skill's `finalize` gate
 needs a Chrome: Dotfiles installs Chrome for Testing's headless shell and its
 `.bashrc` exports `ARCHIFY_CHROME`, plus `ARCHIFY_UPDATE_CHECK_DISABLED=1` so
 the skill does not check GitHub for a newer release on every render. Agentbot
 installs only the skill; it is name-only in Claude.
 
-## Item 12 sources
+## Opt-in review and learning sources
 
-Promoted by workspace roadmap item 12, each listing only the skills it earned:
+Each lists only the skills that earned a place:
 
 - `chaseai-yt/claudex-loop`: `claudex-loop` and `codex-review` (Claude plans,
   Codex reviews), for high-consequence plans, at most two rounds, by hand.
@@ -174,8 +174,8 @@ registered workspaces that violate policy.
 
 ### BoostGraph
 
-BoostGraph was adopted for code repositories and rejected on 2026-10-08
-(workspace roadmap item 6A). Measured in real sessions, `boostgraph_explore`
+BoostGraph was adopted for code repositories and rejected on 2026-10-08.
+Measured in real sessions, `boostgraph_explore`
 returned about 4,000 tokens per call against a few hundred for a targeted
 `rg` and read, and its schema cost about 950 tokens in every Codex and Cursor
 session; it does not index Bash. Its `boost_graph` catalog entry stays as the
@@ -243,7 +243,7 @@ so commands such as `git push` or `curl | sh` skipped the permission prompt.
 With the flag off the hook rewrites nothing and decides nothing, and commands
 go through the normal permission flow. Shell output is then neither compacted
 nor redacted; file reads and MCP output still are. Any replacement filter
-(roadmap pilot 10.1, RTK) must never approve a command on its own.
+(RTK was tried and rejected) must never approve a command on its own.
 
 Everything else in `~/.boost/config.toml` is left to Boost and to you. Setup
 pins `[tracing] upload` and `[update] auto_update` to `false` and writes the

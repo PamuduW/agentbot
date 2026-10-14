@@ -356,25 +356,6 @@ class Diagnostics:
             mcp_issues=mcp_issues,
         )
 
-    def status_summary(self) -> dict[str, object]:
-        snapshot = self.collect()
-        return {
-            "installed_skills": len(snapshot.installed_skills),
-            "enabled_sources": snapshot.enabled_sources,
-            "global_agents_exists": snapshot.global_agents_exists,
-            "skills_sources_exists": snapshot.skills_sources_exists,
-            "global_lock_exists": snapshot.global_lock_exists,
-            "global_lock_skills": snapshot.global_lock_skills,
-            "managed_skill_count": snapshot.managed_skill_count,
-            "manual_skill_count": snapshot.manual_skill_count,
-            "prune_candidate_count": snapshot.prune_candidate_count,
-            "claude_bridge_links": snapshot.claude_bridge_links,
-            "claude_statusline_state": snapshot.claude_statusline_state,
-            "doctor_issue_count": len(snapshot.issues),
-            "mcp_catalog_count": snapshot.mcp_catalog_count,
-            "mcp_managed_count": snapshot.mcp_managed_count,
-        }
-
     def _mcp_facts(self) -> tuple[int, int, tuple[DoctorIssue, ...]]:
         """(registerable pairs, managed pairs, issues), both in the same unit."""
         if not self.paths.mcp_catalog_file.exists():

@@ -86,7 +86,6 @@ class DiagnosticsTests(unittest.TestCase):
 
             diagnostics = Diagnostics(paths)
             snapshot = diagnostics.collect()
-            summary = diagnostics.status_summary()
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 print_status_json(diagnostics)
@@ -94,8 +93,6 @@ class DiagnosticsTests(unittest.TestCase):
 
             self.assertEqual(1, snapshot.manual_skill_count)
             self.assertEqual(4, snapshot.prune_candidate_count)
-            self.assertEqual(1, summary["manual_skill_count"])
-            self.assertEqual(4, summary["prune_candidate_count"])
             self.assertEqual(1, payload["manual_skill_count"])
             self.assertEqual(4, payload["prune_candidate_count"])
 

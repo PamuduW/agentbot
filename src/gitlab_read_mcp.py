@@ -286,9 +286,6 @@ class GitLabReadMcp:
         self.client = client
         self._specs = {spec.name: spec for spec in GITLAB_TOOL_SPECS}
 
-    def tool_names(self) -> tuple[str, ...]:
-        return tuple(spec.name for spec in GITLAB_TOOL_SPECS)
-
     def tools(self) -> tuple[Tool, ...]:
         annotations = ToolAnnotations(
             read_only_hint=True,

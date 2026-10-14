@@ -244,7 +244,7 @@ def builder(name: str) -> Callable[[Callable[[], Menu]], Callable[[], Menu]]:
     return register
 
 
-def _command_entries(surface: str) -> tuple[tuple[str, str, str], ...]:
+def _command_entries() -> tuple[tuple[str, str, str], ...]:
     from src.commands import COMMANDS
 
     return tuple(
@@ -254,47 +254,15 @@ def _command_entries(surface: str) -> tuple[tuple[str, str, str], ...]:
             f"agentbot help {spec.name}",
         )
         for spec in COMMANDS
-        if spec.surface == surface
     )
 
 
 @builder("command_lib")
 def _command_lib() -> Menu:
-    """The public commands, plus a way into the bootstrap ones.
-
-    `__bootstrap__` is a key with no command behind it; the caller opens the
-    other menu when it sees it. It is spelled unmistakably so it cannot collide
-    with a real command name.
-    """
-    entries = _command_entries("public")
-    # Only offered while a bootstrap-only command exists; since 2026-10-13
-    # there is none, and an entry that opens an empty list is a dead end.
-    bootstrap = (
-        (
-            (
-                "Bootstrap commands",
-                "__bootstrap__",
-                "Commands exposed by install.sh for setup and repair.",
-            ),
-        )
-        if _command_entries("bootstrap")
-        else ()
-    )
+    entries = _command_entries()
     return Menu(
         title="Command lib",
         breadcrumb="Agentbot › Command lib",
-        labels=(*(label for _, label, _ in entries), *(label for label, _, _ in bootstrap)),
-        keys=(*(name for name, _, _ in entries), *(key for _, key, _ in bootstrap)),
-        descs=(*(desc for _, _, desc in entries), *(desc for _, _, desc in bootstrap)),
-    )
-
-
-@builder("command_lib_bootstrap")
-def _command_lib_bootstrap() -> Menu:
-    entries = _command_entries("bootstrap")
-    return Menu(
-        title="Bootstrap commands",
-        breadcrumb="Agentbot › Command lib › Bootstrap commands",
         labels=tuple(label for _, label, _ in entries),
         keys=tuple(name for name, _, _ in entries),
         descs=tuple(desc for _, _, desc in entries),

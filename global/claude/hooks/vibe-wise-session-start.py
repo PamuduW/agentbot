@@ -6,7 +6,7 @@
 # plugin root. Agentbot installs the `learn` skill through the Skills CLI
 # instead, so the one change is LEARN_GUIDE, which points at the installed
 # skill. Agentbot installs this file to ~/.claude/hooks/ and wires it into
-# settings.json while the vibe-wise source is enabled (roadmap item 12).
+# settings.json while the vibe-wise source is enabled.
 """Restore learning context when Claude Code starts or resumes a session.
 
 Claude Code sends a JSON event on stdin. For a project with active learning notes,
