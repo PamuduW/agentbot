@@ -23,6 +23,7 @@
   "remoteControlAtStartup": true,
   "skillOverrides": {
     "anthropic-skills:deep-research": "name-only",
+    "anthropic-skills:learn": "name-only",
     "archify": "name-only",
     "architecture-decision-records": "name-only",
     "best-practices-research": "name-only",
