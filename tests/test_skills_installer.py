@@ -373,13 +373,13 @@ sources:
             "git", "-C", str(remote), "-c", "user.name=Test",
             "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture",
         ]
-        subprocess.run(commit, check=True)
+        subprocess.run(commit, check=True, capture_output=True)
         first = subprocess.check_output(
             ["git", "-C", str(remote), "rev-parse", "HEAD"], text=True
         ).strip()
         skill.write_text("second\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
-        subprocess.run(commit, check=True)
+        subprocess.run(commit, check=True, capture_output=True)
 
         restored = self.root / "restored"
         with patch("src.skills_installer.source_clone_url", return_value=str(remote)):
@@ -405,13 +405,13 @@ sources:
             "git", "-C", str(remote), "-c", "user.name=Test",
             "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture",
         ]
-        subprocess.run(commit, check=True)
+        subprocess.run(commit, check=True, capture_output=True)
         reviewed = subprocess.check_output(
             ["git", "-C", str(remote), "rev-parse", "HEAD"], text=True
         ).strip()
         skill.write_text("second\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
-        subprocess.run(commit, check=True)
+        subprocess.run(commit, check=True, capture_output=True)
         lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
         manual = lock_file.parent / "skills" / "manual" / "SKILL.md"
         manual.parent.mkdir(parents=True)
@@ -496,14 +496,14 @@ sources:
             "git", "-C", str(remote), "-c", "user.name=Test",
             "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture",
         ]
-        subprocess.run(commit, check=True)
+        subprocess.run(commit, check=True, capture_output=True)
         paths = self._paths()
 
         with patch("src.skill_catalog.source_clone_url", return_value=str(remote)):
             plan = plan_skill_update(paths)
             skill.write_text("second\n", encoding="utf-8")
             subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
-            subprocess.run(commit, check=True)
+            subprocess.run(commit, check=True, capture_output=True)
             with patch("src.skills_installer.install_skills") as install:
                 with self.assertRaises(StaleSourceCatalogError):
                     apply_skill_update(paths, plan)

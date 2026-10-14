@@ -10,7 +10,7 @@ manifest is `skills.sources.yaml`, and private workspace state lives under
 
 | Document | Purpose |
 |---|---|
-| [Architecture](architecture.md) | Runtime boundaries and code layout |
+| [Architecture](architecture.md) | Runtime boundaries, code layout, design decisions and scope |
 | [Skills and integrations](skills.md) | Source manifest, locks, reconciliation, Graphify, and Boost |
 | [Workspaces and rendering](workspaces-and-rendering.md) | Policy ownership, generated surfaces, and registration |
 | [Lifecycle and updates](lifecycle-and-updates.md) | Install, update, recovery, and transaction behavior |
@@ -19,11 +19,8 @@ manifest is `skills.sources.yaml`, and private workspace state lives under
 | [Agent CLI configuration](cli-config.md) | Declared Claude, Codex, Cursor, and Antigravity config keys |
 | [Setup review](setup-review.md) | The recurring agent-run review, filed in Dotfiles' `reviews/` |
 | [Validation](validation.md) | Complete and focused validation commands |
-| [Roadmap](roadmap.md) | Delivered phases and planned capabilities |
 
 How every surface in this repository is laid out — headings, tables, colour,
-rollups, prompts — is one contract shared with Dotfiles, written down in the
-workspace repository under `docs/designs/presentation/`.
-
-MCP is managed by `agentbot mcp`. The historical research snapshots that
-preceded it were removed once it shipped; they remain in Git history.
+rollups, prompts — is one contract shared with Dotfiles:
+[`docs/presentation.md`](https://github.com/PamuduW/dotfiles-shared/blob/main/docs/presentation.md)
+in dotfiles-shared.

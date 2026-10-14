@@ -895,7 +895,7 @@ class BoostIntegration:
 
         Before v0.14 `boostgraph init` built its index into a repository
         `.boost/`; since then `boost graph init` builds it into `.codegraph/`.
-        BoostGraph was rejected on 2026-10-08 (workspace item 6A), so either is
+        BoostGraph was rejected on 2026-10-08, so either is
         evidence. A `.boost/` holding nothing but a config file is a different
         problem -- see `_shadowing_configs` -- and `hook-meta/` is where the
         Bash hook records each tool call, so only other content counts there.

@@ -50,12 +50,6 @@ class WorkspaceRenderPlan:
     actions: tuple[RenderAction, ...]
     policy_mode: Literal["managed", "custom"]
 
-    def action_for(self, relative_path: str) -> RenderAction:
-        for action in self.actions:
-            if action.relative_path == relative_path:
-                return action
-        raise KeyError(relative_path)
-
     def paths(self) -> tuple[str, ...]:
         return tuple(action.relative_path for action in self.actions)
 

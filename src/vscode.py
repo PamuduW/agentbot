@@ -47,10 +47,6 @@ class VSCodeHost:
     def available(self) -> bool:
         return self.extensions_dir.is_dir()
 
-    @property
-    def can_install(self) -> bool:
-        return self.available and self.cli is not None
-
 
 @dataclass
 class SettingsPlan:
@@ -484,10 +480,6 @@ class VSCodeManifest:
 
     def extensions_for(self, host: str) -> tuple[str, ...]:
         return self.extensions.get(host, ())
-
-    @property
-    def is_empty(self) -> bool:
-        return not any(self.extensions.values())
 
 
 def manifest_path(root: Path) -> Path:

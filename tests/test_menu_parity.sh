@@ -49,30 +49,37 @@ source "$DOTFILES_SHARED_LIB/tui/menu_simple.sh"
 passed=0
 failed=0
 
-py_draw() {
-	local cursor="$1" cols="$2" color="$3" spec="$4"
+# Every frame for one palette, in the order compare_menu walks them (width,
+# then cursor, headers skipped), NUL-separated: one interpreter per palette
+# rather than one per frame, which made this suite most of a two-minute run.
+py_draw_all() {
+	local color="$1" spec="$2"
 	# The spec travels as an argument, never interpolated into the source: a
 	# description carries newlines, and a `\n` expanded twice stops being JSON.
-	python3 - "$cursor" "$cols" "$color" "$spec" "$5" <<'PY'
+	python3 - "$color" "$spec" "$REPO_DIR" <<'PY'
 import json, sys
 
-sys.path.insert(0, sys.argv[5] if len(sys.argv) > 5 else ".")
+sys.path.insert(0, sys.argv[3])
 from src.ui import menu
 
-cursor, cols, color, spec = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3] == "1", json.loads(sys.argv[4])
-sys.stdout.write(
-    menu.draw_simple(
-        title=spec["title"],
-        breadcrumb=spec.get("breadcrumb", ""),
-        labels=spec["labels"],
-        types=spec.get("types"),
-        descs=spec.get("descs"),
-        hint=spec.get("hint", menu.DEFAULT_HINT),
-        cursor=cursor,
-        cols=cols,
-        palette=menu.Palette(color=color),
-    )
-)
+color, spec = sys.argv[1] == "1", json.loads(sys.argv[2])
+types = spec.get("types") or []
+for cols in (40, 80, 120):
+    for cursor in range(len(spec["labels"])):
+        if cursor < len(types) and types[cursor] == "header":
+            continue
+        frame = menu.draw_simple(
+            title=spec["title"],
+            breadcrumb=spec.get("breadcrumb", ""),
+            labels=spec["labels"],
+            types=spec.get("types"),
+            descs=spec.get("descs"),
+            hint=spec.get("hint", menu.DEFAULT_HINT),
+            cursor=cursor,
+            cols=cols,
+            palette=menu.Palette(color=color),
+        )
+        sys.stdout.write(frame.rstrip("\n") + "\0")
 PY
 }
 
@@ -82,7 +89,8 @@ PY
 # Python side reads it directly, so a case cannot describe two different menus
 # and pass by comparing neither.
 compare_menu() {
-	local name="$1" spec="$2" cursor cols color want got count
+	local name="$1" spec="$2" cursor cols color want got count frame
+	local -a frames
 
 	eval "$(
 		python3 - "$spec" <<'SPEC'
@@ -117,13 +125,16 @@ SPEC
 			NO_COLOR=1
 			colors_clear_palette
 		fi
+		mapfile -d '' -t frames < <(py_draw_all "$color" "$spec")
+		frame=0
 		for cols in 40 80 120; do
 			for ((cursor = 0; cursor < count; cursor++)); do
 				# A section header is never the cursor position in a real run.
 				[[ "${MENU_SIMPLE_TYPES[$cursor]:-}" == header ]] && continue
 
 				want="$(_menu_simple_draw "$cursor" "$cols")"
-				got="$(py_draw "$cursor" "$cols" "$color" "$spec" "$REPO_DIR")"
+				got="${frames[frame]-}"
+				frame=$((frame + 1))
 				if [[ "$want" == "$got" ]]; then
 					passed=$((passed + 1))
 				else
@@ -176,36 +187,40 @@ compare_menu 'a menu that overflows its width' '{
 # The checkbox frame is the other menu shape, and a fiddlier one: eight colour
 # combinations per row, a status column as wide as its widest status, and a
 # label fitted against whatever is left. Every row state is compared.
-cb_py_draw() {
-	python3 - "$1" "$2" "$3" "$4" "$REPO_DIR" <<'PY'
+# Every row state for one palette, in compare_checkbox's order (width, then
+# cursor), NUL-separated, in one interpreter.
+cb_py_draw_all() {
+	python3 - "$1" "$2" "$3" "$REPO_DIR" <<'PY'
 import json, sys
 
-sys.path.insert(0, sys.argv[5])
+sys.path.insert(0, sys.argv[4])
 from src.ui import checkbox, menu
 
-cursor, cols, color, spec = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3] == "1", json.loads(sys.argv[4])
-sys.stdout.write(
-    checkbox.draw(
-        title=spec["title"],
-        breadcrumb=spec.get("breadcrumb", ""),
-        labels=spec["labels"],
-        statuses=spec.get("statuses"),
-        checked=spec["checked"],
-        descs=spec.get("descs"),
-        hint=spec.get("hint", checkbox.DEFAULT_HINT),
-        status_message=spec.get("status_message", ""),
-        cursor=cursor,
-        size=int(spec["size"]),
-        cols=cols,
-        palette=menu.Palette(color=color),
-        compact=bool(spec.get("compact")),
-    )
-)
+color, spec, status_message = sys.argv[1] == "1", json.loads(sys.argv[2]), sys.argv[3]
+for cols in (40, 80, 120):
+    for cursor in range(len(spec["labels"])):
+        frame = checkbox.draw(
+            title=spec["title"],
+            breadcrumb=spec.get("breadcrumb", ""),
+            labels=spec["labels"],
+            statuses=spec.get("statuses"),
+            checked=spec["checked"],
+            descs=spec.get("descs"),
+            hint=spec.get("hint", checkbox.DEFAULT_HINT),
+            status_message=status_message,
+            cursor=cursor,
+            size=int(spec["size"]),
+            cols=cols,
+            palette=menu.Palette(color=color),
+            compact=bool(spec.get("compact")),
+        )
+        sys.stdout.write(frame.rstrip("\n") + "\0")
 PY
 }
 
 compare_checkbox() {
-	local name="$1" spec="$2" cursor cols color want got count size
+	local name="$1" spec="$2" cursor cols color want got count size frame
+	local -a frames
 
 	eval "$(
 		python3 - "$spec" <<'SPEC'
@@ -240,16 +255,13 @@ SPEC
 			NO_COLOR=1
 			colors_clear_palette
 		fi
+		mapfile -d '' -t frames < <(cb_py_draw_all "$color" "$spec" "${3:-}")
+		frame=0
 		for cols in 40 80 120; do
 			for ((cursor = 0; cursor < count; cursor++)); do
 				want="$(_menu_cb_draw "$cursor" "$size" "${3:-}" "$cols")"
-				got="$(cb_py_draw "$cursor" "$cols" "$color" \
-					"$(python3 -c "
-import json, sys
-spec = json.loads(sys.argv[1])
-spec['status_message'] = sys.argv[2]
-print(json.dumps(spec))
-" "$spec" "${3:-}")")"
+				got="${frames[frame]-}"
+				frame=$((frame + 1))
 				if [[ "$want" == "$got" ]]; then
 					passed=$((passed + 1))
 				else

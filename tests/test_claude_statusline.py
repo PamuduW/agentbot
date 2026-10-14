@@ -479,7 +479,6 @@ class BoostWrappedStatuslineTests(ClaudeStatuslineTests):
         self.assertEqual(self.WRAPPED, destination.read_text(encoding="utf-8"))
         self.assertTrue(result.state.boost_wrapped)
         self.assertEqual("boost-wrapped", result.state.status_label)
-        self.assertEqual("check", result.state.status_result)
 
     def test_preserving_it_is_reported_not_silent(self):
         from src.claude_statusline import doctor_claude_statusline

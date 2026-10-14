@@ -13,24 +13,13 @@ _agentbot_command_lib_detail() {
 		"${AGENTBOT_PYTHON:-python3}" -m src.cli --root "$AGENTBOT_HOME" help "$command")
 }
 
-_agentbot_command_lib_browse() {
-	local menu_name="$1" choice
-	while true; do
-		agentbot_menu_run "$menu_name" || return 1
+agentbot_menu_command_lib() {
+	local choice
+	while agentbot_menu_run command_lib; do
 		choice="${MENU_SIMPLE_RESULT:-}"
-		# A key with no command behind it: the bootstrap list is a menu, not a
-		# help topic, so it is the caller's to open.
-		if [[ "$choice" == __bootstrap__ ]]; then
-			_agentbot_command_lib_browse command_lib_bootstrap
-			continue
-		fi
 		tui_clear
 		_agentbot_command_lib_detail "$choice"
 		tui_wait_back
 	done
-}
-
-agentbot_menu_command_lib() {
-	_agentbot_command_lib_browse command_lib
 	return 0
 }

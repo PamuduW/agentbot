@@ -2,6 +2,11 @@ import unittest
 from pathlib import Path
 
 
+def _action(plan, relative_path: str):
+    """The plan's action for one output path."""
+    return next(action for action in plan.actions if action.relative_path == relative_path)
+
+
 class ManifestAgentsSyncTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -69,7 +74,7 @@ class ManifestAgentsSyncTests(unittest.TestCase):
             {"AGENTS.md": "# User-owned policy\n"},
             ("agents",),
         )
-        self.assertNotIn("graphify-out/graph.json", plan.action_for("AGENTS.md").content or "")
+        self.assertNotIn("graphify-out/graph.json", _action(plan, "AGENTS.md").content or "")
 
 
 if __name__ == "__main__":

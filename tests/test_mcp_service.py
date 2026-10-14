@@ -15,6 +15,14 @@ from src.ui.reports import print_mcp_catalog, print_mcp_status
 from tests.support import run_cli_main
 
 
+def _eligible_selection(service: McpService) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Every eligible entry, and every client any of them reaches."""
+    groups = service.eligible_groups()
+    ids = sorted({entry_id for group_ids, _ in groups for entry_id in group_ids})
+    clients = sorted({client for _, group_clients in groups for client in group_clients})
+    return (tuple(ids), tuple(clients))
+
+
 class McpServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -226,7 +234,7 @@ class McpInstallComponentTests(unittest.TestCase):
         self.service = McpService(self.paths)
 
     def test_selection_is_every_eligible_entry_and_its_clients(self) -> None:
-        selection, targets = self.service.eligible_selection()
+        selection, targets = _eligible_selection(self.service)
         catalog = self.service.catalog()
         eligible = {entry.id for entry in catalog.entries if entry.eligible}
         ineligible = {entry.id for entry in catalog.entries if not entry.eligible}
@@ -278,7 +286,7 @@ class McpInstallComponentTests(unittest.TestCase):
         self.assertNotIn("antigravity", clients)
 
     def test_install_registers_every_reviewed_pair(self) -> None:
-        selection, targets = self.service.eligible_selection()
+        selection, targets = _eligible_selection(self.service)
         outcome = self.service.install_eligible(apply=True)
 
         self.assertTrue(outcome.applied)
@@ -389,7 +397,7 @@ class McpInstallComponentTests(unittest.TestCase):
         """
         from src.ui.reports import _mcp_plan_row
 
-        selection, targets = self.service.eligible_selection()
+        selection, targets = _eligible_selection(self.service)
         total = len(selection) * len(targets)
 
         pending = self.service.install_eligible(apply=False)

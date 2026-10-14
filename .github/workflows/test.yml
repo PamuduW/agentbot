@@ -1,14 +1,17 @@
 name: test
 
 on:
+  # Every push to the two working branches, so a commit that breaks the gate is
+  # caught when it lands rather than on the next daily run. The operator also
+  # commits outside an agent's local gate, and public repositories run CI free.
+  push:
+    branches: [main, development]
   workflow_dispatch:
-  # Daily at 10:00 Asia/Colombo (04:30 UTC, which is what cron takes) rather
-  # than on every push. Two different things break
-  # this suite and neither is a commit: the runner image, apt and tool versions
-  # drift underneath it, and GitHub's own MCP tool descriptors -- which the
-  # contract pins by fingerprint -- have already changed all eighteen at once.
-  # A day's granularity is enough to catch both, and `workflow_dispatch` covers
-  # the case where a change here wants checking now.
+  # Daily as well, at 10:00 Asia/Colombo (04:30 UTC, which is what cron takes),
+  # for what breaks this suite without a commit: the runner image, apt and tool
+  # versions drift underneath it, and GitHub's own MCP tool descriptors -- which
+  # the contract pins by fingerprint -- have already changed all eighteen at
+  # once. The daily run also adds Python 3.12 and the slow tests.
   schedule:
     - cron: "30 4 * * *"
 
@@ -54,10 +57,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install 'zizmor==1.30.1'
           sudo apt-get update
           sudo apt-get install --yes shellcheck shfmt ripgrep
       - name: Run the full gate
         working-directory: agentbot
+        env:
+          # The slow lane (the seeded memory stress test) runs on the daily and
+          # dispatched runs, not on every push.
+          AGENTBOT_SLOW_TESTS: ${{ github.event_name == 'push' && '0' || '1' }}
         run: bash tests/run.sh
 
   descriptors:

@@ -77,8 +77,7 @@ src/lifecycle.py  src/mcp_service.py
     local backup, and the per-machine Obsidian settings.
 - `scripts/lib/tui.sh` and `scripts/menus/` are presentation adapters.
 - `src/ui/menu.py` draws menu frames and `src/ui/menu_select.py` runs the
-  selection loop. ADR-0001 in the workspace repository moves presentation to
-  Python; the Dotfiles menu stack cannot follow, because it draws before that
+  selection loop. Presentation is Python wherever an interpreter exists; the Dotfiles menu stack cannot follow, because it draws before that
   machine has an interpreter, but this repository is not installed until
   `python3` and PyYAML exist, so its menus can.
 
@@ -143,3 +142,22 @@ Dotfiles installs and updates the Graphify and Boost executables. Agentbot
 configures their supported assistant surfaces. This prevents an integration
 refresh from replacing an executable and a binary update from rewriting
 Agentbot-managed policy.
+
+## Design decisions
+
+**`update` clones every source twice, on purpose.** The plan clones each
+enabled skill source to report what would change; the apply clones again to
+verify that upstream still matches the plan before it installs. Both passes run
+concurrently, about 8 to 10 seconds each over twelve sources. Carrying the
+plan's checkouts into the apply would save the second pass but change the
+contract: the apply would install a revision that moved during the operator's
+confirmation, silently, instead of aborting loudly. Reconsider only if the
+source count passes about forty, `update` starts running unattended in a loop,
+or a target machine is on a genuinely slow connection.
+
+## Out of scope
+
+- Automatic Git staging, commits, pushes, resets or destructive cleanup.
+- Arbitrary profile-selected output paths.
+- Token values or secrets in repository files or workspace state.
+- Always-on services, vector databases or home-server control planes.

@@ -206,6 +206,6 @@ proposes; it does not write. See [Setup review](setup-review.md).
 
 ## Not covered
 
-Installing the CLIs (Dotfiles owns that), MCP server lists (roadmap item 5.1),
+Installing the CLIs (Dotfiles owns that), MCP server lists (`agentbot mcp`),
 VS Code settings (`docs/vscode.md`), and the Cursor statusline
 (`docs/cursor-statusline.md`), which has its own ownership contract.

@@ -167,19 +167,6 @@ class McpService:
     def eligible_pair_count(self) -> int:
         return sum(len(ids) * len(clients) for ids, clients in self.eligible_groups())
 
-    def eligible_selection(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Every vetted catalog entry, and every client any of them reaches.
-
-        The union of eligible_groups: Claude, Codex and Cursor always, and
-        Antigravity once it is installed and at least one entry enables it.
-        Not every pair in the product is registerable; count pairs with
-        eligible_pair_count.
-        """
-        groups = self.eligible_groups()
-        ids = sorted({entry_id for group_ids, _ in groups for entry_id in group_ids})
-        clients = sorted({client for _, group_clients in groups for client in group_clients})
-        return (tuple(ids), tuple(clients))
-
     def install_eligible(self, *, apply: bool = True) -> McpInstallOutcome:
         """Admit every vetted catalog entry that is not registered yet.
 

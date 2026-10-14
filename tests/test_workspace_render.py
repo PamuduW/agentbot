@@ -13,6 +13,11 @@ from src.workspace_render import (
 )
 
 
+def _action(plan, relative_path: str):
+    """The plan's action for one output path."""
+    return next(action for action in plan.actions if action.relative_path == relative_path)
+
+
 class WorkspaceRenderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -71,9 +76,9 @@ class WorkspaceRenderTests(unittest.TestCase):
         )
 
         self.assertEqual("custom", plan.policy_mode)
-        self.assertEqual("unchanged", plan.action_for("AGENTS.md").kind)
-        self.assertEqual("create", plan.action_for("CLAUDE.md").kind)
-        self.assertEqual("# My policy\n", plan.action_for("AGENTS.md").content)
+        self.assertEqual("unchanged", _action(plan, "AGENTS.md").kind)
+        self.assertEqual("create", _action(plan, "CLAUDE.md").kind)
+        self.assertEqual("# My policy\n", _action(plan, "AGENTS.md").content)
 
     def test_unmarked_custom_agents_file_gets_a_review_template(self) -> None:
         plan = build_workspace_render_plan(
@@ -82,7 +87,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             ("agents",),
         )
 
-        review = plan.action_for("AGENTS_temp.md")
+        review = _action(plan, "AGENTS_temp.md")
 
         self.assertEqual("create", review.kind)
         self.assertIn("sha256=", review.content or "")
@@ -96,8 +101,8 @@ class WorkspaceRenderTests(unittest.TestCase):
             ("claude",),
         )
 
-        original = plan.action_for("CLAUDE.md")
-        review = plan.action_for("CLAUDE_temp.md")
+        original = _action(plan, "CLAUDE.md")
+        review = _action(plan, "CLAUDE_temp.md")
 
         self.assertEqual("unchanged", original.kind)
         self.assertEqual("# User-owned instructions\n", original.content)
@@ -123,8 +128,8 @@ class WorkspaceRenderTests(unittest.TestCase):
                     (target,),
                 )
 
-                self.assertEqual("unchanged", plan.action_for(relative_path).kind)
-                self.assertEqual("create", plan.action_for(review_path).kind)
+                self.assertEqual("unchanged", _action(plan, relative_path).kind)
+                self.assertEqual("create", _action(plan, review_path).kind)
 
     def test_every_custom_selection_still_plans_agents(self) -> None:
         plan = build_workspace_render_plan(self.base_agents, {}, ("cursor",))
@@ -141,10 +146,10 @@ class WorkspaceRenderTests(unittest.TestCase):
         )
 
         plan = build_workspace_render_plan(self.base_agents, {"AGENTS.md": legacy}, ("agents",))
-        content = plan.action_for("AGENTS.md").content or ""
+        content = _action(plan, "AGENTS.md").content or ""
 
         self.assertEqual("managed", plan.policy_mode)
-        self.assertEqual("update", plan.action_for("AGENTS.md").kind)
+        self.assertEqual("update", _action(plan, "AGENTS.md").kind)
         self.assertIn(MANAGED_BEGIN, content)
         self.assertIn("Keep this legacy project policy.", content)
 
@@ -155,8 +160,8 @@ class WorkspaceRenderTests(unittest.TestCase):
             ("claude",),
         )
 
-        self.assertEqual("unchanged", plan.action_for("CLAUDE.md").kind)
-        self.assertEqual("create", plan.action_for("CLAUDE_temp.md").kind)
+        self.assertEqual("unchanged", _action(plan, "CLAUDE.md").kind)
+        self.assertEqual("create", _action(plan, "CLAUDE_temp.md").kind)
 
     def test_untouched_review_template_is_refreshed_in_place(self) -> None:
         first = build_workspace_render_plan(
@@ -164,7 +169,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             {"AGENTS.md": "# My policy\n"},
             ("agents",),
         )
-        old_review = first.action_for("AGENTS_temp.md").content or ""
+        old_review = _action(first, "AGENTS_temp.md").content or ""
         newer_base = self.base_agents.replace("Shared environment.", "new shared base")
 
         second = build_workspace_render_plan(
@@ -176,7 +181,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             ("agents",),
         )
 
-        review = second.action_for("AGENTS_temp.md")
+        review = _action(second, "AGENTS_temp.md")
         self.assertEqual("update", review.kind)
         self.assertIn("new shared base", review.content or "")
         self.assertNotIn("AGENTS_temp_1.md", second.paths())
@@ -187,7 +192,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             {"AGENTS.md": "# My policy\n"},
             ("agents",),
         )
-        old_review = (first.action_for("AGENTS_temp.md").content or "") + "\nMy notes.\n"
+        old_review = (_action(first, "AGENTS_temp.md").content or "") + "\nMy notes.\n"
         newer_base = self.base_agents.replace("Shared environment.", "new shared base")
 
         second = build_workspace_render_plan(
@@ -200,7 +205,7 @@ class WorkspaceRenderTests(unittest.TestCase):
         )
 
         self.assertNotIn("AGENTS_temp.md", second.paths())
-        review = second.action_for("AGENTS_temp_1.md")
+        review = _action(second, "AGENTS_temp_1.md")
         self.assertEqual("create", review.kind)
         self.assertIn("new shared base", review.content or "")
 
@@ -210,7 +215,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             {"AGENTS.md": "# My policy\n"},
             ("agents",),
         )
-        edited_review = (first.action_for("AGENTS_temp.md").content or "") + "\nMy notes.\n"
+        edited_review = (_action(first, "AGENTS_temp.md").content or "") + "\nMy notes.\n"
 
         second = build_workspace_render_plan(
             self.base_agents,
@@ -221,7 +226,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             ("agents",),
         )
 
-        self.assertEqual("unchanged", second.action_for("AGENTS_temp.md").kind)
+        self.assertEqual("unchanged", _action(second, "AGENTS_temp.md").kind)
         self.assertNotIn("AGENTS_temp_1.md", second.paths())
 
     def test_copied_agents_review_template_is_migrated(self) -> None:
@@ -230,7 +235,7 @@ class WorkspaceRenderTests(unittest.TestCase):
             {"AGENTS.md": "# My policy\n"},
             ("agents",),
         )
-        copied = first.action_for("AGENTS_temp.md").content or ""
+        copied = _action(first, "AGENTS_temp.md").content or ""
 
         second = build_workspace_render_plan(
             self.base_agents,
@@ -239,8 +244,8 @@ class WorkspaceRenderTests(unittest.TestCase):
         )
 
         self.assertEqual("managed", second.policy_mode)
-        self.assertEqual("update", second.action_for("AGENTS.md").kind)
-        self.assertIn(MANAGED_BEGIN, second.action_for("AGENTS.md").content or "")
+        self.assertEqual("update", _action(second, "AGENTS.md").kind)
+        self.assertIn(MANAGED_BEGIN, _action(second, "AGENTS.md").content or "")
 
     def test_malformed_agents_markers_get_a_review_template(self) -> None:
         malformed = f"{MANAGED_BEGIN}\n# incomplete\n"
@@ -251,8 +256,8 @@ class WorkspaceRenderTests(unittest.TestCase):
             ("agents",),
         )
 
-        self.assertEqual("unchanged", plan.action_for("AGENTS.md").kind)
-        self.assertEqual("create", plan.action_for("AGENTS_temp.md").kind)
+        self.assertEqual("unchanged", _action(plan, "AGENTS.md").kind)
+        self.assertEqual("create", _action(plan, "AGENTS_temp.md").kind)
 
     def test_legacy_claude_template_is_migrated_as_agentbot_owned(self) -> None:
         legacy = (
@@ -262,8 +267,8 @@ class WorkspaceRenderTests(unittest.TestCase):
 
         plan = build_workspace_render_plan(self.base_agents, {"CLAUDE.md": legacy}, ("claude",))
 
-        self.assertEqual("update", plan.action_for("CLAUDE.md").kind)
-        self.assertIn(GENERATED_HEADER, plan.action_for("CLAUDE.md").content or "")
+        self.assertEqual("update", _action(plan, "CLAUDE.md").kind)
+        self.assertIn(GENERATED_HEADER, _action(plan, "CLAUDE.md").content or "")
 
     def test_second_plan_after_apply_has_no_changes(self) -> None:
         first = build_workspace_render_plan(

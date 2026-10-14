@@ -32,6 +32,27 @@ surface_output() {
 	AGENTBOT_TTY=0 NO_COLOR=1 "$ROOT/bin/agentbot" "$@" 2>&1
 }
 
+# Each surface's headless output, run once and shared by every check that reads
+# it: five checks used to run the same command five times over. The raw form
+# keeps trailing newlines (the blank-line check is about exactly those); the
+# plain form strips them, as $(...) did for the checks written against it.
+declare -A HEADLESS_RAW=()
+headless_raw() {
+	if [[ -z "${HEADLESS_RAW[$1]+x}" ]]; then
+		# shellcheck disable=SC2086  # Surfaces carry their subcommand.
+		HEADLESS_RAW[$1]="$(
+			surface_output $1
+			printf 'x'
+		)"
+	fi
+	raw="${HEADLESS_RAW[$1]%x}"
+}
+headless_output() {
+	headless_raw "$1"
+	output="$raw"
+	while [[ "$output" == *$'\n' ]]; do output="${output%$'\n'}"; done
+}
+
 # 4.1's validation asks for both TTY and non-TTY. Every other test here runs
 # headless, so the interactive path -- where width comes from the terminal and
 # colour is on -- had no coverage at all.
@@ -67,10 +88,9 @@ SURFACES=(
 )
 
 test_every_surface_closes_with_a_rollup() {
-	local surface output missing=''
+	local surface output raw missing=''
 	for surface in "${SURFACES[@]}"; do
-		# shellcheck disable=SC2086  # Surfaces carry their subcommand.
-		output="$(surface_output $surface)"
+		headless_output "$surface"
 		grep -qE "^  $ROLLUP" <<<"$output" ||
 			missing+=" [$surface]"
 	done
@@ -81,10 +101,9 @@ test_every_surface_closes_with_a_rollup() {
 }
 
 test_section_rules_only_where_there_are_groups() {
-	local surface output rules wrong=''
+	local surface output raw rules wrong=''
 	for surface in "${SURFACES[@]}"; do
-		# shellcheck disable=SC2086
-		output="$(surface_output $surface)"
+		headless_output "$surface"
 		rules="$(grep -c '──' <<<"$output" || true)"
 		# A surface draws a rule per group, so one rule means one named group,
 		# which is the case the contract forbids.
@@ -143,16 +162,11 @@ test_the_contract_holds_under_a_tty_too() {
 # ui_pause is shared byte-for-byte with the sibling repository and is not ours
 # to change, so this side stops contributing one.
 test_no_surface_ends_on_a_blank_line() {
-	local surface output trailing=''
+	local surface raw trailing=''
 	for surface in "${SURFACES[@]}"; do
-		# shellcheck disable=SC2086
-		output="$(
-			surface_output $surface
-			printf 'x'
-		)"
-		# The `x` keeps the shell from eating the trailing newlines that are
-		# the whole question here.
-		[[ "$output" == *$'\n\nx' ]] && trailing+=" [$surface]"
+		# The raw form keeps the trailing newlines that are the whole question.
+		headless_raw "$surface"
+		[[ "$raw" == *$'\n\n' ]] && trailing+=" [$surface]"
 	done
 	[[ -z "$trailing" ]] || {
 		printf '   surfaces ending on a blank line:%s\n' "$trailing" >&2
@@ -184,10 +198,9 @@ test_the_contract_holds_on_a_bare_machine() {
 }
 
 test_no_surface_doubles_a_blank_line() {
-	local surface output doubled=''
+	local surface output raw doubled=''
 	for surface in "${SURFACES[@]}"; do
-		# shellcheck disable=SC2086
-		output="$(surface_output $surface)"
+		headless_output "$surface"
 		# cat -s squeezes runs of blank lines to one; if that changes the line
 		# count, there was a run.
 		if [[ "$(wc -l <<<"$output")" != "$(cat -s <<<"$output" | wc -l)" ]]; then
@@ -201,10 +214,9 @@ test_no_surface_doubles_a_blank_line() {
 }
 
 test_the_rollup_is_the_last_line() {
-	local surface output last wrong=''
+	local surface output raw last wrong=''
 	for surface in "${SURFACES[@]}"; do
-		# shellcheck disable=SC2086
-		output="$(surface_output $surface)"
+		headless_output "$surface"
 		last="$(grep -v '^[[:space:]]*$' <<<"$output" | tail -1)"
 		grep -qE "^  $ROLLUP" <<<"$last" ||
 			wrong+=" [$surface: ${last# }]"
@@ -216,10 +228,9 @@ test_the_rollup_is_the_last_line() {
 }
 
 test_every_result_word_is_in_the_vocabulary() {
-	local surface output found unknown=''
+	local surface output raw found unknown=''
 	for surface in "${SURFACES[@]}"; do
-		# shellcheck disable=SC2086
-		output="$(surface_output $surface)"
+		headless_output "$surface"
 		found="$(python3 "$TEST_DIR/lib/result_sweep.py" <<<"$output" | sort -u | tr '\n' ' ')"
 		[[ -z "${found// /}" ]] || unknown+=" [$surface: ${found% }]"
 	done

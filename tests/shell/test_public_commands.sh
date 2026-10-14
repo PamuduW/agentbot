@@ -366,12 +366,12 @@ test_every_public_command_reaches_a_route() (
 	# text uses so the next added command fails here instead of shipping
 	# unreachable.
 	local names unrouted=""
-	# Both surfaces: `agentbot help` lists the bootstrap commands (skills,
-	# global) under "Usage: agentbot <command>" too, and the launcher answered
-	# them with "unknown command". The first word is what the launcher routes.
+	# Every command `agentbot help` lists under "Usage: agentbot <command>":
+	# skills and global were once answered with "unknown command". The first
+	# word is what the launcher routes.
 	names="$(cd "$ROOT" && python3 -c "
-from src.commands import commands_for_surface
-names = [c.name.split()[0] for s in ('public', 'bootstrap') for c in commands_for_surface(s)]
+from src.commands import COMMANDS
+names = [c.name.split()[0] for c in COMMANDS]
 print(' '.join(dict.fromkeys(names)))
 ")"
 	[[ -n "$names" ]] || return 1

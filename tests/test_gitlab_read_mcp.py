@@ -76,7 +76,7 @@ class GitLabReadMcpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["GITLAB_MCP_READ_TOKEN"], native["env_vars"])
 
     async def test_exact_fifteen_tool_surface_and_minimal_capabilities(self) -> None:
-        self.assertEqual(EXPECTED_TOOLS, self.facade.tool_names())
+        self.assertEqual(EXPECTED_TOOLS, tuple(tool.name for tool in self.facade.tools()))
         server = build_gitlab_stdio_server(self.facade)
         capabilities = server.get_capabilities()
         self.assertIsNotNone(capabilities.tools)

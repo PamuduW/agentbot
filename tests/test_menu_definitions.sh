@@ -83,28 +83,20 @@ workspaces|agentbot_menu_workspaces_dispatch|back
 memory|agentbot_menu_memory_dispatch|back
 MENUS
 
-# A derived menu is only worth deriving if it tracks its source. Every public
-# command must appear in the Command lib and every bootstrap one in its
-# submenu -- that is the property the derivation buys, so it is the one to
-# check rather than the entries it happens to have today.
-for surface in public bootstrap; do
-	case "$surface" in
-	public) derived=command_lib ;;
-	*) derived=command_lib_bootstrap ;;
-	esac
-	from_metadata="$( (cd "$REPO_DIR" && python3 -c "
-import sys
+# A derived menu is only worth deriving if it tracks its source: every command
+# must appear in the Command lib. That is the property the derivation buys, so
+# it is the one to check rather than the entries it happens to have today.
+from_metadata="$( (cd "$REPO_DIR" && python3 -c "
 from src.commands import COMMANDS
-print('\n'.join(spec.name for spec in COMMANDS if spec.surface == sys.argv[1]))
-" "$surface") | sort -u)"
-	in_menu="$(menu_keys "$derived" | grep -v '^__' | sort -u)"
-	if [[ "$from_metadata" == "$in_menu" ]]; then
-		printf 'ok - the %s menu lists every %s command\n' "$derived" "$surface"
-		passed=$((passed + 1))
-	else
-		fail "$derived does not match the $surface commands: $(diff <(echo "$from_metadata") <(echo "$in_menu") | tr '\n' ' ')"
-	fi
-done
+print('\n'.join(spec.name for spec in COMMANDS))
+") | sort -u)"
+in_menu="$(menu_keys command_lib | sort -u)"
+if [[ "$from_metadata" == "$in_menu" ]]; then
+	printf 'ok - the command_lib menu lists every command\n'
+	passed=$((passed + 1))
+else
+	fail "command_lib does not match the commands: $(diff <(echo "$from_metadata") <(echo "$in_menu") | tr '\n' ' ')"
+fi
 
 # The definitions are also checked as they are built: a label without its key or
 # its description shifts every entry below it onto the wrong action, so the

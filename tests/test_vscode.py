@@ -73,7 +73,6 @@ class VSCodeHostTests(unittest.TestCase):
         host = wsl_host(self.root)
 
         self.assertFalse(host.available)
-        self.assertFalse(host.can_install)
 
     def test_several_windows_profiles_refuse_to_guess(self) -> None:
         """Writing into one of several Windows accounts on a coin flip is worse
@@ -83,13 +82,13 @@ class VSCodeHostTests(unittest.TestCase):
 
         host = windows_host(self.root)
 
-        self.assertFalse(host.can_install)
+        self.assertIsNone(host.cli)
         self.assertIn("cannot choose one", host.detail)
 
     def test_no_windows_profile_is_a_reported_skip(self) -> None:
         host = windows_host(self.root)
 
-        self.assertFalse(host.can_install)
+        self.assertFalse(host.available)
         self.assertIn("no Windows VS Code profile", host.detail)
 
     def test_a_single_windows_profile_resolves_both_paths(self) -> None:
@@ -106,7 +105,7 @@ class VSCodeHostTests(unittest.TestCase):
         self.assertEqual(host.settings_path, user_dir / "settings.json")
         self.assertEqual(host.extensions_dir, extensions)
         self.assertEqual(host.cli, cli)
-        self.assertTrue(host.can_install)
+        self.assertTrue(host.available)
 
 
 class ExtensionPlanTests(unittest.TestCase):
@@ -375,7 +374,7 @@ class ManifestTests(unittest.TestCase):
         """Nothing selected yet is a normal state, not a broken install."""
         manifest = load_manifest(manifest_path(self.root))
 
-        self.assertTrue(manifest.is_empty)
+        self.assertFalse(any(manifest.extensions.values()))
         self.assertEqual(manifest.extensions_for("wsl"), ())
 
     def test_an_unsupported_version_is_refused(self) -> None:
