@@ -188,6 +188,38 @@ sources:
     skills:
       - archify
 
+  - id: claudex-loop
+    # Roadmap item 10.7 (promoted 2026-10-13, adopted in item 12): Claude plans,
+    # Codex reviews, for high-consequence plans only, at most two rounds, by
+    # hand. codex-review reads its sibling claudex-loop's files, so the two come
+    # together; codex-build (Codex writes the code), claudex-route and legacy/
+    # stay out. Name-only in Claude.
+    repo: chaseai-yt/claudex-loop
+    skills:
+      - claudex-loop
+      - codex-review
+
+  - id: oaustegard-skills
+    # Roadmap item 10.10: of 104 skills, only declaring-invariants earned a
+    # place (a fast, read-only check that found two real test gaps in
+    # agentbot). gating waits on its stale-bytecode defect upstream;
+    # verifying-claims added nothing; the rest overlap, assume claude.ai paths
+    # or keep a second memory. Name-only in Claude.
+    repo: oaustegard/claude-skills
+    skills:
+      - declaring-invariants
+
+  - id: vibe-wise
+    # Roadmap item 10.8: an opt-in learning mode (the agent asks for your
+    # approach before writing code). learn is manual-only by its own
+    # frontmatter and stays user-invocable-only in Claude, as does reset. It
+    # keeps notes in the project's .vibe-wise/, a recorded ADR-0009 exception;
+    # Dotfiles adds .vibe-wise/ to the global Git ignore list.
+    repo: nykooi1/vibe-wise
+    skills:
+      - learn
+      - reset
+
   - id: obsidian
     # Obsidian's own creator. Six skills: obsidian-markdown is the one the
     # memory vault needs -- wikilinks, properties, callouts, embeds, tags --

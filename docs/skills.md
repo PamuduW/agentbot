@@ -131,6 +131,34 @@ needs a Chrome: Dotfiles installs Chrome for Testing's headless shell and its
 the skill does not check GitHub for a newer release on every render. Agentbot
 installs only the skill; it is name-only in Claude.
 
+## Item 12 sources
+
+Promoted by workspace roadmap item 12, each listing only the skills it earned:
+
+- `chaseai-yt/claudex-loop`: `claudex-loop` and `codex-review` (Claude plans,
+  Codex reviews), for high-consequence plans, at most two rounds, by hand.
+  `codex-review` reads its sibling's files, so the two come together;
+  `codex-build` stays out. Name-only in Claude.
+- `oaustegard/claude-skills`: `declaring-invariants` only. Name-only in Claude.
+- `nykooi1/vibe-wise`: `learn` and `reset`, an opt-in learning mode. Both are
+  user-invocable-only in Claude. Its notes live in a project's `.vibe-wise/`
+  (a recorded ADR-0009 exception), which Dotfiles adds to the global Git
+  ignore list.
+
+### VibeWise SessionStart hook
+
+VibeWise ships its hook only in its Claude plugin, and Agentbot installs
+skills, not plugins. So `global/claude/hooks/vibe-wise-session-start.py` is an
+adapted copy of upstream's `hooks/session_start.py` (provenance in its header;
+the one change points at the installed `learn` skill). Global render installs
+it to `~/.claude/hooks/` and keeps exactly one `SessionStart` entry for it in
+`~/.claude/settings.json`, leaving every other hook (Boost's included) as it
+is. Disabling or removing the `vibe-wise` source removes both again. A file at
+that path Agentbot did not write is preserved and never wired. Doctor reports a
+missing, stale or left-over hook. It runs `python3` on every session start, is
+silent unless the project has an active `.vibe-wise/profile.md`, and writes
+nothing. Codex, Cursor and `agy` get the skills only.
+
 ## Boost
 
 Dotfiles owns the verified `boost` executable. Agentbot owns Claude, Codex,

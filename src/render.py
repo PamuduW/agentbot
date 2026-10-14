@@ -18,6 +18,7 @@ from .claude_statusline import (
     statusline_destination,
     statusline_source,
 )
+from .claude_vibewise_hook import hook_destination, inspect_vibewise_hook, install_vibewise_hook
 from .paths import AgentbotPaths
 from .skills_sources import load_skills_sources
 from .workspace_render import (
@@ -53,6 +54,7 @@ def render_global_outputs(paths: AgentbotPaths) -> None:
     # Claude Code reads CLAUDE.md, not AGENTS.md, at the user scope.
     _render_global_output(paths.claude_home / "CLAUDE.md", merged)
     install_claude_statusline(paths)
+    install_vibewise_hook(paths)
     run_claude_bridge(paths)
 
     if antigravity_present(paths):
@@ -89,6 +91,9 @@ def plan_global_resync_actions(paths: AgentbotPaths) -> tuple[RenderAction, ...]
         ),
         _plan_statusline_action(paths),
     ]
+    hook_action = _plan_vibewise_hook_action(paths)
+    if hook_action is not None:
+        actions.append(hook_action)
     if antigravity_present(paths):
         actions.append(
             _plan_global_instruction_action(
@@ -173,6 +178,23 @@ def _plan_global_instruction_action(label: str, destination: Path, desired: str)
         None,
         f"preserving user-owned {label}; review template may be refreshed on apply",
     )
+
+
+def _plan_vibewise_hook_action(paths: AgentbotPaths) -> RenderAction | None:
+    label = _display_managed_path(paths, hook_destination(paths))
+    state = inspect_vibewise_hook(paths)
+    detail = {
+        "left over": "would remove the VibeWise SessionStart hook (source disabled)",
+        "script missing or stale": "would install the VibeWise SessionStart hook script",
+        "not wired": "would wire the VibeWise SessionStart hook",
+    }.get(state.status_label)
+    if detail is None:
+        return (
+            RenderAction(label, "unchanged", None, "VibeWise hook current")
+            if state.wanted
+            else None
+        )
+    return RenderAction(label, "update", None, detail)
 
 
 def _plan_statusline_action(paths: AgentbotPaths) -> RenderAction:
