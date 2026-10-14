@@ -16,6 +16,7 @@ extensions:
   - humao.rest-client
   - irongeek.vscode-env
   - johnpapa.vscode-peacock
+  - m4ns0ur.base64
   - mads-hartmann.bash-ide-vscode
   - mechatroner.rainbow-csv
   - mhutchie.git-graph
@@ -62,6 +63,7 @@ extensions:
   - golang.go
   - humao.rest-client
   - irongeek.vscode-env
+  - m4ns0ur.base64
   - mads-hartmann.bash-ide-vscode
   - mechatroner.rainbow-csv
   - mhutchie.git-graph
