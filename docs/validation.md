@@ -6,9 +6,24 @@ Run the complete repository gate from the Agentbot checkout:
 env -u NO_COLOR bash tests/run.sh
 ```
 
-The gate runs available Python quality checks, Python and shell suites, Bash
-syntax, production ShellCheck when installed, the shared-contract check, and
-`git diff --check`.
+The gate runs Ruff and mypy, the Python suite under coverage, the shell suites,
+Bash syntax, ShellCheck and shfmt, `zizmor` over the workflows, the
+shared-contract check, and `git diff --check`. A missing tool fails the gate
+unless `AGENTBOT_ALLOW_SKIP=1`.
+
+The Python suite runs in up to four parallel shards, balanced by file size
+(`AGENTBOT_TEST_JOBS` sets the number); a passing test's output is buffered
+and a failing shard's is printed in full. The seeded memory stress test, about
+a minute and a half on its own, is a slow lane: it runs when
+`AGENTBOT_SLOW_TESTS=1`, which CI sets on its daily and dispatched runs but not
+on a push. Run it locally before changing the sync engine:
+
+```bash
+AGENTBOT_SLOW_TESTS=1 env -u NO_COLOR bash tests/run.sh
+```
+
+CI runs the gate on every push to `main` and `development`, on Python 3.10,
+and daily on 3.10 and 3.12 with the slow lane.
 
 It needs a `dotfiles-shared` checkout: Agentbot resolves it as a sibling, at
 `$HOME/dotfiles-shared`, or wherever `DOTFILES_SHARED_DIR` points. The

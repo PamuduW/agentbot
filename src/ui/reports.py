@@ -982,7 +982,8 @@ def print_memory_result(result, *, title: str) -> None:
     if state == "open":
         return  # one proposal's text: nothing here is a health check
     if state == "queue":
-        # Not a health rollup: the Result and Open rows are not "ok" items.
+        # The Result and Open rows are not "ok" items, so the rollup counts the
+        # waiting proposals rather than the rows: each one needs the operator.
         waiting = len(result.get("proposals") or [])
         print()
         print_note(
@@ -991,6 +992,7 @@ def print_memory_result(result, *, title: str) -> None:
             if waiting
             else "No proposals are waiting."
         )
+        print_rollup(ok=0, check=waiting, miss=0)
         return
     print_rollup(ok=ok, check=check, miss=miss)
 

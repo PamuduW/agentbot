@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 import statistics
 import subprocess
@@ -575,6 +576,11 @@ def _check(
 
 
 class StressPass(unittest.TestCase):
+    # About a minute and a half, a quarter of the whole suite: it runs in CI's
+    # daily job and on request (AGENTBOT_SLOW_TESTS=1), not in every local gate.
+    @unittest.skipUnless(
+        os.environ.get("AGENTBOT_SLOW_TESTS") == "1", "slow; AGENTBOT_SLOW_TESTS=1"
+    )
     def test_seeded_stress_holds_every_invariant(self) -> None:
         metrics = run_stress(seed=7, pairs=100)
         self.assertEqual(0, metrics["lost_writes"], metrics)
