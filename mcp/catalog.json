@@ -116,7 +116,7 @@
       "documentation_url": "https://context7.com/docs/resources/all-clients",
       "license": "MIT",
       "terms_url": "https://upstash.com/terms",
-      "reviewed_on": "2026-09-14",
+      "reviewed_on": "2026-10-15",
       "eligible": true,
       "transport": "local_stdio",
       "entrypoint": [
@@ -150,7 +150,7 @@
       ],
       "descriptor_fingerprints": [
         "sha256:1a7e831848ea3442cf7194efafce33f598f2f39977632330b29626f20569a016",
-        "sha256:c72de62aefbd1cd3859bb42d808c0be5f8623ff8f387113c10347ac511d73590"
+        "sha256:188a34ac2accf9a06650e61f5a8376adb1ca072ddbc0585d64841b00440f9d61"
       ],
       "read_only_authority": "Agentbot's local filter exposes only two descriptor-pinned documentation lookup tools from the fixed Context7 HTTPS origin",
       "limitations": [
