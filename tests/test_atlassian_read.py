@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import ssl
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,6 +71,30 @@ class AtlassianReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(f"Basic {expected}", request.headers["Authorization"])
                 self.assertEqual(b"", request.content)
         self.assertEqual(len(CASES), len(self.requests))
+
+    def test_reads_use_system_trust_without_shell_exports(self) -> None:
+        environment = {
+            key: value for key, value in os.environ.items()
+            if key not in {"SSL_CERT_FILE", "SSL_CERT_DIR"}
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            system_roots = set(ssl.create_default_context().get_ca_certs(binary_form=True))
+            with patch("src.atlassian_read_client.httpx.Client", wraps=httpx.Client) as factory:
+                self.client.jira_projects(limit=1)
+        context = factory.call_args.kwargs.get("verify")
+        self.assertIsInstance(context, ssl.SSLContext)
+        self.assertEqual(ssl.CERT_REQUIRED, context.verify_mode)
+        self.assertTrue(context.check_hostname)
+        self.assertTrue(system_roots)
+        self.assertLessEqual(system_roots, set(context.get_ca_certs(binary_form=True)))
+
+    def test_invalid_certificate_override_returns_safe_error_before_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            missing = str(Path(temporary) / "missing-private-ca.pem")
+            with patch.dict(os.environ, {"SSL_CERT_FILE": missing}):
+                with self.assertRaisesRegex(AtlassianReadError, "^Atlassian TLS configuration failed$"):
+                    self.client.jira_projects(limit=1)
+        self.assertEqual([], self.requests)
 
     async def test_mutations_and_generic_bypasses_make_no_requests(self) -> None:
         for name in (
@@ -270,7 +296,10 @@ class AtlassianReadTests(unittest.IsolatedAsyncioTestCase):
             native = parse_mcp_config(client, text)[key][entry.name]
             self.assertEqual(["mcp", "serve", "--catalog-id", "atlassian_read"], native["args"])
             if client == "codex":
-                self.assertEqual(required_env | {"XDG_CONFIG_HOME"}, set(native["env_vars"]))
+                self.assertEqual(
+                    required_env | {"XDG_CONFIG_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR"},
+                    set(native["env_vars"]),
+                )
             elif client == "antigravity":
                 self.assertNotIn("env", native)
             else:

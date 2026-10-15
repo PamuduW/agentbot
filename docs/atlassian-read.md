@@ -122,6 +122,20 @@ when using saved settings. The CLI also exposes `agentbot atlassian-token status
 `check`, and `remove`. Its `set` action accepts the four named settings as JSON
 on stdin; tokens must never be passed as command arguments.
 
+### Certificate trust on corporate networks
+
+The Atlassian client uses Python's system CA trust store for both the token
+check and MCP tools. On WSL, a company CA already installed in the Linux trust
+store is available automatically, including in new terminals and agent-launched
+MCP servers. No shell export is needed. Certificate and hostname verification
+remain enabled.
+
+Optional `SSL_CERT_FILE` and `SSL_CERT_DIR` settings select a custom trust store.
+Codex registration forwards these variables when present; rerun MCP setup after
+updating an existing registration if you use these overrides. Restart agent
+clients after updating Agentbot. See the
+[Python SSL documentation](https://docs.python.org/3/library/ssl.html#ssl.create_default_context).
+
 ### Optional environment overrides
 
 Each nonempty runtime variable overrides its saved value. A complete set can
