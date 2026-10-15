@@ -1,6 +1,6 @@
 # Atlassian Cloud Read MCP Implementation Plan
 
-> Execute locally on `development`. The user approved implementation in this session. Do not commit, push, or write credentials into the repository.
+> Completed 2026-10-15. Implemented on `development`, then committed, pushed and merged to `main` with the user's authorization. Credentials stay outside the repository.
 
 **Goal:** Add one local `atlassian_read` MCP for Jira and Confluence using separate scoped Cloud API tokens.
 
@@ -12,8 +12,8 @@
 
 ## Constraints and review focus
 
-- Keep changes in `agentbot`; preserve the clean `development` checkout and repository boundaries.
-- Runtime variables: `ATLASSIAN_MCP_EMAIL`, `ATLASSIAN_MCP_CLOUD_ID`, `JIRA_MCP_READ_TOKEN`, `CONFLUENCE_MCP_READ_TOKEN`.
+- Keep product changes in `agentbot`; preserve unrelated work and repository boundaries.
+- Load saved Token Config settings at runtime; support optional overrides through `ATLASSIAN_MCP_EMAIL`, `ATLASSIAN_MCP_CLOUD_ID`, `JIRA_MCP_READ_TOKEN` and `CONFLUENCE_MCP_READ_TOKEN`.
 - Cover Jira issues/search/comments/projects/boards/sprints and Confluence search/pages/spaces/footer and inline comments.
 - No writes, redirects, URL following, generic requests, GraphQL or resource/prompt surfaces.
 - Test unknown tools and extra arguments, path traversal, wrong primitive types, missing credentials, credential crossover, redirects, oversized responses and sanitized failures.
@@ -45,21 +45,48 @@ Files: `docs/atlassian-read.md`, `docs/architecture.md`, `README.md`, `tests/int
 - [x] Add an opt-in live read-only acceptance suite without recording credentials or returned content.
 - [x] Run focused tests and `env -u NO_COLOR bash tests/run.sh`; review diff and status.
 
-## Completion limits
+## Acceptance and verification limits
 
-Local code and offline validation can complete without credentials. Live API checks and actual client registration remain explicitly pending until site configuration and securely supplied tokens exist. Rollback is removal of this task's local changes; no persistent user data is migrated.
+Implementation, release and the requested live acceptance are complete. Jira
+project and Confluence space reads passed on the work laptop after correcting
+the saved Cloud ID. The user confirmed the MCP works in Claude and Cursor.
+
+The full opt-in suite for all ten tools, including inline comments, was not run
+against the user's site. Codex and Antigravity rendering and MCP protocol
+behavior were tested offline; native live acceptance was reported for Claude
+and Cursor only. Token scopes were confirmed during creation, not introspected
+by the server.
+
+The implementation is published, so rollback uses a reviewed revert or removal
+of the managed MCP registrations. Removing local development files is no longer
+the release rollback procedure.
 
 ## Verification result
 
-Implemented locally on `development`; no commits or client registrations. The focused suite ran 57 tests (56 passed, one live skip). The complete Agentbot gate passed outside the sandbox in 210 seconds: 1,445 Python tests (six opt-in skips), coverage, all shell suites, Ruff, mypy, Bash syntax, ShellCheck, shfmt, workflow security, shared-contract and whitespace checks. The sandbox run stalled in the existing isolated-home launcher test; the same test passed outside the sandbox. Independent review found one malformed-Unicode error boundary; a failing regression was added, the boundary fixed, and all checks rerun. Live Cloud reads and actual native-client acceptance remain pending credentials.
+The implementation and Token Config menu were released in `6610e33`. Follow-up
+releases added system certificate trust (`06fed1b`) and general MCP update
+recovery (`eba1049`). Both `main` and `development` received the releases, and
+the workspace pins were updated.
+
+The latest Agentbot code release passed 1,462 Python tests, 85% coverage, all
+shell suites, Ruff, mypy, Bash syntax, ShellCheck, formatting, workflow security,
+shared-contract and whitespace checks, plus GitHub CI. Earlier independent
+review findings covering malformed Unicode, shell tracing, filesystem errors
+and nested JSON rejection were fixed and tested.
 
 ## Follow-up: Token Config menu
 
 The user requested saved Atlassian credentials through the existing Token Config menu.
 
-1. Add a private, atomic credential store and a stdin-only CLI; verify unsafe files, malformed values, replacement failure, and masked output.
-2. Add the Atlassian submenu with hidden token prompts and the existing terminal seam; verify save, cancel, remove, and secret-free output.
-3. Resolve saved settings at MCP startup and status, and remove mandatory JSON-client environment references. Preserve optional Codex environment forwarding.
-4. Update setup docs and run focused tests and the full repository gate. Keep real credentials, client registration, commits, and pushes outside this development task.
+- [x] Add a private, atomic credential store and a stdin-only CLI; verify unsafe files, malformed values, replacement failure, and masked output.
+- [x] Add the Atlassian submenu with hidden token prompts and the existing terminal seam; verify save, cancel, remove, and secret-free output.
+- [x] Resolve saved settings at MCP startup and status, and remove mandatory JSON-client environment references. Preserve optional Codex environment forwarding.
+- [x] Update setup docs and run focused tests and the full repository gate. Keep real credentials outside the repository.
 
-Follow-up complete locally: Atlassian is available under Token Config, with hidden prompts, atomic private storage, masked status, optional read checks, and removal. MCP startup and status load saved settings without exports; Codex also forwards optional XDG configuration. Reviewed and fixed shell-tracing disclosure, filesystem inspection errors, and nested JSON rejection. Final gate passed in 205 seconds: 1,458 Python tests, four end-to-end Atlassian menu tests, coverage (85%), all remaining shell suites and configured lint/type/security/format/contract checks. No real credentials were saved and no live Cloud calls, client registrations, commits or pushes were performed.
+The menu is released and in use. It provides hidden token prompts, atomic
+private storage, masked status, read checks and removal. MCP startup and status
+load saved settings without token exports. HTTPS uses system certificate trust;
+Codex also forwards optional certificate and XDG configuration overrides.
+Missing credentials produce setup warnings, while invalid saved settings remain
+errors. The user's credentials were entered on the work laptop, outside the
+repositories.
