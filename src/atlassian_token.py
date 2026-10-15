@@ -23,6 +23,10 @@ class TokenError(ValueError):
     pass
 
 
+class MissingConfigurationError(TokenError):
+    pass
+
+
 def validate(values: object) -> dict[str, str]:
     if not isinstance(values, dict) or set(values) != set(KEYS):
         raise TokenError(
@@ -100,7 +104,7 @@ def resolve(config_home: Path, environ: Mapping[str, str]) -> dict[str, str]:
         return validate(supplied)
     values = {**read(config_home), **supplied}
     if set(values) != set(KEYS):
-        raise TokenError(
+        raise MissingConfigurationError(
             "Configure Atlassian in Token Config or supply all four environment references"
         )
     return validate(values)

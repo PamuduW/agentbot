@@ -194,8 +194,10 @@ def _classify(
 ) -> Literal["absent", "owned", "unmanaged-conflict", "managed-drift"]:
     if record is None:
         return "unmanaged-conflict" if present else "absent"
-    if record.destination != str(destination) or not present:
+    if record.destination != str(destination):
         return "managed-drift"
+    if not present:
+        return "absent"
     if current_fingerprint != record.rendered_fingerprint:
         return "managed-drift"
     return "owned"
