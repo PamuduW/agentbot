@@ -408,7 +408,9 @@
             "ATLASSIAN_MCP_CLOUD_ID": "ATLASSIAN_MCP_CLOUD_ID",
             "JIRA_MCP_READ_TOKEN": "JIRA_MCP_READ_TOKEN",
             "CONFLUENCE_MCP_READ_TOKEN": "CONFLUENCE_MCP_READ_TOKEN",
-            "XDG_CONFIG_HOME": "XDG_CONFIG_HOME"
+            "XDG_CONFIG_HOME": "XDG_CONFIG_HOME",
+            "SSL_CERT_FILE": "SSL_CERT_FILE",
+            "SSL_CERT_DIR": "SSL_CERT_DIR"
           }
         },
         "cursor": {

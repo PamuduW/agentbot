@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+import ssl
 from typing import Any
 
 import httpx
@@ -161,7 +163,13 @@ class AtlassianReadClient:
         size = 0
         try:
             with httpx.Client(
-                transport=self._transport, follow_redirects=False, timeout=REQUEST_TIMEOUT_SECONDS
+                verify=ssl.create_default_context(
+                    cafile=os.environ.get("SSL_CERT_FILE") or None,
+                    capath=os.environ.get("SSL_CERT_DIR") or None,
+                ),
+                transport=self._transport,
+                follow_redirects=False,
+                timeout=REQUEST_TIMEOUT_SECONDS,
             ) as client:
                 with client.stream(
                     "GET",
@@ -186,6 +194,8 @@ class AtlassianReadClient:
             raise AtlassianReadError("Atlassian request timed out") from None
         except httpx.HTTPError:
             raise AtlassianReadError("Atlassian request failed") from None
+        except OSError:
+            raise AtlassianReadError("Atlassian TLS configuration failed") from None
         except (ValueError, UnicodeError, RecursionError) as error:
             if isinstance(error, AtlassianReadError):
                 raise
