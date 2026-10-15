@@ -7,8 +7,10 @@ source "$ROOT/tests/lib/harness.sh"
 test_harness_setup "$ROOT"
 AGENTBOT_MENU_SOURCE_ONLY=1 source "$ROOT/scripts/menu.sh"
 AGENTBOT_HOME="$ROOT"
-AGENTBOT_PYTHON="$ROOT/.venv/bin/python"
-export AGENTBOT_HOME AGENTBOT_PYTHON
+export AGENTBOT_HOME
+# shellcheck source=scripts/lib/python_env.sh
+source "$ROOT/scripts/lib/python_env.sh"
+agentbot_python_resolve
 test_harness_report_init
 
 test_atlassian_menu_saves_without_showing_secrets() (
