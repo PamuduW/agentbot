@@ -102,6 +102,10 @@ Open `agentbot`, select **5. Token Config**, then **Atlassian tokens**. Choose
 Confluence token. Both token prompts hide input. Confirm that you selected only
 read scopes when creating the tokens.
 
+Missing credentials appear as a Doctor warning and do not fail a full update.
+Atlassian tools still require credentials before making requests. Invalid or
+unsafe saved settings remain Doctor errors.
+
 Agentbot saves these settings in
 `${XDG_CONFIG_HOME:-$HOME/.config}/agentbot/atlassian.json`. The directory must
 have mode `0700`; the file has mode `0600` and is replaced atomically. This is

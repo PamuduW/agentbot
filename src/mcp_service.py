@@ -24,7 +24,6 @@ _ERROR_STATES = frozenset(
         "unmanaged-conflict",
         "managed-drift",
         "config-invalid",
-        "auth-reference-missing",
         "auth-rejected",
         "tool-missing",
         "unexpected-tool",
@@ -36,7 +35,9 @@ _ERROR_STATES = frozenset(
         "client-launch-failed",
     }
 )
-_WARNING_STATES = frozenset({"shadowed", "upstream-unreachable", "rate-limited"})
+_WARNING_STATES = frozenset(
+    {"shadowed", "upstream-unreachable", "rate-limited", "auth-reference-missing"}
+)
 
 
 class McpService:
@@ -119,12 +120,15 @@ class McpService:
                         status = "ok"
                         detail = "owned configuration matches"
                     if entry.id == "atlassian_read":
-                        from .atlassian_token import TokenError, resolve
+                        from .atlassian_token import MissingConfigurationError, TokenError, resolve
 
                         try:
                             resolve(self.paths.config_home, self.environ)
-                        except TokenError as error:
+                        except MissingConfigurationError as error:
                             status = "auth-reference-missing"
+                            detail = str(error)
+                        except TokenError as error:
+                            status = "config-invalid"
                             detail = str(error)
                 items.append(self._item(entry.id, client, entry.name, status, detail))
 
@@ -178,11 +182,9 @@ class McpService:
     def install_eligible(self, *, apply: bool = True) -> McpInstallOutcome:
         """Admit every vetted catalog entry that is not registered yet.
 
-        The install component's whole behaviour. It adds what is absent, leaves
-        what it already owns alone, and refuses to touch anything else -- a name
-        another tool wrote, or a managed entry that no longer matches its
-        record. Those are reported for a person to resolve, because resolving
-        them means overwriting a file this run did not author.
+        It adds absent entries, including missing owned entries at their recorded
+        destination. It leaves unchanged owned entries alone and refuses to
+        overwrite entries another tool wrote or manually changed.
 
         `apply=False` is the deselected case: the same reading, no writes.
         """

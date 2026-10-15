@@ -51,7 +51,10 @@ src/lifecycle.py  src/mcp_service.py
   loads the strict catalog and private ownership state, delegates native
   rendering to `src/mcp_render.py`, and delegates whole-operation planning,
   backup, rollback, and restore to `src/mcp_reconcile.py`. CLI and menu paths
-  call this same service. Admitted remote knowledge overlays run through
+  call this same service. Updates restore missing owned entries at their
+  recorded destinations, while changed entries or destinations remain conflicts.
+  Missing credential references are setup warnings; invalid saved credentials
+  remain errors. Admitted remote knowledge overlays run through
   `src/mcp_filter.py`, which refuses descriptor drift before exposing its exact
   allowlist. GitLab uses `src/gitlab_read_mcp.py` over
   `src/gitlab_read_client.py`: the MCP surface maps to typed, bounded REST

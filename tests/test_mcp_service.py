@@ -193,6 +193,7 @@ class McpServiceTests(unittest.TestCase):
         report = McpService(self.paths, environ={}).status()
         item = next(item for item in report.items if item.client == "claude")
         self.assertEqual("auth-reference-missing", item.status)
+        self.assertEqual("warning", item.severity)
         self.assertIn("DOCS_TOKEN", item.detail)
 
 
@@ -296,6 +297,26 @@ class McpInstallComponentTests(unittest.TestCase):
         self.assertEqual("installed", outcome.result)
         managed = self.service.state_store.load().managed
         self.assertEqual(len(outcome.admitted), len(managed))
+
+    def test_install_restores_a_missing_owned_entry_and_preserves_manual_entries(self) -> None:
+        self.service.install_eligible(apply=True)
+        path = self.paths.codex_home / "config.toml"
+        from src.mcp_render import parse_mcp_config, remove_owned_entry
+
+        path.write_text(
+            remove_owned_entry("codex", path.read_text(), "agentbot_atlassian_read")
+            + '\n[mcp_servers.manual]\ncommand = "manual-tool"\n',
+            encoding="utf-8",
+        )
+        preview = self.service.install_eligible(apply=False)
+        self.assertIn(("atlassian_read", "codex"), preview.admitted)
+        self.assertEqual((), preview.blocked)
+        self.assertNotIn("agentbot_atlassian_read", path.read_text())
+        outcome = self.service.install_eligible(apply=True)
+        self.assertTrue(outcome.applied)
+        servers = parse_mcp_config("codex", path.read_text())["mcp_servers"]
+        self.assertIn("agentbot_atlassian_read", servers)
+        self.assertEqual({"command": "manual-tool"}, servers["manual"])
 
     def _set_eligible(self, catalog_id: str, eligible: bool) -> None:
         import json

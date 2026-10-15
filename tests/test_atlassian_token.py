@@ -169,6 +169,7 @@ class AtlassianTokenTests(unittest.TestCase):
             if item.catalog_id == "atlassian_read" and item.client == "codex"
         )
         self.assertEqual("auth-reference-missing", item.status)
+        self.assertEqual("warning", item.severity)
         store.write(self.config_home, VALUES)
         item = next(
             item
@@ -176,6 +177,13 @@ class AtlassianTokenTests(unittest.TestCase):
             if item.catalog_id == "atlassian_read" and item.client == "codex"
         )
         self.assertEqual("ok", item.status)
+        (self.config_home / "atlassian.json").write_text("{}", encoding="utf-8")
+        item = next(
+            item for item in service.status().items
+            if item.catalog_id == "atlassian_read" and item.client == "codex"
+        )
+        self.assertEqual("config-invalid", item.status)
+        self.assertEqual("error", item.severity)
 
     def test_mcp_startup_uses_saved_credentials_without_exports(self) -> None:
         from unittest.mock import AsyncMock

@@ -6,6 +6,7 @@ import os
 import stat
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from src.mcp_models import (
@@ -137,6 +138,17 @@ class McpReconcileTests(unittest.TestCase):
         drifted = plan_mcp(self.context, ("github",), ("claude",))
         self.assertFalse(drifted.can_apply)
         self.assertEqual("managed-drift", drifted.items[0].state)
+        self.assertFalse(plan_mcp_off(self.context, ("github",), ("claude",)).can_apply)
+
+    def test_missing_owned_entry_at_a_changed_destination_still_blocks_setup(self) -> None:
+        apply_mcp_plan(self.context, plan_mcp(self.context, ("github",), ("claude",)))
+        self.destinations()["claude"].unlink()
+        state = self.context.state_store.load()
+        record = replace(state.managed[0], destination=str(self.root / "old-config.json"))
+        self.context.state_store.replace(replace(state, managed=(record,)))
+        plan = plan_mcp(self.context, ("github",), ("claude",))
+        self.assertFalse(plan.can_apply)
+        self.assertEqual("managed-drift", plan.items[0].state)
 
     def test_empty_unknown_and_ineligible_selections_fail_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "select at least one MCP server"):
