@@ -2,7 +2,7 @@
   "version": 1,
   "id": "context7",
   "publisher": "Upstash",
-  "reviewed_on": "2026-09-14",
+  "reviewed_on": "2026-10-15",
   "sources": [
     "https://context7.com/docs/resources/all-clients",
     "https://context7.com/docs/overview"
@@ -17,7 +17,7 @@
       },
       {
         "name": "query-docs",
-        "descriptor_fingerprint": "sha256:c72de62aefbd1cd3859bb42d808c0be5f8623ff8f387113c10347ac511d73590"
+        "descriptor_fingerprint": "sha256:188a34ac2accf9a06650e61f5a8376adb1ca072ddbc0585d64841b00440f9d61"
       }
     ],
     "timeout_seconds": 60,
