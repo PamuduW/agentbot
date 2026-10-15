@@ -785,7 +785,7 @@ def _cycles(by_id: dict[str, Record]) -> list[Finding]:
 
 # --- Secret scanner ----------------------------------------------------------
 
-SCANNER = "agentbot-memory-secrets/v1"
+SCANNER = "agentbot-memory-secrets/v2"
 
 
 @dataclass(frozen=True)
@@ -800,6 +800,12 @@ class SecretRule:
 # pattern or severity change that is not backward compatible needs a new
 # scanner version.
 SECRET_RULES = (
+    SecretRule(
+        "SECRET_GITLAB_TOKEN",
+        "block",
+        "GitLab prefixed token",
+        re.compile(r"\b(?:glpat|gldt|glrt|glrtr|glcbt)-[A-Za-z0-9_.-]{20,}\b"),
+    ),
     SecretRule(
         "SECRET_PRIVATE_KEY",
         "block",

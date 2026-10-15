@@ -21,6 +21,10 @@ manifest, lock, source revisions, and discovered source inventory before it
 installs anything. If any changed, preview again. Preview clones into temporary directories and does not change installed
 skills or the lock.
 
+The transaction snapshots the global lock, installed skill store and managed
+Claude/Codex skill directories even when no skill names change. A failed
+installation restores earlier source updates and their lock entries.
+
 ## Lock ownership
 
 Global `-g` installations are pinned in `~/.agents/.skill-lock.json`. The
@@ -76,6 +80,10 @@ lock's `skillFolderHash`, recorded at install, is the receipt:
 
 - Prune never removes an excluded or orphaned skill whose files no longer match
   its receipt. It is classified `modified` and removed only by name.
+- Reconciliation applies the same receipt check to upstream removals. Locally
+  changed skills, their links and receipts are preserved and reported. The
+  upstream selection can be removed from the manifest without deleting the
+  customised copy. Use an exact-name prune decision to remove it.
 - Install refuses a source that would overwrite, with different files, a skill
   folder that has no lock entry or no longer matches its receipt. The source
   fails before the Skills CLI runs, naming the folders to move or rename.
@@ -84,6 +92,25 @@ lock's `skillFolderHash`, recorded at install, is the receipt:
   change, so it is treated as unchanged.
 
 ## Adapted skills
+
+Agentbot also prepares a few selected upstream skills in temporary copies
+before installation. `writing-skills` receives its Codex and Gemini support
+references; `github-actions`, `k8s` and `owasp` each receive their report-format
+reference. Their links point inside the installed skill. The excluded sibling
+policy entrypoints remain unselected.
+
+The selected `verify-citations` keeps its verification scripts but runs
+statelessly: it does not read or create paper-memory files or retain author
+lessons. Missing required support files or changed memory instructions stop
+preparation before the Skills CLI runs.
+
+Each prepared skill includes `.agentbot-packaging.json`, recording its upstream
+repository, source revision, packaging version and input-file SHA-256 hashes.
+The install receipt covers the prepared content. The original checkout stays
+unchanged, and exact-revision restore applies the same preparation rules.
+The rules live in `src/skill_packaging.py`; review them when those upstream
+files change. The first-party source selects its four skills by name, so new
+upstream skills require a manifest decision.
 
 A source may publish adaptations of another source's skills, listed in an
 `adaptations.yaml` at its root with the upstream repository, the skill's path

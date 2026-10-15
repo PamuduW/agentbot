@@ -78,6 +78,24 @@ class PruneTests(unittest.TestCase):
         report = plan_prune(self.paths, self._manifest(self.BASE))
         self.assertEqual((), report.removable)
 
+    def test_modified_skills_from_active_sources_require_exact_name_removal(self):
+        from src.skills_installer import _skill_folder_hash
+
+        for selection in ("all", "[keeper]"):
+            with self.subTest(selection=selection):
+                skill = self._skill("local")
+                entry = {"source": "owner/repo", "skillFolderHash": _skill_folder_hash(skill)}
+                self.paths.global_skill_lock.write_text(json.dumps({"skills": {"local": entry}}))
+                (skill / "SKILL.md").write_text("local customisation\n")
+                config = self._manifest(self.BASE.replace("skills: all", f"skills: {selection}"))
+                report = plan_prune(self.paths, config)
+                self.assertEqual([("local", "modified")], [(c.name, c.reason) for c in report.candidates])
+                apply_prune(self.paths, report)
+                self.assertTrue(skill.is_dir())
+                apply_prune(self.paths, report, candidate_names=("local",))
+                self.assertFalse(skill.exists())
+                self.assertNotIn("local", json.loads(self.paths.global_skill_lock.read_text())["skills"])
+
     def test_an_excluded_wildcard_skill_is_removable(self):
         self._skill("alpha")
         self._skill("keeper")

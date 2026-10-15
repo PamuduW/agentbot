@@ -166,7 +166,11 @@ sources:
 
   - id: pamudu-agent-bootstrap-skills
     repo: PamuduW/agentbot_skills
-    skills: all
+    skills:
+      - agent-memory
+      - brainstorming
+      - test-driven-development
+      - co-council
 
   - id: gitlab-ci-official
     # GitLab's own CI/CD group ships this. Unlike the template stubs that used

@@ -49,6 +49,12 @@ one place. Run it every few weeks.
    masked, a credential-shaped setting is refused, and personal details are
    replaced: the home folder becomes `/home/{user}`, the user name `{user}`,
    the machine name `{host}`, and email addresses `{email}`.
+   The shared scanner includes GitLab token prefixes in ordinary prose and
+   diagnostics as well as settings. Token verification refuses HTTP redirects
+   so credentials are never resent to a redirect destination. The recognised
+   prefixes follow [GitLab's token overview](https://docs.gitlab.com/security/tokens/);
+   custom token prefixes and unprefixed secrets cannot be identified reliably
+   from prose alone.
 6. **File it.** Agentbot, not the agent, commits
    `reviews/review_<YYYYMMDD_HHMMSS>_<scope>.md` and a line
    `- review_….md - created` in `reviews/review_log.md` to Dotfiles'

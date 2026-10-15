@@ -383,6 +383,13 @@ class ValidationTests(MemoryTestCase):
 
 
 class ScannerTests(MemoryTestCase):
+    def test_gitlab_tokens_in_prose_are_blocked_without_echoing_values(self) -> None:
+        for prefix in ("glpat-", "gldt-", "glrt-", "glrtr-", "glcbt-"):
+            token = prefix + "AABBCCDDEEFFGG.01.1a2b3c4d5e6f7g8h9i"
+            findings = memory.scan_secrets("synthetic.md", f"Diagnostic: {token}\n")
+            self.assertEqual([("error", "SECRET_GITLAB_TOKEN")], [(f.severity, f.rule) for f in findings])
+            self.assertNotIn(token, repr(findings))
+
     def test_blocking_secret_fails_and_is_not_printed(self) -> None:
         vault = v3_vault(self.tmp / "v")
         vault.write(

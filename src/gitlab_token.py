@@ -249,9 +249,15 @@ def verify(token: str, *, origin: str = DEFAULT_ORIGIN) -> VerifyResult:
     return VerifyResult(True, detail, scopes)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _get(url: str, token: str) -> object:
     request = urllib.request.Request(url, method="GET")
     request.add_header("PRIVATE-TOKEN", token)
     request.add_header("Accept", "application/json")
-    with urllib.request.urlopen(request, timeout=VERIFY_TIMEOUT_SECONDS) as response:
+    opener = urllib.request.build_opener(_NoRedirect())
+    with opener.open(request, timeout=VERIFY_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))

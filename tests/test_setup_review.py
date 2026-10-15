@@ -22,6 +22,7 @@ from src.paths import AgentbotPaths
 
 REPO = Path(__file__).resolve().parents[1]
 FAKE_TOKEN = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+FAKE_GITLAB_TOKEN = "glpat-" + "AABBCCDDEEFFGG.01.1a2b3c4d5e6f7g8h9i"
 
 # One fake serves as every CLI. It records each call (argv, cwd, the recursion
 # marker) as a JSON line, answers the sign-in check, and behaves as FAKE_MODE
@@ -68,6 +69,7 @@ FAKE_CLI = textwrap.dedent(
     print("# Report\\n\\n1. **Summary**: fine.")
     if mode == "secret":
         print("Found {FAKE_TOKEN} in a file.")
+        print("Diagnostic contains {FAKE_GITLAB_TOKEN}.")
         print('- "apiKey": "abc123"')
         print("auth_token = hunter2hunter2")
         print("model = gpt-6")
@@ -102,6 +104,13 @@ def git(cwd: Path, *args: str) -> str:
 
 
 class SetupReviewTestCase(unittest.TestCase):
+    def test_gitlab_credentials_are_masked_in_prose_and_written_reports(self) -> None:
+        token = "glpat-" + "AABBCCDDEEFFGG.01.1a2b3c4d5e6f7g8h9i"
+        for prose in (f"Diagnostic contains {token}.", f"`{token}`", f"PRIVATE-TOKEN: {token}"):
+            report, counts = setup_review.redact_report(prose)
+            self.assertNotIn(token, report)
+            self.assertIn("SECRET_GITLAB_TOKEN", counts)
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -572,6 +581,7 @@ class SafetyTests(SetupReviewTestCase):
 
         report = (self.run_dir() / "report.md").read_text()
         self.assertNotIn(FAKE_TOKEN, report)
+        self.assertNotIn(FAKE_GITLAB_TOKEN, report)
         self.assertNotIn("abc123", report)
         self.assertNotIn("hunter2", report)
         self.assertEqual(2, report.count("[refused: credential-shaped setting"))

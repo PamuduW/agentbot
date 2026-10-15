@@ -434,6 +434,11 @@ def _record_checkout_lock(
             and name not in checkout_skills
             and name not in excluded_copies
         ):
+            from .skill_prune import _changed_since_install
+
+            directory = installed_skills_home / name
+            if directory.is_dir() and _changed_since_install(entry, directory):
+                continue
             del skills[name]
 
     now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -603,6 +608,46 @@ def _without_excluded(
     return argv[:index] + selected + argv[index + 2 :]
 
 
+def _install_checkout(
+    source: SkillSourceEntry,
+    checkout: Path,
+    argv: list[str],
+    *,
+    agents: list[str],
+    global_scope: bool,
+    global_lock_file: Path | None,
+    npx: str,
+    cwd: Path | None,
+    runner: CommandRunner | None,
+) -> InstallResult:
+    from .skill_packaging import prepared_checkout
+
+    source_revision = _checkout_revision(checkout, runner=runner)
+    with prepared_checkout(source, checkout, source_revision) as prepared:
+        argv[4] = str(prepared)
+        argv = _without_excluded(
+            argv, source, prepared, npx=npx, cwd=cwd, runner=runner
+        ) or argv
+        preexisting: frozenset[str] = frozenset()
+        if global_scope:
+            blocked, preexisting = _skills_not_ours_to_replace(
+                source, prepared, _require_global_lock(global_lock_file)
+            )
+            _refuse_overwrites(source, blocked)
+        result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
+        if result.returncode == 0 and global_scope:
+            _record_checkout_lock(
+                source, prepared, _require_global_lock(global_lock_file),
+                source_revision=source_revision, preexisting=preexisting,
+            )
+        return InstallResult(
+            source_id=result.source_id,
+            command=build_add_argv(source, agents=agents, global_scope=global_scope, npx=npx),
+            returncode=result.returncode, stdout=result.stdout, stderr=result.stderr,
+            skipped=result.skipped,
+        )
+
+
 def install_source(
     source: SkillSourceEntry,
     *,
@@ -641,68 +686,17 @@ def install_source(
                 runner=runner,
             )
         elif checkout is not None:
-            source_revision = _checkout_revision(checkout, runner=runner)
-            argv[4] = str(checkout)
-            argv = _without_excluded(
-                argv, source, checkout, npx=npx, cwd=cwd, runner=runner
-            ) or argv
-            preexisting: frozenset[str] = frozenset()
-            if global_scope:
-                blocked, preexisting = _skills_not_ours_to_replace(
-                    source, checkout, _require_global_lock(global_lock_file)
-                )
-                _refuse_overwrites(source, blocked)
-            result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
-            if result.returncode == 0 and global_scope:
-                _record_checkout_lock(
-                    source, checkout, _require_global_lock(global_lock_file),
-                    source_revision=source_revision,
-                    preexisting=preexisting,
-                )
-            result = InstallResult(
-                source_id=result.source_id,
-                command=build_add_argv(
-                    source,
-                    agents=agents,
-                    global_scope=global_scope,
-                    npx=npx,
-                ),
-                returncode=result.returncode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                skipped=result.skipped,
+            result = _install_checkout(
+                source, checkout, argv, agents=agents, global_scope=global_scope,
+                global_lock_file=global_lock_file, npx=npx, cwd=cwd, runner=runner,
             )
         else:
             with tempfile.TemporaryDirectory(prefix="agentbot-skill-") as temp_dir:
                 checkout = Path(temp_dir) / source.id
                 _clone_remote_source(source.repo, checkout, runner=runner)
-                source_revision = _checkout_revision(checkout, runner=runner)
-                argv[4] = str(checkout)
-                argv = _without_excluded(
-                    argv, source, checkout, npx=npx, cwd=cwd, runner=runner
-                ) or argv
-                preexisting = frozenset()
-                if global_scope:
-                    blocked, preexisting = _skills_not_ours_to_replace(
-                        source, checkout, _require_global_lock(global_lock_file)
-                    )
-                    _refuse_overwrites(source, blocked)
-                result = run_install_command(argv, source_id=source.id, cwd=cwd, runner=runner)
-                if result.returncode == 0 and global_scope:
-                    _record_checkout_lock(
-                        source, checkout, _require_global_lock(global_lock_file),
-                        source_revision=source_revision,
-                        preexisting=preexisting,
-                    )
-                result = InstallResult(
-                    source_id=result.source_id,
-                    command=build_add_argv(
-                        source, agents=agents, global_scope=global_scope, npx=npx
-                    ),
-                    returncode=result.returncode,
-                    stdout=result.stdout,
-                    stderr=result.stderr,
-                    skipped=result.skipped,
+                result = _install_checkout(
+                    source, checkout, argv, agents=agents, global_scope=global_scope,
+                    global_lock_file=global_lock_file, npx=npx, cwd=cwd, runner=runner,
                 )
         if not dry_run and result.returncode != 0:
             detail = _command_error_detail(result.stdout, result.stderr)
@@ -886,10 +880,18 @@ def apply_skill_update(
             checkouts=checkouts,
             confirm=True,
             validate=install,
+            extra_affected=(
+                paths.global_skill_lock,
+                paths.agents_skills_home,
+                paths.codex_home / "skills",
+                paths.claude_skills_home,
+            ),
             runner=runner,
         )
     if outcome.status not in {"applied", "applied-with-local-changes"}:
         raise SkillsInstallError(f"skill update was not applied: {outcome.message or outcome.status}")
+    if outcome.preserved_skills:
+        _print_install_progress(f"[WARN] {outcome.message}")
     return results
 
 

@@ -221,6 +221,49 @@ class ReconcileApplyTests(unittest.TestCase):
         path.mkdir(parents=True, exist_ok=True)
         (path / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
 
+    def test_removed_upstream_skills_with_local_edits_are_preserved(self) -> None:
+        from src.skill_reconcile import apply_reconcile_plan, build_reconcile_plan
+        from src.skills_installer import _skill_folder_hash
+        from src.skills_sources import load_skills_sources
+
+        for name in ("gone", "old"):
+            installed = self._skill(name)
+            support = installed / "support.txt"
+            support.write_text("upstream\n")
+            lock = json.loads(self.lock.read_text())
+            lock["skills"][name]["skillFolderHash"] = _skill_folder_hash(installed)
+            self.lock.write_text(json.dumps(lock))
+            support.write_text("local customisation\n")
+            for home in (self.codex, self.claude):
+                (home / "skills").mkdir(parents=True, exist_ok=True)
+                (home / "skills" / name).symlink_to(installed)
+        config = load_skills_sources(self.root / "skills.sources.yaml")
+        original_entries = json.loads(self.lock.read_text())["skills"]
+        plan = build_reconcile_plan(
+            config, discovered={"explicit": ("keep",), "wildcard": ()},
+            lock=json.loads(self.lock.read_text()),
+        )
+        paths, patches = self._paths()
+        for dry_run in (True, False):
+            with patches[0], patches[1]:
+                result = apply_reconcile_plan(paths, config, plan, confirm=True, dry_run=dry_run)
+            for name in ("gone", "old"):
+                self.assertEqual("local customisation\n", (self.agents / name / "support.txt").read_text())
+                self.assertNotIn(name, result.removed_skills)
+                self.assertEqual(original_entries[name], json.loads(self.lock.read_text())["skills"][name])
+                for home in (self.codex, self.claude):
+                    self.assertTrue((home / "skills" / name).is_symlink())
+            self.assertEqual(("gone", "old"), result.preserved_skills)
+
+    def test_an_empty_snapshot_can_be_restored(self) -> None:
+        import shutil
+
+        from src.skill_reconcile import _restore, _snapshot
+
+        snapshot = _snapshot((), self.root)
+        self.addCleanup(shutil.rmtree, snapshot)
+        _restore(snapshot)
+
     def test_explicit_removal_updates_manifest_and_canonical_tables(self) -> None:
         from src.skill_reconcile import apply_reconcile_plan, build_reconcile_plan
         from src.skills_sources import load_skills_sources
