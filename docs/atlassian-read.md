@@ -6,8 +6,9 @@ requests are `GET` requests to `https://api.atlassian.com`; the server does not
 follow redirects, returned URLs, attachments, or arbitrary request arguments.
 Issue reads explicitly disable view-history updates.
 
-The catalog entry is available for setup. Live Cloud endpoint checks and native
-client acceptance have not yet run. Offline tests cover the MCP protocol,
+The integration is released. Jira project and Confluence space reads passed on
+the work laptop, and the user confirmed native use in Claude and Cursor on
+2026-10-15. Offline tests cover the MCP protocol,
 credential routing, argument rejection, response limits, and native rendering.
 
 ## Create the credentials
@@ -52,9 +53,10 @@ read:status:jira
 read:user:jira
 ```
 
-If the scope picker offers `read:jira-work`, the endpoint documentation lists it
-as a classic alternative for issue, search, comment and project reads. Personal
-token picker availability has not been verified. Sources:
+The personal token picker was verified on 2026-10-15 to offer `read:jira-work`,
+the classic alternative for issue, search, comment and project reads. The setup
+used that scope with `read:board-scope:jira-software`, `read:project:jira` and
+`read:sprint:jira-software`. Sources:
 [issues](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-issueidorkey-get),
 [GET search](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-jql-get),
 [comments](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-comments/#api-rest-api-3-issue-issueidorkey-comment-get),
@@ -63,8 +65,7 @@ and the [published OpenAPI specification](https://dac-static.atlassian.com/cloud
 
 Boards additionally require `read:board-scope:jira-software` and
 `read:project:jira`. Sprint lists require `read:sprint:jira-software` and a Scrum
-board. These scopes are documented for the APIs and service-account tokens;
-their availability in your personal token picker still needs checking. Without
+board. These scopes were also available in the personal token picker. Without
 them, platform reads remain usable and the board/sprint tools may return 403.
 See [board endpoints](https://developer.atlassian.com/cloud/jira/software/rest/api-group-board/)
 and [service-account scope selection](https://support.atlassian.com/jira-align/kb/configuring-jira-connector-credentials-using-jira-cloud-api-service-account/).
@@ -217,5 +218,7 @@ AGENTBOT_TEST_ATLASSIAN_MCP=1 \
 
 The opt-in test calls all ten tools plus inline-comment reads. It does not print
 tokens or returned issue/page/comment content. It does not attempt mutations to
-test token scope restrictions. Native Claude, Codex and Cursor launches against
-your real site remain a separate acceptance check.
+test token scope restrictions. This full suite was not run against the user's
+site during the 2026-10-15 acceptance. The reported live checks covered Jira
+projects, Confluence spaces and native use in Claude and Cursor. Codex and
+Antigravity native live launches were not part of that acceptance.
