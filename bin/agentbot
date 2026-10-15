@@ -109,7 +109,7 @@ agentbot_main() {
 	status | full | doctor) agentbot_run_backend "$command" "$@" ;;
 	boot) agentbot_run_backend "$command" "$@" ;;
 	workspace | workspaces | resync) agentbot_run_backend "$command" "$@" ;;
-	graphify | boost | mcp | gitlab-token | memory) agentbot_run_backend "$command" "$@" ;;
+	graphify | boost | mcp | gitlab-token | atlassian-token | memory) agentbot_run_backend "$command" "$@" ;;
 	cli-config | cursor | vscode | setup-review) agentbot_run_backend "$command" "$@" ;;
 	skills | global) agentbot_run_backend "$command" "$@" ;;
 	token) agentbot_run_token "$@" ;;

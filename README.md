@@ -545,6 +545,16 @@ write-shaped and generic bypass names locally, bounds every request, and keeps
 response data out of test output. GitLab remains ineligible until this suite
 and isolated Claude, Codex, and Cursor launches pass with the same credential.
 
+### Atlassian Cloud read MCP
+
+`atlassian_read` exposes ten local read tools for Jira and Confluence, using
+separate scoped API tokens. The server uses fixed Cloud gateway routes, rejects
+mutation and generic-request tools, and never follows redirects or returned
+URLs. Save the tokens, email and Cloud ID through **5. Token Config → Atlassian tokens**;
+the MCP loads the private saved settings automatically.
+See [setup, read scopes and validation](docs/atlassian-read.md).
+Live site and native-client acceptance remain pending.
+
 ## Skills
 
 [`skills.sources.yaml`](skills.sources.yaml) is the canonical source manifest.

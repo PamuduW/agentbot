@@ -66,6 +66,7 @@ class McpCatalogTests(unittest.TestCase):
                 "aws_knowledge": True,
                 "microsoft_learn": True,
                 "gitlab_read": True,
+                "atlassian_read": True,
                 # Item 6A: admitted and rejected on 2026-10-08. Kept as the
                 # record of that review; ineligible, so the MCP step removes
                 # it from any machine that registered it.
@@ -192,7 +193,7 @@ class McpCatalogTests(unittest.TestCase):
             if contract.client == "antigravity" and contract.enabled
         }
         self.assertEqual(
-            {"context7", "aws_knowledge", "microsoft_learn", "gitlab_read", "github"}, enabled
+            {"context7", "aws_knowledge", "microsoft_learn", "gitlab_read", "atlassian_read", "github"}, enabled
         )
         github = next(entry for entry in catalog.entries if entry.id == "github")
         bridge = next(c for c in github.clients if c.client == "antigravity")

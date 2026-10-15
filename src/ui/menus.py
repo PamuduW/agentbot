@@ -92,14 +92,16 @@ MENUS: dict[str, Menu] = {
     "tokens": Menu(
         title="Token Config",
         breadcrumb="Agentbot › Token Config",
-        labels=("GitHub token", "GitLab token"),
-        keys=("github", "gitlab"),
+        labels=("GitHub token", "GitLab token", "Atlassian tokens"),
+        keys=("github", "gitlab", "atlassian"),
         descs=(
             "Raises public-repository API rate limits, and authenticates the "
             "GitHub MCP server.\n"
             "Read access only; shared with the sibling product.",
             "The read_api credential the Agentbot GitLab facade reads with.\n"
             "Read access only; no project or instance settings are stored beside it.",
+            "Save scoped Jira and Confluence read tokens, email and Cloud ID.\n"
+            "Private local settings; token input is hidden.",
         ),
     ),
     "memory": Menu(

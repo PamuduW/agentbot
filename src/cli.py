@@ -1123,6 +1123,47 @@ def _handle_gitlab_token(context: CommandContext) -> int:
     raise SystemExit(f"unknown gitlab-token command: {command}")
 
 
+def _handle_atlassian_token(context: CommandContext) -> int:
+    from . import atlassian_token as store
+    from .atlassian_read_client import AtlassianReadClient, AtlassianReadError
+
+    command = context.args.atlassian_token_command
+    config_home = context.paths.config_home
+    try:
+        if command == "set":
+            data = sys.stdin.read(store.MAX_CONFIG_BYTES + 1)
+            if len(data.encode("utf-8")) > store.MAX_CONFIG_BYTES:
+                raise store.TokenError("Atlassian settings input is too large")
+            try:
+                settings = json.loads(data)
+            except (ValueError, UnicodeError, RecursionError):
+                raise store.TokenError("Supply Atlassian settings as JSON on stdin") from None
+            store.write(config_home, settings)
+            print("  Atlassian settings saved.")
+            return 0
+        if command == "remove":
+            removed = store.remove(config_home)
+            print("  Saved Atlassian settings removed." if removed else "  No saved Atlassian settings.")
+            return 0
+        settings = store.read(config_home)
+        if not settings:
+            print("  not configured")
+            return 1
+        if command == "status":
+            print(f"  Jira {store.fingerprint(settings['JIRA_MCP_READ_TOKEN'])}; "
+                  f"Confluence {store.fingerprint(settings['CONFLUENCE_MCP_READ_TOKEN'])}")
+            return 0
+        client = AtlassianReadClient(*(settings[key] for key in store.KEYS))
+        client.jira_projects(limit=1)
+        client.confluence_spaces(limit=1)
+        print("  Jira and Confluence reads accepted; token scopes are not introspected.")
+        return 0
+    except (store.TokenError, AtlassianReadError, UnicodeError) as error:
+        message = "Invalid Atlassian settings" if isinstance(error, UnicodeError) else str(error)
+        print(f"  {message}", file=sys.stderr)
+        return 1
+
+
 def _handle_mcp(context: CommandContext) -> int:
     command = context.args.mcp_command
     if command == "serve":
@@ -1130,6 +1171,10 @@ def _handle_mcp(context: CommandContext) -> int:
             from .gitlab_read_mcp import main as run_gitlab
 
             return run_gitlab([])
+        if context.args.catalog_id == "atlassian_read":
+            from .atlassian_read_mcp import main as run_atlassian
+
+            return run_atlassian([], config_home=context.paths.config_home)
         if context.args.catalog_id == "github":
             from .github_mcp_bridge import main as run_github_bridge
 
@@ -1467,6 +1512,7 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandContext], int]] = {
     "boost": _handle_boost,
     "mcp": _handle_mcp,
     "gitlab-token": _handle_gitlab_token,
+    "atlassian-token": _handle_atlassian_token,
     "memory": _handle_memory,
     "cli-config": _handle_cli_config,
     "cursor": _handle_cursor,
@@ -1814,6 +1860,12 @@ def build_parser() -> argparse.ArgumentParser:
     # products share; this one is Agentbot's, and the menu drives it through
     # here so the secret never crosses a shell argument vector.
     _add_gitlab_token_parser(subparsers)
+    atlassian_token = subparsers.add_parser(
+        "atlassian-token", help="Manage saved Atlassian Cloud read credentials"
+    )
+    atlassian_sub = atlassian_token.add_subparsers(dest="atlassian_token_command", required=True)
+    for action in ("status", "set", "check", "remove"):
+        atlassian_sub.add_parser(action)
 
     _add_memory_parser(subparsers)
 

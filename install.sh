@@ -566,7 +566,7 @@ main() {
 		check_python_deps
 		run_cli boot "${@:2}"
 		;;
-	graphify | boost | gitlab-token | memory)
+	graphify | boost | gitlab-token | atlassian-token | memory)
 		check_python_deps
 		run_cli "$cmd" "${@:2}"
 		;;
