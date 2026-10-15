@@ -7,10 +7,14 @@ of the private directory, or a value echoed somewhere it can be read back.
 
 from __future__ import annotations
 
+import email.message
+import io
 import stat
 import tempfile
 import unittest
 import urllib.error
+import urllib.request
+import urllib.response
 from pathlib import Path
 from unittest import mock
 
@@ -169,6 +173,38 @@ class StoreTests(unittest.TestCase):
 class VerifyTests(unittest.TestCase):
     """Three outcomes, and the middle one matters most: being unable to ask is
     not a refusal, and a caller that treats it as one discards a good token."""
+
+    def test_verification_never_follows_a_redirect_with_the_credential(self) -> None:
+        real_build = urllib.request.build_opener
+        for destination in ("https://other.invalid/landing", "https://gitlab.com/landing", "http://other.invalid/landing"):
+            with self.subTest(destination=destination):
+                seen = []
+
+                class Transport(urllib.request.HTTPHandler, urllib.request.HTTPSHandler):
+                    def https_open(self, request, seen=seen, destination=destination):
+                        seen.append(request)
+                        headers = email.message.Message()
+                        if len(seen) == 1:
+                            headers["Location"] = destination
+                            response = urllib.response.addinfourl(io.BytesIO(b""), headers, request.full_url, 302)
+                            response.msg = "Found"
+                            return response
+                        response = urllib.response.addinfourl(io.BytesIO(b"{}"), headers, request.full_url, 200)
+                        response.msg = "OK"
+                        return response
+
+                    http_open = https_open
+
+                def opener(*handlers):
+                    return real_build(*handlers, Transport())
+
+                with (
+                    mock.patch.object(urllib.request, "build_opener", side_effect=opener),
+                    mock.patch.object(urllib.request, "_opener", opener()),
+                ):
+                    result = store.verify(_TOKEN)
+                self.assertEqual(1, len(seen))
+                self.assertIsNone(result.accepted)
 
     def test_the_token_travels_in_a_header_not_a_url(self) -> None:
         captured: dict[str, object] = {}

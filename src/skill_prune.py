@@ -186,7 +186,7 @@ def plan_prune(paths: AgentbotPaths, config: SkillsSourcesConfig) -> PruneReport
 
         repo = entry.get("source")
         source = active_repos.get(repo) if isinstance(repo, str) else None
-        if (source is None or source.excludes(name)) and _changed_since_install(entry, directory):
+        if _changed_since_install(entry, directory):
             candidates.append(
                 PruneCandidate(
                     name=name,

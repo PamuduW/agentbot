@@ -53,6 +53,7 @@ class ReconcileResult:
     message: str = ""
     updated_skills: tuple[str, ...] = ()
     workspace_report: object | None = None
+    preserved_skills: tuple[str, ...] = ()
 
 
 def _lock_skills(lock: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -220,7 +221,7 @@ def _snapshot(paths: Iterable[Path], root: Path) -> Path:
         else:
             shutil.copy2(path, destination)
         manifest.append(f"{index}\t{path}\texists")
-    (backup / "paths.tsv").write_text("\n".join(manifest) + "\n", encoding="utf-8")
+    (backup / "paths.tsv").write_text("".join(line + "\n" for line in manifest), encoding="utf-8")
     return backup
 
 
@@ -330,6 +331,19 @@ def apply_reconcile_plan(
     lock_path = paths.global_skill_lock
     lock = _lock_data(lock_path)
     added, removed = _approved_lock_mutations(config, plan, lock)
+    from .skill_prune import _changed_since_install
+
+    preserved = {
+        name for name in removed
+        if (paths.agents_skills_home / name).is_dir()
+        and _changed_since_install(lock["skills"][name], paths.agents_skills_home / name)
+    }
+    removed -= preserved
+    preservation_message = (
+        f"Preserved locally changed skills: {', '.join(sorted(preserved))}. "
+        "Remove them by exact name with skills prune if no longer needed."
+        if preserved else ""
+    )
     if dry_run:
         return ReconcileResult(
             "preview",
@@ -337,6 +351,7 @@ def apply_reconcile_plan(
             tuple(sorted(removed)),
             tuple(sorted(added)),
             message="reconciliation preview only",
+            preserved_skills=tuple(sorted(preserved)),
         )
 
     agents_home = paths.agents_skills_home
@@ -446,7 +461,10 @@ def apply_reconcile_plan(
             if any(_tracked(path, paths.root, command_runner) for path in changed_paths)
             else "applied"
         )
-        return ReconcileResult(status, changed_paths, tuple(sorted(removed)), tuple(sorted(added)))
+        return ReconcileResult(
+            status, changed_paths, tuple(sorted(removed)), tuple(sorted(added)),
+            message=preservation_message, preserved_skills=tuple(sorted(preserved)),
+        )
     except Exception as error:
         _restore(backup)
         return ReconcileResult(

@@ -1148,6 +1148,7 @@ def print_reconciliation_report(result) -> tuple[int, int, int]:
             ("updated skills", _counted(result.updated_skills), "info"),
             ("added skills", _counted(result.added_skills), "info"),
             ("removed skills", _counted(result.removed_skills), "info"),
+            ("preserved local edits", _counted(result.preserved_skills), "info"),
         ],
         show_header=False,
         wrap_details=True,
@@ -1315,6 +1316,7 @@ def print_update_result(outcome) -> tuple[int, int, int]:
         added = tuple(reconcile.added_skills)
         removed = tuple(reconcile.removed_skills)
         updated = tuple(reconcile.updated_skills)
+        preserved = tuple(getattr(reconcile, "preserved_skills", ()))
         touched = len(added) + len(removed) + len(updated)
         rows.append(
             (
@@ -1330,6 +1332,8 @@ def print_update_result(outcome) -> tuple[int, int, int]:
                 "applied" if changed else "unchanged",
             )
         )
+        if preserved:
+            rows.append(("Preserved local edits", ", ".join(preserved), "unchanged"))
 
     mcp = getattr(outcome, "mcp", None)
     if mcp is not None:

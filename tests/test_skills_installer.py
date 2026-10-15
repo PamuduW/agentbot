@@ -595,6 +595,115 @@ sources:
 
         self.assertEqual(["reconcile", "install"], events)
 
+    def test_skills_only_failure_restores_ordinary_updates_and_lock(self) -> None:
+        from contextlib import contextmanager
+        from hashlib import sha256
+
+        from src.skill_catalog import SourceCatalog
+        from src.skills_installer import SkillsInstallError, SkillUpdatePlan, apply_skill_update
+
+        paths = self._paths()
+        installed = paths.agents_skills_home / "brainstorming"
+        installed.mkdir(parents=True)
+        (installed / "SKILL.md").write_text("old content\n")
+        paths.global_skill_lock.write_text('{"skills": {"brainstorming": {"source": "obra/superpowers"}}}\n')
+        original_lock = paths.global_skill_lock.read_bytes()
+        for home in (paths.codex_home, paths.claude_home):
+            (home / "skills").mkdir(parents=True)
+            (home / "skills" / "brainstorming").symlink_to(installed)
+        plan = SkillUpdatePlan(
+            (SourceCatalog("superpowers", "obra/superpowers", "a" * 40, ("brainstorming",)),),
+            (), sha256(paths.skills_sources_file.read_bytes()).hexdigest(),
+            sha256(original_lock).hexdigest(),
+        )
+
+        @contextmanager
+        def checkouts(*_args, **_kwargs):
+            yield {"superpowers": self.root / "checkout"}
+
+        def failing_install(*_args, **_kwargs):
+            (installed / "SKILL.md").write_text("new content\n")
+            paths.global_skill_lock.write_text('{"skills": {}, "agentbotSources": {"new": {}}}')
+            for home in (paths.codex_home, paths.claude_home):
+                (home / "skills" / "brainstorming").unlink()
+                (home / "skills" / "partial").symlink_to(installed)
+            (paths.agents_skills_home / "partial").mkdir()
+            raise SkillsInstallError("later source failed")
+
+        with (
+            patch("src.skills_installer.verified_source_checkouts", checkouts),
+            patch("src.skills_installer.install_skills", failing_install),
+            self.assertRaisesRegex(SkillsInstallError, "later source failed"),
+        ):
+            apply_skill_update(paths, plan)
+
+        self.assertEqual("old content\n", (installed / "SKILL.md").read_text())
+        self.assertEqual(original_lock, paths.global_skill_lock.read_bytes())
+        self.assertFalse((paths.agents_skills_home / "partial").exists())
+        for home in (paths.codex_home, paths.claude_home):
+            self.assertEqual(installed, (home / "skills" / "brainstorming").resolve())
+            self.assertFalse((home / "skills" / "partial").is_symlink())
+
+    def test_recording_an_update_retains_receipts_for_modified_removed_skills(self) -> None:
+        from src.skills_installer import _record_checkout_lock, _skill_folder_hash
+        from src.skills_sources import SkillSourceEntry
+
+        paths = self._paths()
+        installed = paths.agents_skills_home / "removed"
+        installed.mkdir(parents=True)
+        (installed / "SKILL.md").write_text("upstream\n")
+        entry = {"source": "owner/repo", "skillFolderHash": _skill_folder_hash(installed)}
+        paths.global_skill_lock.write_text(json.dumps({"skills": {"removed": entry}}))
+        (installed / "SKILL.md").write_text("local edit\n")
+        checkout = self.root / "checkout"
+        checkout.mkdir()
+
+        _record_checkout_lock(
+            SkillSourceEntry(id="source", repo="owner/repo", skills=["remaining"]),
+            checkout, paths.global_skill_lock,
+        )
+
+        self.assertEqual(entry, json.loads(paths.global_skill_lock.read_text())["skills"]["removed"])
+
+    def test_failed_first_skill_update_removes_partial_store_lock_and_bridges(self) -> None:
+        from contextlib import contextmanager
+        from hashlib import sha256
+
+        from src.skill_catalog import SourceCatalog
+        from src.skills_installer import SkillsInstallError, SkillUpdatePlan, apply_skill_update
+
+        paths = self._paths()
+        plan = SkillUpdatePlan(
+            (SourceCatalog("superpowers", "obra/superpowers", "a" * 40, ("brainstorming",)),),
+            (), sha256(paths.skills_sources_file.read_bytes()).hexdigest(), None,
+        )
+
+        @contextmanager
+        def checkouts(*_args, **_kwargs):
+            yield {"superpowers": self.root / "checkout"}
+
+        def failing_install(*_args, **_kwargs):
+            installed = paths.agents_skills_home / "brainstorming"
+            installed.mkdir(parents=True)
+            (installed / "SKILL.md").write_text("partial\n")
+            paths.global_skill_lock.write_text('{"skills": {}}')
+            for home in (paths.codex_home, paths.claude_home):
+                (home / "skills").mkdir(parents=True, exist_ok=True)
+                (home / "skills" / "brainstorming").symlink_to(installed)
+            raise SkillsInstallError("later source failed")
+
+        with (
+            patch("src.skills_installer.verified_source_checkouts", checkouts),
+            patch("src.skills_installer.install_skills", failing_install),
+            self.assertRaisesRegex(SkillsInstallError, "later source failed"),
+        ):
+            apply_skill_update(paths, plan)
+
+        self.assertFalse(paths.global_skill_lock.exists())
+        self.assertFalse(paths.agents_skills_home.exists())
+        self.assertFalse((paths.codex_home / "skills").exists())
+        self.assertFalse(paths.claude_skills_home.exists())
+
     def test_revision_operations_reject_symlinked_lock_before_network(self) -> None:
         from hashlib import sha256
 

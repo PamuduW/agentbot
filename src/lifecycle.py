@@ -556,6 +556,7 @@ class Lifecycle:
 
     def _update_transaction_paths(self, plan: UpdatePlan) -> tuple[Path, ...]:
         affected = [
+            self.paths.global_skill_lock,
             self.paths.agents_skills_home,
             self.paths.codex_home / "skills",
             self.paths.claude_skills_home,
