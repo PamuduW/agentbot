@@ -297,6 +297,22 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
+        "atlassian-token",
+        "agentbot atlassian-token status|set|check|remove",
+        "mutating",
+        "Manage saved scoped Jira and Confluence read credentials and Cloud settings.",
+        (
+            option("status", "Show saved token fingerprints.", "read-only"),
+            option("set", "Save Cloud ID, email and both tokens from JSON on stdin.", "explicit"),
+            option("check", "Check Jira and Confluence reads without introspecting scopes.", "network"),
+            option("remove", "Remove saved Atlassian settings and both tokens.", "explicit"),
+        ),
+        "Stores private mode-0600 settings outside the repository; tokens do not appear in arguments or reports.",
+        ("agentbot atlassian-token status", "agentbot atlassian-token check"),
+        ("mcp status",),
+        ("atlassian-token status", "atlassian-token set", "atlassian-token check", "atlassian-token remove"),
+    ),
+    CommandSpec(
         "memory",
         "agentbot memory setup|project|sync|conflict|status|validate|search|show|brief|propose|review|approve|reject|due|hook|backup|restore",
         "mutating",

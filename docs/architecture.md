@@ -56,6 +56,12 @@ src/lifecycle.py  src/mcp_service.py
   allowlist. GitLab uses `src/gitlab_read_mcp.py` over
   `src/gitlab_read_client.py`: the MCP surface maps to typed, bounded REST
   `GET` routes only and contains no generic request or mutation primitive.
+  Atlassian Cloud follows the same local facade pattern in
+  `src/atlassian_read_mcp.py` and `src/atlassian_read_client.py`, with ten fixed
+  Jira/Confluence reads and separate scoped tokens on the fixed API gateway.
+  `src/atlassian_token.py` owns private saved settings; the Token Config menu,
+  `atlassian-token` CLI, MCP startup and status use that store.
+  See [Atlassian read MCP](atlassian-read.md) for setup and verification limits.
 - The memory vault (workspace ADR-0009) is its own set of modules, each with
   one job; `src/cli.py` composes them behind `agentbot memory`:
   - `src/memory.py` finds the vault, reads its schema 3 marker, and validates

@@ -21,6 +21,8 @@ source "$_AGENTBOT_MENU_DIR/menus/github_token.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/tokens.sh"
 # shellcheck disable=SC1091
+source "$_AGENTBOT_MENU_DIR/menus/atlassian_token.sh"
+# shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/workspaces.sh"
 # shellcheck disable=SC1091
 source "$_AGENTBOT_MENU_DIR/menus/memory.sh"

@@ -259,7 +259,7 @@ class McpInstallComponentTests(unittest.TestCase):
         self.assertEqual(self.service.eligible_pair_count(), len(outcome.admitted))
         reached = {catalog_id for catalog_id, client in outcome.admitted if client == "antigravity"}
         self.assertEqual(
-            {"context7", "aws_knowledge", "microsoft_learn", "gitlab_read", "github"}, reached
+            {"context7", "aws_knowledge", "microsoft_learn", "gitlab_read", "atlassian_read", "github"}, reached
         )
         config = json.loads(
             (self.root / ".gemini" / "config" / "mcp_config.json").read_text(encoding="utf-8")

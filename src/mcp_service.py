@@ -118,6 +118,14 @@ class McpService:
                     else:
                         status = "ok"
                         detail = "owned configuration matches"
+                    if entry.id == "atlassian_read":
+                        from .atlassian_token import TokenError, resolve
+
+                        try:
+                            resolve(self.paths.config_home, self.environ)
+                        except TokenError as error:
+                            status = "auth-reference-missing"
+                            detail = str(error)
                 items.append(self._item(entry.id, client, entry.name, status, detail))
 
         for record in state.managed:

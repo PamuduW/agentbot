@@ -166,6 +166,7 @@ agentbot_menu_tokens_dispatch() {
 	case "$choice" in
 	github) agentbot_token_config_menu || rc=$? ;;
 	gitlab) agentbot_gitlab_token_menu || rc=$? ;;
+	atlassian) agentbot_atlassian_token_menu || rc=$? ;;
 	*)
 		printf 'Unknown Token Config action: %s\n' "$choice" >&2
 		rc=2

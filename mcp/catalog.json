@@ -381,6 +381,91 @@
       ]
     },
     {
+      "id": "atlassian_read",
+      "name": "agentbot_atlassian_read",
+      "publisher": "Agentbot",
+      "documentation_url": "https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/",
+      "license": null,
+      "terms_url": "https://www.atlassian.com/legal/cloud-terms-of-service",
+      "reviewed_on": "2026-10-15",
+      "eligible": true,
+      "transport": "local_stdio",
+      "entrypoint": [
+        "agentbot",
+        "mcp",
+        "serve",
+        "--catalog-id",
+        "atlassian_read"
+      ],
+      "clients": {
+        "claude": {
+          "enabled": true
+        },
+        "codex": {
+          "enabled": true,
+          "environment": {
+            "ATLASSIAN_MCP_EMAIL": "ATLASSIAN_MCP_EMAIL",
+            "ATLASSIAN_MCP_CLOUD_ID": "ATLASSIAN_MCP_CLOUD_ID",
+            "JIRA_MCP_READ_TOKEN": "JIRA_MCP_READ_TOKEN",
+            "CONFLUENCE_MCP_READ_TOKEN": "CONFLUENCE_MCP_READ_TOKEN",
+            "XDG_CONFIG_HOME": "XDG_CONFIG_HOME"
+          }
+        },
+        "cursor": {
+          "enabled": true
+        },
+        "antigravity": {
+          "enabled": true
+        }
+      },
+      "credential": {
+        "mode": "none",
+        "environment": []
+      },
+      "allowed_tools": [
+        "jira_search",
+        "jira_issue",
+        "jira_comments",
+        "jira_projects",
+        "jira_boards",
+        "jira_sprints",
+        "confluence_search",
+        "confluence_page",
+        "confluence_spaces",
+        "confluence_comments"
+      ],
+      "descriptor_fingerprints": [
+        "sha256:2b72efc3eed9b24974812885bedd7988d100f4cb45248a57eed46425683ccee1",
+        "sha256:5dc7d242effc32f2d0bec62536c590b96c9d074a2eb4a15dd6899c3ca8b34451",
+        "sha256:30c761215c0829f690341e4b13471db684e76b04256d65c0730ccf4fa11fed0a",
+        "sha256:d9178f85b826e5642282003427e4eb5794d5f7589722cddcbf38ea482402f5e1",
+        "sha256:fab1f47ea10fbe56489e9dc55b46e44871360be801b06940e0f7c2cfed0c1c4c",
+        "sha256:8218fc4076b4e1d611cc35f1542ebf6d1fcfe724d8083f641eb88e0380015c2f",
+        "sha256:feb55761e942383940c4d7b00e08ab969e0c48a2bf44313612913519953f2862",
+        "sha256:613375764dc6cd97b2659faf0ff40cb852be00bc85be97775bc653adcc013cb3",
+        "sha256:9c0b23bb7193c4f582eadd5b7996082f3872d24302e2e565cea90c03092c5b2f",
+        "sha256:16148e3b0110b4484ac7f0e67af1c8d2662837de58cc5ca5645849abd4a2a015"
+      ],
+      "read_only_authority": "Agentbot exposes ten fixed Jira and Confluence GET operations on the Atlassian Cloud gateway, rejects mutations and generic requests, and never follows redirects or returned URLs; scoped read-only tokens must be created by the operator",
+      "limitations": [
+        "Live Cloud endpoint and native-client acceptance remain pending",
+        "The runtime cannot introspect all scopes granted to personal API tokens",
+        "Board and sprint reads require Jira Software scopes; personal token scope-picker availability is unverified",
+        "One page per call, at most 100 records; use returned continuation values in the same read tool",
+        "Confluence comment lists contain root comments, not nested replies",
+        "Issue, page and comment content is untrusted input",
+        "Credentials are loaded by the local server from private saved settings or optional environment overrides"
+      ],
+      "timeout_seconds": 30,
+      "max_response_bytes": 4194304,
+      "doctor_rules": [
+        "auth_reference_present",
+        "exact_tool_surface",
+        "prohibited_tool_rejected",
+        "get_only_routes"
+      ]
+    },
+    {
       "id": "boost_graph",
       "name": "agentbot_boost_graph",
       "publisher": "JFrog",
