@@ -123,7 +123,7 @@ def windows_host(mount_root: Path = WINDOWS_MOUNT_ROOT) -> VSCodeHost:
         name="windows",
         settings_path=user_dir / "settings.json",
         extensions_dir=profile / ".vscode" / "extensions",
-        cli=_windows_cli(mount_root),
+        cli=_windows_cli(mount_root, profile),
         detail=str(profile),
     )
 
@@ -142,7 +142,10 @@ def _newest_remote_cli(server: Path) -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def _windows_cli(mount_root: Path) -> Path | None:
+def _windows_cli(mount_root: Path, profile: Path) -> Path | None:
+    user_cli = profile / "AppData/Local/Programs/Microsoft VS Code/bin/code"
+    if user_cli.is_file():
+        return user_cli
     for relative in (
         "Program Files/Microsoft VS Code/bin/code",
         "Program Files (x86)/Microsoft VS Code/bin/code",

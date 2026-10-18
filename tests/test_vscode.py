@@ -107,6 +107,18 @@ class VSCodeHostTests(unittest.TestCase):
         self.assertEqual(host.cli, cli)
         self.assertTrue(host.available)
 
+    def test_windows_user_install_uses_the_selected_profiles_cli(self) -> None:
+        profile = self.root / "Users/alice"
+        (profile / "AppData/Roaming/Code/User").mkdir(parents=True)
+        cli = profile / "AppData/Local/Programs/Microsoft VS Code/bin/code"
+        cli.parent.mkdir(parents=True)
+        cli.write_text("", encoding="utf-8")
+        other_cli = self.root / "Users/bob/AppData/Local/Programs/Microsoft VS Code/bin/code"
+        other_cli.parent.mkdir(parents=True)
+        other_cli.write_text("", encoding="utf-8")
+
+        self.assertEqual(cli, windows_host(self.root).cli)
+
 
 class ExtensionPlanTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -330,6 +342,22 @@ class SettingsMergeTests(unittest.TestCase):
 
 
 class DoctorTests(unittest.TestCase):
+    def test_extension_failures_are_not_reported_as_a_host_count(self) -> None:
+        from unittest import mock
+
+        from src.platform_surfaces import surface_outcome
+        from tests.support import agentbot_paths
+
+        report = vscode_module.VSCodeReport(
+            installed={"windows": {"one.extension": "install failed", "two.extension": "install failed"}}
+        )
+        with mock.patch.object(vscode_module, "apply", return_value=report):
+            outcome = surface_outcome(
+                "vscode", "VS Code", agentbot_paths(self.root), mock.Mock(), apply=True
+            )
+        self.assertEqual("check", outcome.result)
+        self.assertEqual("2 issue(s) need attention", outcome.detail)
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

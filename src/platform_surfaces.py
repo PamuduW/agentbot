@@ -36,7 +36,7 @@ def _vscode(paths: AgentbotPaths, runner: CommandRunner, *, apply: bool) -> tupl
     if report.manifest_error:
         return report.manifest_error, "error"
     if report.failures:
-        return f"{len(report.failures)} host(s) need attention", "check"
+        return f"{len(report.failures)} issue(s) need attention", "check"
     if report.has_work:
         # An applied report still carries the plan it applied, so work it lists
         # is work just done, not work waiting.

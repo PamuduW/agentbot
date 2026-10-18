@@ -29,6 +29,11 @@ interchangeable.
 An extension installed in WSL is not evidence that its Windows counterpart is
 installed, so the manifest keeps a list per host.
 
+For Windows, Agentbot checks the selected profile's
+`AppData/Local/Programs/Microsoft VS Code/bin/code` first, then the system
+install under `Program Files` or `Program Files (x86)`. It does not use another
+Windows account's user installation.
+
 `vscode/settings.universal.json` is written to **every** available host's
 settings file, and `vscode/settings.wsl.json` / `vscode/settings.windows.json`
 layer per-host overrides on top of it.
