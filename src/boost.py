@@ -154,6 +154,9 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     # line 120 is one the agent cannot click; correctness beats the saving for
     # tools used this rarely.
     "boost-mcp-browser-budget": False,
+    # Unreviewed measurement mode: keep it off rather than inheriting a
+    # remote default. Normal filtering and reporting keep their own policy.
+    "boost-measurement-mode": False,
     # Filters noisy MCP responses, with the original retrievable through the
     # same `boost retrieve` marker as CLI filtering -- the bargain already
     # accepted for shell output. It was on by remote default and unseen.

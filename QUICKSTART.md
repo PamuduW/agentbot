@@ -62,6 +62,10 @@ On a controlling TTY, `./install.sh` or `agentbot` with no arguments opens the
 Agentbot menu. Headless runs should use an explicit command such as
 `agentbot status` or `./install.sh doctor`.
 
+GitLab and Atlassian MCP credentials are optional. Until configured through
+`agentbot token`, their missing credentials are informational in MCP status
+and do not appear as Doctor issues. Invalid configuration still needs attention.
+
 `./install.sh install` installs every component. To choose instead, use
 `agentbot install --menu` for the selector and execution plan, or name a subset
 with `agentbot install --components skills,boost`.

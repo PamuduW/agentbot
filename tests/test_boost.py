@@ -1106,6 +1106,7 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
                 "boost-html-article-cursor-nudge": False,
                 "boost-html-article-preserve-agent-html": True,
                 "boost-mcp-browser-budget": False,
+                "boost-measurement-mode": False,
                 "boost-mcp-filtering": True,
                 "boost-mcp-toon-format": True,
                 "boost-path-ignore": False,
@@ -1223,6 +1224,7 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
                 "boost-mcp-browser-budget",
                 "boost-mcp-filtering",
                 "boost-mcp-toon-format",
+                "boost-measurement-mode",
                 "boost-path-ignore",
                 "boost-pr-usage-comments",
                 "boost-share-cli-outputs",
@@ -1257,6 +1259,13 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
     def test_a_config_holding_only_policy_flags_has_none_unruled(self) -> None:
         self._integration_type()(self._paths()).ensure_safe_config()
         self.assertEqual((), self._status().unruled_flags)
+
+    def test_measurement_mode_is_disabled_even_when_remote_default_is_on(self) -> None:
+        self._config('[feature_flags."boost-measurement-mode"]\nremote = true\n')
+        self._integration_type()(self._paths()).ensure_safe_config()
+        flag = self._parsed()["feature_flags"]["boost-measurement-mode"]
+        self.assertIs(False, flag.get("user"))
+        self.assertNotIn("boost-measurement-mode", self._status().unruled_flags)
 
 
 class BoostRepositoryGraphIndexTests(BoostIntegrationTests):

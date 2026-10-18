@@ -11,7 +11,6 @@ from pathlib import Path
 
 from ..commands import COMMANDS, CommandSpec
 from ..mcp_models import McpCatalog, McpPlan, McpStatusReport
-from ..memory_retrieve import DATA_NOTICE
 from ..models import Table, TableSection
 from .table import (
     DIM,
@@ -679,6 +678,8 @@ def print_memory_validation(report) -> None:
 
 def print_memory_due(items, *, total: int, today) -> None:
     """Accepted records due for review or past validity. Status stays as written."""
+    from ..memory_retrieve import DATA_NOTICE
+
     print_header("Memory review queue", "Agentbot › Memory › Due")
     if not items:
         print_table([("Review queue", "nothing due or expired", "ok")])
@@ -717,6 +718,8 @@ def _pointer(hit) -> str:
 
 def print_memory_search(result) -> None:
     """Results with provenance first and a bounded excerpt."""
+    from ..memory_retrieve import DATA_NOTICE
+
     print_header("Memory search", "Agentbot › Memory › Search")
     if not result.hits:
         print_table([("Results", "no accepted record matched within scope", "info")])
@@ -748,6 +751,8 @@ def print_memory_search(result) -> None:
 
 def print_memory_record(hit, body: str) -> None:
     """One record's provenance, then its body as written."""
+    from ..memory_retrieve import DATA_NOTICE
+
     print_header(hit.record.title, "Agentbot › Memory › Show")
     print_table(
         [
@@ -949,6 +954,8 @@ def print_memory_sync(payload, *, title: str) -> None:
 
 def print_memory_result(result, *, title: str) -> None:
     """A generic memory action result, as label/value rows."""
+    from ..memory_retrieve import DATA_NOTICE
+
     print_header("Memory", f"Agentbot › Memory › {title.capitalize()}")
     state = result.get("state", "")
     rows = [("Result", state, "preview" if state == "preview" else "info")]
