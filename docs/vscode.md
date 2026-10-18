@@ -11,9 +11,12 @@ agentbot vscode apply    # install missing extensions, merge owned settings
 
 Apply installs Windows extensions in groups of up to eight, using repeated
 `--install-extension` flags in one CLI invocation to share startup work. It
-prints each group's host, names, and position before starting, then checks the
-host's extensions directory to report individual results, including partial
-successes. WSL extensions retain individual invocations and progress.
+prints the requested names, then shows a short progress message with the host
+and group position. It checks the host's extensions directory to report
+individual results, including partial successes. If a successful command leaves
+none of the requested extensions in that directory, it reports the CLI output
+and expected directory, then stops later groups for that host. WSL extensions
+retain individual invocations and progress.
 
 Each command allows five minutes per requested extension (up to 40 minutes for
 a full Windows group). A timeout stops the remaining groups on that host and
@@ -36,7 +39,7 @@ interchangeable.
 |---|---|---|
 | Extensions | `~/.vscode-server/extensions` | `%USERPROFILE%\.vscode\extensions` |
 | Settings | `~/.vscode-server/data/Machine/settings.json` (machine scope) | `…\Code\User\settings.json` (user scope) |
-| CLI | `~/.vscode-server/bin/*/bin/remote-cli/code` | `…\Microsoft VS Code\bin\code` |
+| CLI | `~/.vscode-server/bin/*/bin/remote-cli/code` | `…\Microsoft VS Code\bin\code.cmd` via PowerShell |
 
 An extension installed in WSL is not evidence that its Windows counterpart is
 installed, so the manifest keeps a list per host.
@@ -45,6 +48,14 @@ For Windows, Agentbot checks the selected profile's
 `AppData/Local/Programs/Microsoft VS Code/bin/code` first, then the system
 install under `Program Files` or `Program Files (x86)`. It does not use another
 Windows account's user installation.
+
+Windows installs use the native `code.cmd` entrypoint through `powershell.exe`,
+with an explicit Windows `--extensions-dir`. Agentbot translates both paths
+with `wslpath` and clears inherited remote CLI routing variables in the child
+process. The neighboring `bin/code` shell launcher can delegate to Remote WSL
+and install into the Linux host even when its executable lives on Windows.
+Path translation or native launch failures are reported without falling back
+to that shell launcher.
 
 `vscode/settings.universal.json` is written to **every** available host's
 settings file, and `vscode/settings.wsl.json` / `vscode/settings.windows.json`
