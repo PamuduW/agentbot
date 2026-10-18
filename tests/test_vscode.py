@@ -462,6 +462,94 @@ class ManifestTests(unittest.TestCase):
 
 
 class InstallExecutionTests(unittest.TestCase):
+    def test_windows_extensions_share_bounded_cli_invocations(self) -> None:
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        host = replace(self._host(self.root / "code"), name="windows")
+        host.extensions_dir.mkdir(parents=True)
+        identifiers = tuple(f"publisher.extension{i}" for i in range(9))
+        output = io.StringIO()
+
+        def run(argv, **kwargs):
+            self.assertIn("VS Code windows [", output.getvalue())
+            requested = argv[2:-1:2]
+            self.assertLessEqual(len(requested), 8)
+            self.assertEqual(kwargs["timeout_seconds"], 300.0 * len(requested))
+            for identifier in requested:
+                (host.extensions_dir / f"{identifier}-1.0.0").mkdir()
+            return CommandResult(0)
+
+        runner = mock.Mock()
+        runner.run.side_effect = run
+        with redirect_stdout(output):
+            results = install_extensions(host, identifiers, runner)
+
+        self.assertEqual(runner.run.call_count, 2)
+        self.assertEqual(results, dict.fromkeys(identifiers, "installed"))
+        first = runner.run.call_args_list[0].args[0]
+        self.assertEqual(first[0], str(host.cli))
+        self.assertEqual(first[-1], "--force")
+        self.assertEqual(first[1:-1:2], ["--install-extension"] * 8)
+
+    def test_windows_batch_checks_each_extension_after_partial_failure(self) -> None:
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        host = replace(self._host(self.root / "code"), name="windows")
+        host.extensions_dir.mkdir(parents=True)
+
+        def run(*args, **kwargs):
+            (host.extensions_dir / "a.one-1.0.0").mkdir(exist_ok=True)
+            return CommandResult(1, stderr="download failed")
+
+        runner = mock.Mock()
+        runner.run.side_effect = run
+        with redirect_stdout(io.StringIO()):
+            results = install_extensions(host, ("a.one", "b.two"), runner)
+
+        self.assertEqual(results["a.one"], "installed")
+        self.assertEqual(runner.run.call_count, 1)
+        self.assertIn("download failed", results["b.two"])
+
+    def test_windows_batch_does_not_trust_success_without_installed_extensions(self) -> None:
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        runner = mock.Mock()
+        runner.run.return_value = CommandResult(0)
+        host = replace(self._host(self.root / "code"), name="windows")
+        with redirect_stdout(io.StringIO()):
+            results = install_extensions(host, ("a.one",), runner)
+
+        self.assertIn("not found", results["a.one"])
+
+    def test_windows_timeout_preserves_completed_installs_and_stops_later_batches(self) -> None:
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        host = replace(self._host(self.root / "code"), name="windows")
+        host.extensions_dir.mkdir(parents=True)
+        identifiers = tuple(f"publisher.extension{i}" for i in range(9))
+
+        def run(*args, **kwargs):
+            (host.extensions_dir / f"{identifiers[0]}-1.0.0").mkdir()
+            return CommandResult(124, timed_out=True)
+
+        runner = mock.Mock()
+        runner.run.side_effect = run
+        with redirect_stdout(io.StringIO()):
+            results = install_extensions(host, identifiers, runner)
+
+        self.assertEqual(runner.run.call_count, 1)
+        self.assertEqual(results[identifiers[0]], "installed")
+        self.assertIn("timed out", results[identifiers[1]])
+        self.assertIn("not attempted", results[identifiers[-1]])
+
     def test_progress_names_the_extension_before_running_its_command(self) -> None:
         from unittest import mock
 
@@ -518,8 +606,6 @@ class InstallExecutionTests(unittest.TestCase):
         return replace(wsl_host(self.root), cli=cli)
 
     def test_each_extension_is_installed_through_that_host_s_cli(self) -> None:
-        """One invocation per extension: a batched call reports one exit status,
-        so a single failure would be recorded against all of them."""
         cli = self.root / "remote-cli-code"
         runner = self._Runner()
 

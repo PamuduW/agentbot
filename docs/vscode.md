@@ -9,9 +9,16 @@ agentbot vscode seed     # record the installed extensions into vscode.yaml
 agentbot vscode apply    # install missing extensions, merge owned settings
 ```
 
-Apply prints each extension's host, name, and position before starting its
-install. Each command has a five-minute timeout. A timeout stops the remaining
-installs on that host and marks them as not attempted. Other hosts can continue.
+Apply installs Windows extensions in groups of up to eight, using repeated
+`--install-extension` flags in one CLI invocation to share startup work. It
+prints each group's host, names, and position before starting, then checks the
+host's extensions directory to report individual results, including partial
+successes. WSL extensions retain individual invocations and progress.
+
+Each command allows five minutes per requested extension (up to 40 minutes for
+a full Windows group). A timeout stops the remaining groups on that host and
+marks them as not attempted. Other hosts can continue. Retrying installs only
+the extensions still missing. Slow downloads can still take time despite batching.
 Ctrl+C cancels the CLI with status 130 and a short message.
 
 It is also the `vscode` install component, and one row of `agentbot status`.
