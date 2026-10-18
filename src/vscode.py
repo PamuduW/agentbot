@@ -91,7 +91,7 @@ def wsl_host(home: Path) -> VSCodeHost:
         name="wsl",
         settings_path=server / "data" / "Machine" / "settings.json",
         extensions_dir=server / "extensions",
-        cli=_newest_remote_cli(server),
+        cli=_newest_server_cli(server),
         detail=str(server),
     )
 
@@ -129,14 +129,17 @@ def windows_host(mount_root: Path = WINDOWS_MOUNT_ROOT) -> VSCodeHost:
     )
 
 
-def _newest_remote_cli(server: Path) -> Path | None:
+def _newest_server_cli(server: Path) -> Path | None:
     """The remote CLI belonging to the most recently used server build.
 
     Never `code` from PATH: inside WSL that is the Windows executable, and
     using it here would install into the other host.
     """
     candidates = [
-        candidate for candidate in server.glob("bin/*/bin/remote-cli/code") if candidate.is_file()
+        candidate
+        for pattern in ("bin/*/bin/code-server", "cli/servers/*/server/bin/code-server")
+        for candidate in server.glob(pattern)
+        if candidate.is_file()
     ]
     if not candidates:
         return None
@@ -563,7 +566,14 @@ def install_extensions(
     for index, identifier in enumerate(identifiers, 1):
         log_line("STEP", f"VS Code {host.name} [{index}/{len(identifiers)}]: {identifier}")
         outcome = runner.run(
-            [str(host.cli), "--install-extension", identifier, "--force"],
+            [
+                str(host.cli),
+                "--install-extension",
+                identifier,
+                "--extensions-dir",
+                str(host.extensions_dir),
+                "--force",
+            ],
             timeout_seconds=INSTALL_TIMEOUT_SECONDS,
         )
         if outcome.timed_out:
@@ -577,11 +587,23 @@ def install_extensions(
                 "remaining installs on this host stopped. Run `agentbot vscode apply` to retry.",
             )
             break
-        results[identifier] = "installed" if outcome.returncode == 0 else outcome.detail()
+        unverified = outcome.returncode == 0 and identifier.casefold() not in {
+            present.casefold() for present in installed_extensions(host)
+        }
+        results[identifier] = (
+            f"not found in {host.extensions_dir} after installation; CLI output: {outcome.detail()}"
+            if unverified
+            else "installed" if outcome.returncode == 0 else outcome.detail()
+        )
         log_line(
-            "OK" if outcome.returncode == 0 else "WARN",
+            "OK" if results[identifier] == "installed" else "WARN",
             f"VS Code {host.name}: {identifier}: {results[identifier]}",
         )
+        if unverified:
+            results.update(
+                dict.fromkeys(identifiers[index:], f"not attempted after {identifier} was not installed")
+            )
+            break
     return results
 
 

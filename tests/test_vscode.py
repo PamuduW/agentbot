@@ -44,7 +44,7 @@ class VSCodeHostTests(unittest.TestCase):
         server = self.root / ".vscode-server"
         (server / "extensions").mkdir(parents=True)
         for build in builds:
-            cli = server / "bin" / build / "bin" / "remote-cli" / "code"
+            cli = server / "bin" / build / "bin" / "code-server"
             cli.parent.mkdir(parents=True)
             cli.write_text("#!/bin/sh\n", encoding="utf-8")
         return server
@@ -57,19 +57,34 @@ class VSCodeHostTests(unittest.TestCase):
 
         host = wsl_host(self.root)
 
-        self.assertEqual(host.cli, server / "bin/abc123/bin/remote-cli/code")
+        self.assertEqual(host.cli, server / "bin/abc123/bin/code-server")
         self.assertEqual(host.settings_path, server / "data/Machine/settings.json")
         self.assertTrue(host.available)
 
     def test_the_wsl_host_picks_the_most_recent_server_build(self) -> None:
         """Server builds accumulate; the newest is the one in use."""
         server = self._server_with_cli("old", "new")
-        older = server / "bin/old/bin/remote-cli/code"
-        newer = server / "bin/new/bin/remote-cli/code"
+        older = server / "bin/old/bin/code-server"
+        newer = server / "bin/new/bin/code-server"
         os.utime(older, (1_000, 1_000))
         os.utime(newer, (2_000, 2_000))
 
         self.assertEqual(wsl_host(self.root).cli, newer)
+
+    def test_wsl_host_supports_the_cli_managed_server_layout(self):
+        cli = self.root / ".vscode-server/cli/servers/Stable-build/server/bin/code-server"
+        cli.parent.mkdir(parents=True)
+        cli.write_text("#!/bin/sh\n", encoding="utf-8")
+
+        self.assertEqual(wsl_host(self.root).cli, cli)
+
+    def test_a_remote_terminal_launcher_is_not_an_installer(self):
+        server = self.root / ".vscode-server"
+        cli = server / "bin/build/bin/remote-cli/code"
+        cli.parent.mkdir(parents=True)
+        cli.write_text("#!/bin/sh\n", encoding="utf-8")
+
+        self.assertIsNone(wsl_host(self.root).cli)
 
     def test_a_missing_wsl_server_is_unavailable_not_an_error(self) -> None:
         host = wsl_host(self.root)
@@ -501,6 +516,23 @@ class WindowsInstallCommandTests(unittest.TestCase):
 
 
 class InstallExecutionTests(unittest.TestCase):
+    def test_wsl_success_without_installed_files_is_reported_and_stops_that_host(self):
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        runner = mock.Mock()
+        runner.run.return_value = CommandResult(
+            0, stdout="Command is only available in WSL or inside a Visual Studio Code terminal."
+        )
+        with redirect_stdout(io.StringIO()):
+            results = install_extensions(self._host(self.root / "code"), ("a.one", "b.two"), runner)
+
+        self.assertIn("not found", results["a.one"])
+        self.assertIn("Command is only available", results["a.one"])
+        self.assertIn("not attempted", results["b.two"])
+        self.assertEqual(runner.run.call_count, 1)
+
     def test_windows_bridge_failure_stops_before_attempting_installation(self):
         from unittest import mock
 
@@ -631,12 +663,15 @@ class InstallExecutionTests(unittest.TestCase):
 
         def run(*args, **kwargs):
             self.assertIn("wsl [1/1]: a.one", output.getvalue())
+            host.extensions_dir.mkdir(parents=True)
+            (host.extensions_dir / "a.one-1.0.0").mkdir()
             return CommandResult(0)
 
         runner = mock.Mock()
         runner.run.side_effect = run
+        host = self._host(self.root / "code")
         with redirect_stdout(output):
-            install_extensions(self._host(self.root / "code"), ("a.one",), runner)
+            install_extensions(host, ("a.one",), runner)
 
     def test_a_timeout_stops_the_remaining_installs_on_that_host(self) -> None:
         from unittest import mock
@@ -659,6 +694,10 @@ class InstallExecutionTests(unittest.TestCase):
 
         def run(self, argv, **kwargs):
             self.calls.append(list(argv))
+            if self._returncode == 0:
+                extensions_dir = Path(argv[argv.index("--extensions-dir") + 1])
+                identifier = argv[argv.index("--install-extension") + 1]
+                (extensions_dir / f"{identifier}-1.0.0").mkdir(parents=True, exist_ok=True)
 
             class _Result:
                 returncode = self._returncode
@@ -697,6 +736,7 @@ class InstallExecutionTests(unittest.TestCase):
 
         self.assertEqual([call[0] for call in runner.calls], [str(cli), str(cli)])
         self.assertEqual(runner.calls[0][1:3], ["--install-extension", "a.one"])
+        self.assertIn(str(self._host(cli).extensions_dir), runner.calls[0])
         self.assertEqual(results, {"a.one": "installed", "b.two": "installed"})
 
     def test_a_host_without_a_cli_reports_rather_than_running_anything(self) -> None:
