@@ -9,6 +9,11 @@ agentbot vscode seed     # record the installed extensions into vscode.yaml
 agentbot vscode apply    # install missing extensions, merge owned settings
 ```
 
+Apply prints each extension's host, name, and position before starting its
+install. Each command has a five-minute timeout. A timeout stops the remaining
+installs on that host and marks them as not attempted. Other hosts can continue.
+Ctrl+C cancels the CLI with status 130 and a short message.
+
 It is also the `vscode` install component, and one row of `agentbot status`.
 This surface reached the operator only through a Platform submenu until that
 submenu was folded into install and status: a separate menu for three read-and-

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from dataclasses import replace
 from pathlib import Path
 
@@ -460,6 +462,36 @@ class ManifestTests(unittest.TestCase):
 
 
 class InstallExecutionTests(unittest.TestCase):
+    def test_progress_names_the_extension_before_running_its_command(self) -> None:
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        output = io.StringIO()
+
+        def run(*args, **kwargs):
+            self.assertIn("wsl [1/1]: a.one", output.getvalue())
+            return CommandResult(0)
+
+        runner = mock.Mock()
+        runner.run.side_effect = run
+        with redirect_stdout(output):
+            install_extensions(self._host(self.root / "code"), ("a.one",), runner)
+
+    def test_a_timeout_stops_the_remaining_installs_on_that_host(self) -> None:
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        runner = mock.Mock()
+        runner.run.return_value = CommandResult(124, timed_out=True)
+        with redirect_stdout(io.StringIO()):
+            result = install_extensions(self._host(self.root / "code"), ("a.one", "b.two"), runner)
+
+        self.assertEqual(1, runner.run.call_count)
+        self.assertIn("timed out", result["a.one"])
+        self.assertIn("not attempted", result["b.two"])
+
     class _Runner:
         def __init__(self, returncode: int = 0) -> None:
             self.calls: list[list[str]] = []
@@ -470,6 +502,7 @@ class InstallExecutionTests(unittest.TestCase):
 
             class _Result:
                 returncode = self._returncode
+                timed_out = False
 
                 def detail(self, max_length: int = 240) -> str:
                     return "boom"

@@ -16,6 +16,16 @@ from tests.support import (
 
 
 class CliTests(unittest.TestCase):
+    def test_ctrl_c_returns_130_without_a_traceback(self) -> None:
+        with patch("src.cli._run", side_effect=KeyboardInterrupt):
+            try:
+                rc, _, stderr = run_cli_main(["agentbot", "update", "--yes"])
+            except KeyboardInterrupt:
+                self.fail("Ctrl+C escaped the CLI instead of returning status 130")
+        self.assertEqual(130, rc)
+        self.assertIn("cancelled", stderr.lower())
+        self.assertNotIn("Traceback", stderr)
+
     def test_parser_accepts_the_mcp_command_contract(self) -> None:
         from src.cli import build_parser
 
