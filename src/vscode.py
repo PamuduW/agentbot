@@ -23,6 +23,7 @@ from .command_runner import CommandRunner
 
 SUPPORTED_VERSION = 1
 INSTALL_TIMEOUT_SECONDS = 300.0
+WINDOWS_INSTALL_BATCH_SIZE = 8
 SETTINGS_DIRECTORY = "vscode"
 
 WINDOWS_MOUNT_ROOT = Path("/mnt/c")
@@ -549,12 +550,7 @@ def install_extensions(
     identifiers: tuple[str, ...],
     runner: CommandRunner,
 ) -> dict[str, str]:
-    """Install each identifier through this host's own CLI.
-
-    One invocation per extension: a single call with several `--install-extension`
-    flags reports one exit status for the batch, so a partial failure would be
-    recorded against all of them.
-    """
+    """Install missing extensions through this host's own CLI."""
     from .ui.install_log import duration, log_line
 
     results: dict[str, str] = {}
@@ -562,6 +558,8 @@ def install_extensions(
         return results
     if host.cli is None:
         return dict.fromkeys(identifiers, "no CLI for this host")
+    if host.name == "windows":
+        return _install_windows_extensions(host, identifiers, runner)
     for index, identifier in enumerate(identifiers, 1):
         log_line("STEP", f"VS Code {host.name} [{index}/{len(identifiers)}]: {identifier}")
         outcome = runner.run(
@@ -584,6 +582,55 @@ def install_extensions(
             "OK" if outcome.returncode == 0 else "WARN",
             f"VS Code {host.name}: {identifier}: {results[identifier]}",
         )
+    return results
+
+
+def _install_windows_extensions(
+    host: VSCodeHost,
+    identifiers: tuple[str, ...],
+    runner: CommandRunner,
+) -> dict[str, str]:
+    from .ui.install_log import duration, log_line
+
+    results: dict[str, str] = {}
+    for start in range(0, len(identifiers), WINDOWS_INSTALL_BATCH_SIZE):
+        batch = identifiers[start : start + WINDOWS_INSTALL_BATCH_SIZE]
+        log_line(
+            "STEP",
+            f"VS Code {host.name} [{start + 1}-{start + len(batch)}/{len(identifiers)}]: "
+            + ", ".join(batch),
+        )
+        argv = [str(host.cli)]
+        for identifier in batch:
+            argv.extend(("--install-extension", identifier))
+        argv.append("--force")
+        timeout = INSTALL_TIMEOUT_SECONDS * len(batch)
+        outcome = runner.run(argv, timeout_seconds=timeout)
+        present = {identifier.casefold() for identifier in installed_extensions(host)}
+        for identifier in batch:
+            if identifier.casefold() in present:
+                detail = "installed"
+            elif outcome.timed_out:
+                detail = f"batch installation timed out after {duration(timeout)}"
+            elif outcome.returncode != 0:
+                detail = outcome.detail()
+            else:
+                detail = "not found in this host's extensions directory after installation"
+            results[identifier] = detail
+            log_line(
+                "OK" if detail == "installed" else "WARN",
+                f"VS Code {host.name}: {identifier}: {detail}",
+            )
+        if outcome.timed_out:
+            results.update(
+                dict.fromkeys(identifiers[start + len(batch) :], "not attempted after batch timed out")
+            )
+            log_line(
+                "WARN",
+                f"VS Code {host.name}: remaining batches stopped. "
+                "Run `agentbot vscode apply` to retry missing extensions.",
+            )
+            break
     return results
 
 
