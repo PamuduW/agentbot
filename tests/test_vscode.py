@@ -461,7 +461,59 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(seeded.extensions_for("wsl"), ())
 
 
+class WindowsInstallCommandTests(unittest.TestCase):
+    def test_native_command_bypasses_wsl_launcher_and_pins_the_extensions_directory(self):
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        host = replace(wsl_host(Path("/home/alice")), name="windows", cli=Path("/mnt/c/Code/bin/code"))
+        runner = mock.Mock()
+        runner.run.side_effect = [
+            CommandResult(0, stdout="C:\\Code\\bin\\code.cmd\n"),
+            CommandResult(0, stdout="C:\\Users\\O'Brien\\.vscode\\extensions\n"),
+        ]
+
+        command, error = vscode_module._windows_install_command(host, ("a.one", "b.two"), runner)
+
+        self.assertEqual(error, "")
+        self.assertEqual(command[:4], ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"])
+        script = command[4]
+        self.assertIn("& 'C:\\Code\\bin\\code.cmd'", script)
+        self.assertIn("'--extensions-dir' 'C:\\Users\\O''Brien\\.vscode\\extensions'", script)
+        self.assertIn("'--install-extension' 'a.one' '--install-extension' 'b.two' '--force'", script)
+        self.assertIn("exit $LASTEXITCODE", script)
+        self.assertEqual(runner.run.call_args_list[0].args[0], ["wslpath", "-w", "/mnt/c/Code/bin/code.cmd"])
+
+    def test_failed_path_conversion_does_not_fall_back_to_the_wsl_launcher(self):
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        host = replace(wsl_host(Path("/home/alice")), name="windows", cli=Path("/mnt/c/Code/bin/code"))
+        runner = mock.Mock()
+        runner.run.return_value = CommandResult(1, stderr="conversion failed")
+
+        command, error = vscode_module._windows_install_command(host, ("a.one",), runner)
+
+        self.assertEqual(command, [])
+        self.assertIn("conversion failed", error)
+
+
 class InstallExecutionTests(unittest.TestCase):
+    def test_windows_bridge_failure_stops_before_attempting_installation(self):
+        from unittest import mock
+
+        runner = mock.Mock()
+        host = replace(self._host(self.root / "code"), name="windows")
+        with mock.patch(
+            "src.vscode._windows_install_command", return_value=([], "cannot resolve Windows path")
+        ), redirect_stdout(io.StringIO()):
+            results = install_extensions(host, ("a.one", "b.two"), runner)
+
+        runner.run.assert_not_called()
+        self.assertEqual(results, dict.fromkeys(("a.one", "b.two"), "cannot resolve Windows path"))
+
     def test_windows_extensions_share_bounded_cli_invocations(self) -> None:
         from unittest import mock
 
@@ -520,12 +572,32 @@ class InstallExecutionTests(unittest.TestCase):
         from src.command_runner import CommandResult
 
         runner = mock.Mock()
+        runner.run.return_value = CommandResult(0, stdout="Opening remote window instead")
+        host = replace(self._host(self.root / "code"), name="windows")
+        identifiers = tuple(f"publisher.extension{i}" for i in range(9))
+        output = io.StringIO()
+        with redirect_stdout(output):
+            results = install_extensions(host, identifiers, runner)
+
+        self.assertIn("not found", results[identifiers[0]])
+        self.assertIn("Opening remote window instead", results[identifiers[0]])
+        self.assertIn(str(host.extensions_dir), output.getvalue())
+        self.assertIn("not attempted", results[identifiers[-1]])
+        self.assertEqual(runner.run.call_count, 1)
+
+    def test_windows_batch_progress_keeps_extension_names_out_of_the_spinner(self) -> None:
+        from unittest import mock
+
+        from src.command_runner import CommandResult
+
+        runner = mock.Mock()
         runner.run.return_value = CommandResult(0)
         host = replace(self._host(self.root / "code"), name="windows")
-        with redirect_stdout(io.StringIO()):
-            results = install_extensions(host, ("a.one",), runner)
+        with mock.patch("src.ui.install_log.log_line") as log:
+            install_extensions(host, ("long-publisher.long-extension",), runner)
 
-        self.assertIn("not found", results["a.one"])
+        steps = [call.args[1] for call in log.call_args_list if call.args[0] == "STEP"]
+        self.assertEqual(steps, ["VS Code windows [1-1/1]: installing 1 extension(s)"])
 
     def test_windows_timeout_preserves_completed_installs_and_stops_later_batches(self) -> None:
         from unittest import mock
@@ -598,9 +670,21 @@ class InstallExecutionTests(unittest.TestCase):
             return _Result()
 
     def setUp(self) -> None:
+        from unittest import mock
+
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+
+        def command(host, identifiers, runner):
+            argv = [str(host.cli)]
+            for identifier in identifiers:
+                argv.extend(("--install-extension", identifier))
+            return [*argv, "--force"], ""
+
+        bridge = mock.patch("src.vscode._windows_install_command", side_effect=command)
+        bridge.start()
+        self.addCleanup(bridge.stop)
 
     def _host(self, cli: Path | None):
         return replace(wsl_host(self.root), cli=cli)

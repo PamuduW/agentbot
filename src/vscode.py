@@ -585,6 +585,32 @@ def install_extensions(
     return results
 
 
+def _windows_install_command(
+    host: VSCodeHost,
+    identifiers: tuple[str, ...],
+    runner: CommandRunner,
+) -> tuple[list[str], str]:
+    if host.cli is None:
+        return [], "no CLI for this host"
+    paths = []
+    for path in (host.cli.with_suffix(".cmd"), host.extensions_dir):
+        outcome = runner.run(["wslpath", "-w", str(path)], timeout_seconds=15.0)
+        if not outcome.ok or not outcome.stdout.strip():
+            return [], f"cannot resolve Windows path for {path}: {outcome.detail()}"
+        paths.append(outcome.stdout.strip())
+    arguments = [paths[0], "--extensions-dir", paths[1]]
+    for identifier in identifiers:
+        arguments.extend(("--install-extension", identifier))
+    arguments.append("--force")
+    quoted = " ".join("'" + argument.replace("'", "''") + "'" for argument in arguments)
+    script = (
+        "$ErrorActionPreference = 'Stop'; "
+        "Remove-Item Env:VSCODE_IPC_HOOK_CLI,Env:VSCODE_CWD -ErrorAction SilentlyContinue; "
+        f"& {quoted}; exit $LASTEXITCODE"
+    )
+    return ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], ""
+
+
 def _install_windows_extensions(
     host: VSCodeHost,
     identifiers: tuple[str, ...],
@@ -595,17 +621,19 @@ def _install_windows_extensions(
     results: dict[str, str] = {}
     for start in range(0, len(identifiers), WINDOWS_INSTALL_BATCH_SIZE):
         batch = identifiers[start : start + WINDOWS_INSTALL_BATCH_SIZE]
+        log_line("INFO", "Requested Windows extensions: " + ", ".join(batch))
         log_line(
             "STEP",
             f"VS Code {host.name} [{start + 1}-{start + len(batch)}/{len(identifiers)}]: "
-            + ", ".join(batch),
+            f"installing {len(batch)} extension(s)",
         )
-        argv = [str(host.cli)]
-        for identifier in batch:
-            argv.extend(("--install-extension", identifier))
-        argv.append("--force")
+        argv, error = _windows_install_command(host, batch, runner)
+        if error:
+            results.update(dict.fromkeys(identifiers[start:], error))
+            log_line("WARN", f"VS Code {host.name}: {error}")
+            break
         timeout = INSTALL_TIMEOUT_SECONDS * len(batch)
-        outcome = runner.run(argv, timeout_seconds=timeout)
+        outcome = runner.run(argv, timeout_seconds=timeout, cwd=host.cli.parent if host.cli else None)
         present = {identifier.casefold() for identifier in installed_extensions(host)}
         for identifier in batch:
             if identifier.casefold() in present:
@@ -615,16 +643,25 @@ def _install_windows_extensions(
             elif outcome.returncode != 0:
                 detail = outcome.detail()
             else:
-                detail = "not found in this host's extensions directory after installation"
+                detail = (
+                    "not found in this host's extensions directory after installation; "
+                    f"CLI output: {outcome.detail()}"
+                )
             results[identifier] = detail
             log_line(
                 "OK" if detail == "installed" else "WARN",
                 f"VS Code {host.name}: {identifier}: {detail}",
             )
-        if outcome.timed_out:
+        unverified = outcome.returncode == 0 and not any(
+            identifier.casefold() in present for identifier in batch
+        )
+        if outcome.timed_out or unverified:
+            reason = "batch timed out" if outcome.timed_out else "batch installed no extensions"
             results.update(
-                dict.fromkeys(identifiers[start + len(batch) :], "not attempted after batch timed out")
+                dict.fromkeys(identifiers[start + len(batch) :], f"not attempted after {reason}")
             )
+            if unverified:
+                log_line("WARN", f"VS Code {host.name}: expected extensions in {host.extensions_dir}")
             log_line(
                 "WARN",
                 f"VS Code {host.name}: remaining batches stopped. "
