@@ -555,17 +555,35 @@ def install_extensions(
     flags reports one exit status for the batch, so a partial failure would be
     recorded against all of them.
     """
+    from .ui.install_log import duration, log_line
+
     results: dict[str, str] = {}
     if not identifiers:
         return results
     if host.cli is None:
         return dict.fromkeys(identifiers, "no CLI for this host")
-    for identifier in identifiers:
+    for index, identifier in enumerate(identifiers, 1):
+        log_line("STEP", f"VS Code {host.name} [{index}/{len(identifiers)}]: {identifier}")
         outcome = runner.run(
             [str(host.cli), "--install-extension", identifier, "--force"],
             timeout_seconds=INSTALL_TIMEOUT_SECONDS,
         )
+        if outcome.timed_out:
+            results[identifier] = f"installation timed out after {duration(INSTALL_TIMEOUT_SECONDS)}"
+            results.update(
+                dict.fromkeys(identifiers[index:], f"not attempted after {identifier} timed out")
+            )
+            log_line(
+                "WARN",
+                f"VS Code {host.name}: {identifier}: {results[identifier]}; "
+                "remaining installs on this host stopped. Run `agentbot vscode apply` to retry.",
+            )
+            break
         results[identifier] = "installed" if outcome.returncode == 0 else outcome.detail()
+        log_line(
+            "OK" if outcome.returncode == 0 else "WARN",
+            f"VS Code {host.name}: {identifier}: {results[identifier]}",
+        )
     return results
 
 

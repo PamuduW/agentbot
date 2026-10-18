@@ -123,6 +123,10 @@ def main() -> int:
     sys.stdout = configure_output(original)
     try:
         return _run()
+    except KeyboardInterrupt:
+        stop_progress_animation()
+        print("  Cancelled by user.", file=sys.stderr, flush=True)
+        return 130
     finally:
         sys.stdout.flush()
         sys.stdout = original
