@@ -1,6 +1,8 @@
 import io
 import json
 import unittest
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from tests.support import (
@@ -12,6 +14,23 @@ from tests.support import (
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_unconfigured_optional_mcp_credentials_are_not_doctor_issues(self) -> None:
+        from src.diagnostics import Diagnostics
+        from src.mcp_service import McpService
+
+        with isolated_agentbot_paths() as (_, paths), mock.patch.dict("os.environ", {}, clear=True):
+            paths = replace(paths, root=Path(__file__).resolve().parents[1])
+            service = McpService(paths)
+            service.setup(("gitlab_read", "atlassian_read"), ("codex",), confirmed=True)
+            items = [
+                item for item in service.status().items if item.status == "auth-reference-missing"
+            ]
+            self.assertEqual(2, len(items))
+            self.assertTrue(all(item.severity == "info" for item in items))
+            _, _, issues = Diagnostics(paths)._mcp_facts()
+
+        self.assertEqual((), issues)
+
     def test_invalid_mcp_catalog_is_a_doctor_error(self) -> None:
         from src.diagnostics import Diagnostics
 

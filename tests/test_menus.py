@@ -8,13 +8,27 @@ failure with a line number. These are the assertions that fail with one.
 from __future__ import annotations
 
 import io
+import subprocess
+import sys
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 
 from src.ui import graphify_lib, menu_select, menus
 
 
 class MenuDefinitionTests(unittest.TestCase):
+    def test_first_run_menu_works_without_installed_python_packages(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-S", "-m", "src.ui.menu_select", "--menu", "main", "--dump"],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Install Agentbot", result.stdout)
+
     def test_mcp_is_an_install_component_not_a_menu_entry(self) -> None:
         """MCP used to be a main-menu entry that only showed status.
 

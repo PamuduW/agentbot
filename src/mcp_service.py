@@ -356,6 +356,8 @@ class McpService:
 
     @staticmethod
     def _item(catalog_id: str, client: str, name: str, status: str, detail: str) -> McpStatusItem:
+        if catalog_id in {"gitlab_read", "atlassian_read"} and status == "auth-reference-missing":
+            return McpStatusItem(catalog_id, client, name, status, detail, "info")
         severity: Literal["ok", "info", "warning", "error"] = (
             "error"
             if status in _ERROR_STATES

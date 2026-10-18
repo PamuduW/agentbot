@@ -169,7 +169,7 @@ class AtlassianTokenTests(unittest.TestCase):
             if item.catalog_id == "atlassian_read" and item.client == "codex"
         )
         self.assertEqual("auth-reference-missing", item.status)
-        self.assertEqual("warning", item.severity)
+        self.assertEqual("info", item.severity)
         store.write(self.config_home, VALUES)
         item = next(
             item
