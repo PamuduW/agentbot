@@ -16,7 +16,7 @@ and group position. It checks the host's extensions directory to report
 individual results, including partial successes. If a successful command leaves
 none of the requested extensions in that directory, it reports the CLI output
 and expected directory, then stops later groups for that host. WSL extensions
-retain individual invocations and progress.
+retain individual invocations and progress, and also verify installed files.
 
 Each command allows five minutes per requested extension (up to 40 minutes for
 a full Windows group). A timeout stops the remaining groups on that host and
@@ -39,10 +39,17 @@ interchangeable.
 |---|---|---|
 | Extensions | `~/.vscode-server/extensions` | `%USERPROFILE%\.vscode\extensions` |
 | Settings | `~/.vscode-server/data/Machine/settings.json` (machine scope) | `…\Code\User\settings.json` (user scope) |
-| CLI | `~/.vscode-server/bin/*/bin/remote-cli/code` | `…\Microsoft VS Code\bin\code.cmd` via PowerShell |
+| CLI | `~/.vscode-server/bin/*/bin/code-server` | `…\Microsoft VS Code\bin\code.cmd` via PowerShell |
 
 An extension installed in WSL is not evidence that its Windows counterpart is
 installed, so the manifest keeps a list per host.
+
+WSL installs use the server's `bin/code-server` with an explicit
+`--extensions-dir`. Agentbot also discovers CLI-managed builds under
+`~/.vscode-server/cli/servers/*/server/bin/code-server`. The `remote-cli/code`
+terminal launcher requires a VS Code connection and can exit successfully
+without installing anything in an ordinary terminal, so it is not used for
+extension management.
 
 For Windows, Agentbot checks the selected profile's
 `AppData/Local/Programs/Microsoft VS Code/bin/code` first, then the system
