@@ -551,6 +551,26 @@ def _boost_rows(status) -> list[tuple[str, str, str]]:
             "ok" if status.cursor_state in {"ready", "skipped"} else "check",
         ),
     ]
+    rows.append(
+        (
+            "Telemetry",
+            "disabled" if status.telemetry_disabled else "not disabled",
+            "ok" if status.telemetry_disabled else "check",
+        )
+    )
+    rows.append(
+        (
+            "Runtime flags",
+            "inspected" if status.runtime_flags is not None else "unavailable",
+            "info" if status.runtime_flags is not None else "check",
+        )
+    )
+    for host, capture in status.capture_states:
+        rows.append((f"{host} capture", f"{capture}; compression not verified", "info"))
+    if status.unsupported_flags:
+        rows.append(("Unsupported policy flags", ", ".join(status.unsupported_flags), "check"))
+    if status.unruled_flags:
+        rows.append(("Unreviewed flags", ", ".join(status.unruled_flags), "check"))
     if status.user_flags:
         rows.append(
             (

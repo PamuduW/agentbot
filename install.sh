@@ -504,6 +504,7 @@ Usage: ./install.sh <command> [args]
   workspace|workspaces|resync Manage registered workspace outputs
   graphify status|setup      Inspect or repair generic Graphify Agent Skills
   boost status|setup|off     Inspect or manage Boost Claude/Codex/Cursor integration
+  boost analyze SUMMARY     Preview manual analysis; --yes uses Codex quota once
   memory status|validate     Inspect or validate the private memory vault (read-only)
   cli-config status|apply    Merge the declared agent CLI configuration keys
   cursor status|statusline   Inspect or install the managed Cursor statusline

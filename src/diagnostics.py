@@ -472,13 +472,37 @@ class Diagnostics:
                     level="warning",
                     scope="boost",
                     message=(
-                        "Boost ships feature flags the policy does not name, so "
-                        "JFrog's remote default decides them: "
+                        "Boost runtime or saved config contains unreviewed feature flags: "
                         f"{', '.join(status.unruled_flags)}. Decide each in "
                         "BOOST_FEATURE_POLICY (agentbot/src/boost.py)."
                     ),
                 )
             )
+        if status.unsupported_flags:
+            issues.append(
+                DoctorIssue(
+                    "warning",
+                    "boost",
+                    "Boost runtime has unsupported policy flags: "
+                    + ", ".join(status.unsupported_flags)
+                    + ". Review the installed release; saved pins do not prove support.",
+                )
+            )
+        configured = {
+            "Claude": status.claude_state,
+            "Codex": status.codex_state,
+            "Cursor": status.cursor_state,
+        }
+        for host, capture in status.capture_states:
+            if configured[host] == "ready" and capture != "recent":
+                issues.append(
+                    DoctorIssue(
+                        "warning",
+                        "boost",
+                        f"{host} hooks are configured but capture evidence is {capture}. "
+                        "Run a harmless task in that host and inspect hook delivery; do not enable CLI filtering.",
+                    )
+                )
         if not status.diverged_flags:
             return issues
         detail = ", ".join(

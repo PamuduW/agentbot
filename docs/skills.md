@@ -190,10 +190,12 @@ nothing. Codex, Cursor and `agy` get the skills only.
 
 Dotfiles owns the verified `boost` executable. Agentbot owns Claude, Codex,
 and Cursor setup, feature policy, diagnostics, and removal through
-`agentbot boost status|setup|off`. Setup wires whichever of those CLIs are
+`agentbot boost status|setup|off` and manual `agentbot boost analyze SUMMARY.md`.
+Setup wires whichever of those CLIs are
 installed and skips the rest. A later run picks up a newly installed CLI.
 
-Setup disables tracing upload and Boost auto-update, keeps Boost's own
+Setup disables both tracing telemetry and upload, restricts owned Boost config
+and history paths to private permissions, disables Boost auto-update, and keeps its own
 BoostGraph integration (`boost-graph-integration`) off, and writes the declared
 policy from `BOOST_FEATURE_POLICY` in `src/boost.py`. Repository
 `.boost/config.toml` files can shadow global configuration; Doctor reports
@@ -214,29 +216,30 @@ registered workspace. Graphify remains the code-graph tool, rebuilt on demand.
 
 ### Feature-flag policy
 
-`BOOST_FEATURE_POLICY` names every feature flag Boost v0.15.1 ships, because
-an unpinned flag is not neutral -- its effective value is a remote default
-JFrog can change without warning. `boost doctor` prints the effective value,
-the `user` pin and the remote default of each. Doctor warns about any flag
-Boost writes to its config that the policy does not name, so a new release's
-flags are decided rather than run by default; setup leaves such a flag alone
-until the policy names it.
+`BOOST_FEATURE_POLICY` pins the 17 reviewed flags supported by Boost v0.16.6.
+Status inspects `boost feature-flags` with remote fetching disabled. Doctor
+reports unknown runtime flags even before they appear in saved configuration,
+unsupported policy flags, and saved or effective values that differ from policy.
+An unavailable runtime inspection does not count as proof of support.
+Setup preserves unreviewed flags; a new release needs an explicit policy review.
+The retired `boost-mcp-toon-format` user pin is removed; other stored metadata
+for that retired entry is preserved. No replacement format is enabled.
 
 | Flag | Policy | Why |
 |---|---|---|
 | `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees; deliberately not retrievable |
 | `boost-auto-update` | off (fixed) | Dotfiles owns the binary and its version stamp |
 | `boost-claude-status-line` | off (fixed) | Agentbot owns the Claude status line |
-| `boost-cli-filtering` | off | Its hook auto-approves every command it rewrites (`git push`, `curl \| sh`) in Claude Code and Codex, for under 1% saving; decided 2026-10-12. Shell output is no longer redacted |
+| `boost-cli-filtering` | off | Rewrites return allow decisions. Claude can bypass ordinary asks; current Codex approval behavior is separate. Raw shell output is not redacted |
 | `boost-english-abbreviation` | off | Lossy prose abbreviation, no gain here |
 | `boost-files-optimization` | on | Document and image reads, source untouched |
 | `boost-graph-integration` | off | BoostGraph rewrites files Agentbot owns |
 | `boost-html-article` | off | Discards markup the agent is reading |
 | `boost-html-article-cursor-nudge` | off | Undocumented; points at the disabled HTML path |
 | `boost-html-article-preserve-agent-html` | on | Inert while HTML conversion is off; the safer setting if it is turned on |
+| `boost-measurement-mode` | off | No matched local comparison has justified enabling it |
 | `boost-mcp-browser-budget` | off | A 120-line snapshot cap hides elements browser automation must act on |
-| `boost-mcp-filtering` | on | Filters MCP responses; the original stays retrievable |
-| `boost-mcp-toon-format` | on | Lossless reformat of MCP responses |
+| `boost-mcp-filtering` | on | Host-specific replacement; Codex capture alone does not prove compression |
 | `boost-path-ignore` | off | Enables `[ignore] optimize` exclusion globs; none are needed yet |
 | `boost-pr-usage-comments` | off (fixed) | Outward-facing writes to GitHub PRs |
 | `boost-share-cli-outputs` | off (fixed) | Sends command output to JFrog |
@@ -249,35 +252,83 @@ Dotfiles' `.bashrc` exports `BOOST_FEATURE_FLAGS_DISABLE=1`, which stops the
 fetch while the pins still apply. `boost feature-flags` then shows the pinned
 values without contacting JFrog.
 
-A lossy transform stays on only when the agent can retrieve the original with
-`boost retrieve`. Secrets and credentials are the one exemption: redaction is
-meant to be unrecoverable. "Fixed" flags are off permanently by the user's decision of 2026-10-08, and a
-test fails if one is turned on. Each entry carries its full reasoning in
-`src/boost.py`; change the map there rather than toggling in Boost's report
-UI, which the next setup run reverts.
+"Fixed" flags remain off by the user's decision of 2026-10-08. Tests enforce
+that policy. Change the canonical map in `src/boost.py`; UI toggles are overwritten
+by the next setup run.
 
-Since v0.15.1 the awareness file `boost init` writes tells agents to prefer
-WebFetch because "Boost converts HTML to article Markdown". The paragraph is
-fixed text in the binary, written whether or not `boost-html-article` is on, so
-here it overstates what Boost does; the advice itself is harmless. Agentbot
-leaves the file as Boost writes it: `boost init` owns and rewrites it, and the
-stale-artifact check reads its version marker.
+### Hook evidence and static awareness
 
-The same awareness file describes shell-output compaction, which is off since
-2026-10-12 (`boost-cli-filtering`): Boost's PreToolUse hook answered every
-command it rewrote with `permissionDecision: "allow"` in Claude Code and Codex,
-so commands such as `git push` or `curl | sh` skipped the permission prompt.
-With the flag off the hook rewrites nothing and decides nothing, and commands
-go through the normal permission flow. Shell output is then neither compacted
-nor redacted; file reads and MCP output still are. Any replacement filter
-(RTK was tried and rejected) must never approve a command on its own.
+`ready` means the expected hooks and awareness files are registered and present.
+It does not prove that a fresh session delivered hooks or received compressed
+output. Status reports seven-day capture evidence separately for each host:
+`recent`, `stale`, `none` or `unavailable`. These are read-only timestamp aggregates,
+not transcript text. A custom database path currently reports unavailable capture
+evidence. Doctor warns when a configured host lacks recent evidence. Verify that
+host with a harmless task; do not enable CLI filtering to clear a warning.
 
-Everything else in `~/.boost/config.toml` is left to Boost and to you. Setup
-pins `[tracing] upload` and `[update] auto_update` to `false` and writes the
-`user` key of each policy flag; it does not touch `[hooks] exclude_commands`,
-`[tracing] report`, `[tracking] database_path`, `[report]`, `[filters]`
-(`disabled`, `retrieve_disable_threshold`, `show_loaders`), or `[mcp]
-toon_format`.
+Agentbot corrects the vendor awareness body after setup while preserving its
+version marker and Cursor frontmatter. Ordinary code reads are not document
+optimization. CSV and notebook reads can be incomplete previews, including with
+`--level none`; use the original file when no retrieval marker exists. Secret
+reduction is supplementary. CLI filtering off means raw shell output is outside
+Boost's filtering and redaction.
+
+Codex MCP capture does not prove model-facing replacement. Claude and Cursor
+fixtures can replace text envelopes; that does not establish delivery for every
+host or event. Static awareness is Agentbot-owned. Learned `BOOST.md` is a stored
+SQLite digest printed by `boost insights digest`; never redirect it over static
+awareness or canonical policy. Accepted durable lessons go through the memory CLI.
+
+Setup pins `[tracing] telemetry=false`, `[tracing] upload=false` and
+`[update] auto_update=false`, and writes the user value of reviewed flags.
+Owned config/data directories use 0700 and known config/database files use 0600.
+Symlinked, multiply linked or foreign-owned storage is rejected. Existing history
+is preserved. Other engine, hook, tracking, filter and report settings remain
+operator-owned. A registered repository config must contain all three safety
+controls because it replaces the global config rather than merging with it.
+
+### Manual Engine analysis
+
+Use a short summary that you have reviewed and redacted. This command does not
+read the live transcript history:
+
+```bash
+agentbot boost analyze SUMMARY.md          # preview; sends nothing
+agentbot boost analyze SUMMARY.md --yes    # one native Codex invocation; consumes quota
+```
+
+Confirmed analysis requires an already accepted Boost configuration, a genuine
+local Pro grant and an existing file-based Codex ChatGPT login. It accepts one
+regular UTF-8 file up to 8192 bytes and rejects credential findings. The complete
+vendor prompt is also checked and capped at 16384 bytes. This best-effort scanner
+is not a substitute for reviewing the selected text before sending it.
+
+The disposable HOME/CODEX_HOME contains only that selected summary and the private
+grant. Native authentication uses the existing credential file; it is never
+printed or included in the prompt. The native command ignores user config, uses
+`gpt-6.1-sol` with low reasoning and a read-only sandbox, and disables shell,
+hooks, apps, plugins, remote plugins, subagents, image tools, sleep and tool
+suggestions. Web search is disabled. No configured MCP servers are inherited.
+The client runs ephemerally. A changed feature contract fails before analysis.
+[Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+An exclusive guard permits one Codex process. The adapter never retries, and a
+90-second timeout stops the process group. Ctrl+C and SIGTERM also clean up.
+Vendor temporary files stay under the private profile. Abrupt SIGKILL or host
+failure cannot run cleanup. Native transport/auth retries are client behavior;
+one process is not a guarantee of one HTTP request. Input, time and invocation
+limits are not a hard token or dollar cap.
+
+The result is a lesson proposal plus native usage counters. It does not modify
+canonical instructions, static awareness or memory. The native context includes
+more than the selected text, so use actual usage to assess cost. Do not use the
+stock dashboard analysis or filter-generation buttons as a substitute for this
+boundary. No unattended analysis is scheduled or enabled by Agentbot.
+
+No local runtime or model is installed. The current WSL resource observation does
+not justify the Gemma package; Julia has no adopted decision-runtime use here.
+Keep Code Index, HTML conversion, browser truncation, CLI filtering and automatic
+skill removal off. Reopen those decisions only for a concrete, measured need.
 
 **Setup accepts Boost's preview terms on your behalf.** `boost init` is passed
 `--accept-terms`, which accepts the JFrog Online Preview Agreement and Privacy

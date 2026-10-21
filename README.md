@@ -83,7 +83,12 @@ agentbot token                    # Token Config: the GitHub and GitLab credenti
 agentbot gitlab-token status      # inspect the saved GitLab read token, by fingerprint
 agentbot mcp catalog              # list validated MCP candidates
 agentbot mcp status               # inspect MCP ownership without network access
+agentbot boost status             # inspect configured hooks, captures, and runtime flags
+agentbot boost analyze SUMMARY.md # preview one selected summary; --yes uses Codex quota
 ```
+
+For Boost privacy controls, capture limits and manual Engine analysis, see
+[Boost integration](docs/skills.md#manual-engine-analysis).
 
 ## Memory vault
 
