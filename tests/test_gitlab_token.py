@@ -76,6 +76,48 @@ class StoreTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.config_home = Path(self.temporary.name) / "agentbot"
 
+    def test_resolve_uses_saved_token_without_environment(self) -> None:
+        store.write(self.config_home, _TOKEN)
+        self.assertTrue(store.resolve(self.config_home, {}) == _TOKEN)
+
+    def test_resolve_environment_overrides_saved_token(self) -> None:
+        store.write(self.config_home, _TOKEN)
+        self.assertTrue(store.resolve(self.config_home, {store.TOKEN_KEY: _OTHER}) == _OTHER)
+
+    def test_resolve_empty_environment_falls_back_to_store(self) -> None:
+        store.write(self.config_home, _TOKEN)
+        self.assertTrue(store.resolve(self.config_home, {store.TOKEN_KEY: ""}) == _TOKEN)
+
+    def test_resolve_missing_credential_is_actionable(self) -> None:
+        with self.assertRaises(store.MissingConfigurationError) as caught:
+            store.resolve(self.config_home, {})
+        self.assertIn("Token Config", str(caught.exception))
+
+    def test_resolve_refuses_invalid_environment_without_echoing_it(self) -> None:
+        store.write(self.config_home, _TOKEN)
+        for invalid in (_OTHER + " invalid", "${GITLAB_MCP_READ_TOKEN}",
+                        "${env:GITLAB_MCP_READ_TOKEN}"):
+            with self.assertRaises(store.TokenError) as caught:
+                store.resolve(self.config_home, {store.TOKEN_KEY: invalid})
+            self.assertFalse(invalid in str(caught.exception))
+
+    def test_resolve_refuses_unsafe_saved_file(self) -> None:
+        path = store.write(self.config_home, _TOKEN)
+        path.chmod(0o644)
+        with self.assertRaisesRegex(store.TokenError, "mode 600"):
+            store.resolve(self.config_home, {})
+
+    def test_resolve_wraps_unreadable_or_non_utf8_store_without_contents(self) -> None:
+        path = store.write(self.config_home, _TOKEN)
+        path.write_bytes(b"\xff" + _TOKEN.encode())
+        with self.assertRaises(store.TokenError) as caught:
+            store.resolve(self.config_home, {})
+        self.assertFalse(_TOKEN in str(caught.exception))
+        with mock.patch.object(Path, "read_text", side_effect=PermissionError(_TOKEN)):
+            with self.assertRaises(store.TokenError) as caught:
+                store.resolve(self.config_home, {})
+        self.assertFalse(_TOKEN in str(caught.exception))
+
     def test_a_saved_token_round_trips(self) -> None:
         store.write(self.config_home, _TOKEN)
 

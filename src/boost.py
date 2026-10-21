@@ -5,12 +5,14 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import tempfile
 import time
 from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
 try:
@@ -41,6 +43,10 @@ class BoostStatus:
     user_flags: tuple[tuple[str, bool], ...] = ()
     diverged_flags: tuple[str, ...] = ()
     unruled_flags: tuple[str, ...] = ()
+    telemetry_disabled: bool = False
+    unsupported_flags: tuple[str, ...] = ()
+    runtime_flags: tuple[tuple[str, bool], ...] | None = None
+    capture_states: tuple[tuple[str, str], ...] = ()
 
 
 DEFAULT_BOOST_TIMEOUT_SECONDS = 300
@@ -66,13 +72,21 @@ rewriting, which Agentbot's Boost policy turns off (boost-cli-filtering). -->
 Boost is installed with shell-output filtering off. Run shell commands as they
 are and do not pipe them into `boost`: a pipe hides the command's exit status.
 
-Boost still compacts file reads and MCP tool output. When a compacted result
-lacks a detail you need, run the `boost retrieve <id>` command its marker shows
-(`--query "..."` or `--lines a-b` narrow a full dump).
+File optimization returns previews for supported documents and images; ordinary
+code reads are outside its scope. To read an Office file, use `boost read <path>`.
+CSV and notebook previews can omit rows or outputs even with `--level none`.
+Use `boost retrieve <id>` when a marker exists; otherwise read required details
+from the original file with a format-aware reader. Never assume a preview is complete.
 
-To read an Office file (.docx, .xlsx, .pptx, and similar), use
-`boost read <path>`. Notebook (`.ipynb`) reads come back as Markdown with
-truncated outputs; `boost retrieve <id>` returns the rest when a marker shows.
+MCP output replacement depends on the host and hook event. Codex MCP capture does not prove
+model-facing compression. CLI output is neither filtered nor protected by Boost's
+redaction while CLI filtering is off; secret detection is best-effort elsewhere.
+
+Agentbot owns this static awareness. A learned BOOST.md digest is a SQLite-backed
+proposal, not an instruction to overwrite this file or canonical policy. Use
+`agentbot boost analyze SUMMARY.md` to preview a manual, isolated analysis.
+It requires explicit confirmation to use provider quota; do not run unattended analysis.
+
 """
 _RELEASE_TAG_RE = re.compile(r"v?([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)")
 # Declared Boost feature-flag policy. Boost's report UI writes `user = <bool>`
@@ -94,7 +108,7 @@ _RELEASE_TAG_RE = re.compile(r"v?([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)")
 BOOST_FEATURE_POLICY: dict[str, bool] = {
     # Scrubs secrets and abbreviates paths in what the agent sees, not just in
     # the local database. Enforces the global "never expose secrets in command
-    # output" rule mechanically rather than by trusting the agent. Unlike every
+    # output" rule where the supported hook actually transforms output. Unlike every
     # other lossy transform kept on here, this one is deliberately not
     # recoverable through `boost retrieve`: secrets and credentials are exempt
     # from the retrievable-original rule (user decision, 2026-10-08).
@@ -115,8 +129,9 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     # Rewrites supported shell commands into `cmd | boost` to filter their
     # output. Off by the user's decision of 2026-10-12: Boost's hook answers
     # every rewrite with permissionDecision "allow" in Claude Code and Codex,
-    # so `git push` or `curl | sh` ran without a permission prompt, for a
-    # measured saving under 1%. Off also means shell output is no longer
+    # which bypasses ordinary Claude permission asks. Current Codex requires
+    # allow for rewrites but uses a separate approval event; JSON alone is not
+    # proof of an approval bypass there. Off also means shell output is no longer
     # redacted; file reads and MCP output still are.
     "boost-cli-filtering": False,
     # Aimed at article and paper prose. This is a code workspace: negligible
@@ -157,13 +172,10 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     # Unreviewed measurement mode: keep it off rather than inheriting a
     # remote default. Normal filtering and reporting keep their own policy.
     "boost-measurement-mode": False,
-    # Filters noisy MCP responses, with the original retrievable through the
-    # same `boost retrieve` marker as CLI filtering -- the bargain already
-    # accepted for shell output. It was on by remote default and unseen.
+    # Keep the existing MCP policy. v0.16.6 fixtures replace Claude/Cursor
+    # envelopes, while Codex records capture without a model-facing replacement.
+    # Recovery depends on the event and payload; do not promise a universal marker.
     "boost-mcp-filtering": True,
-    # Re-encodes MCP JSON responses as TOON with values copied across untouched
-    # -- a lossless reformat that costs nothing when no MCP tool is called.
-    "boost-mcp-toon-format": True,
     # Enables `[ignore] optimize = [...]`, repo-relative globs excluded from
     # optimization. Nothing here needs an exclusion yet; turn it on with the
     # first list that does.
@@ -183,6 +195,7 @@ BOOST_FEATURE_POLICY: dict[str, bool] = {
     "boost-target-version": False,
 }
 GRAPH_FEATURE_FLAG = "boost-graph-integration"
+RETIRED_FEATURE_FLAGS = frozenset({"boost-mcp-toon-format"})
 # Scanned in the dry-run plan as defence in depth. It is NOT the BoostGraph
 # guard and cannot be: boost omits BoostGraph from the plan even when
 # `--boostgraph` is passed explicitly, so there is no text here to match. The
@@ -241,6 +254,7 @@ class BoostIntegration:
         cli_path = self._find_cli()
         cli_version = self._cli_version(cli_path)
         upload_disabled, auto_update_disabled = self._config_flags()
+        telemetry_disabled = self._telemetry_disabled()
         claude_state = self._claude_state()
         codex_state = self._codex_state()
         cursor_state = self._cursor_state()
@@ -253,11 +267,21 @@ class BoostIntegration:
         shadowing = self._shadowing_configs()
         stale = self._stale_artifacts(cli_version)
         user_flags = self._user_feature_flags()
+        runtime_flags = self._runtime_feature_flags(cli_path)
+        runtime_names = {name for name, _ in runtime_flags} if runtime_flags is not None else None
+        unruled = set(self._unruled_feature_flags())
+        if runtime_names is not None:
+            unruled.update(runtime_names - BOOST_FEATURE_POLICY.keys() - RETIRED_FEATURE_FLAGS)
         pinned = dict(user_flags)
         diverged = tuple(
             flag
             for flag, value in sorted(BOOST_FEATURE_POLICY.items())
             if pinned.get(flag) is not value
+            or (
+                runtime_flags is not None
+                and flag in dict(runtime_flags)
+                and dict(runtime_flags)[flag] is not value
+            )
         )
 
         if cli_path is None:
@@ -266,7 +290,7 @@ class BoostIntegration:
         elif graph_state == "forbidden":
             state = "forbidden"
             message = "Forbidden BoostGraph or MCP configuration is present."
-        elif not upload_disabled or not auto_update_disabled:
+        elif not upload_disabled or not auto_update_disabled or not telemetry_disabled:
             state = "unsafe-config"
             message = "Boost privacy or update pinning is not safely configured."
         elif shadowing:
@@ -274,7 +298,7 @@ class BoostIntegration:
             message = (
                 "Boost reads the first config it finds and does not merge, so these "
                 "repository configs replace the safe global one and leave tracing "
-                f"upload enabled inside them: {', '.join(str(path) for path in shadowing)}"
+                f"privacy or update controls unsafe inside them: {', '.join(str(path) for path in shadowing)}"
             )
         elif all(state == "skipped" for _, state in host_states) and not any(
             state == "orphaned" for _, state in host_states
@@ -311,9 +335,10 @@ class BoostIntegration:
                 name for name, host_state in host_states if host_state == "ready"
             )
             message = (
-                f"Boost shell-output integration is ready for {ready_hosts}."
+                f"Boost hooks are configured for {ready_hosts}. "
+                "CLI filtering is off; capture and compression are separate checks."
                 if ready_hosts
-                else "Boost shell-output integration is ready."
+                else "Boost hooks are configured; capture and compression are separate checks."
             )
 
         return BoostStatus(
@@ -332,8 +357,66 @@ class BoostIntegration:
             stale,
             user_flags,
             diverged,
-            self._unruled_feature_flags(),
+            tuple(sorted(unruled)),
+            telemetry_disabled,
+            tuple(sorted(BOOST_FEATURE_POLICY.keys() - runtime_names))
+            if runtime_names is not None
+            else (),
+            runtime_flags,
+            self._capture_states(),
         )
+
+    @property
+    def data_home(self) -> Path:
+        home = self.paths.codex_home.parent
+        base = (
+            Path(os.environ.get("XDG_DATA_HOME", home / ".local/share"))
+            if home == Path.home()
+            else home / ".local/share"
+        )
+        return base / "boost"
+
+    def ensure_private_storage(self) -> None:
+        directories = (self.config_path.parent, self.data_home)
+        files = (
+            self.config_path,
+            self.config_path.with_suffix(".toml.lock"),
+            *(self.data_home / name for name in ("history.db", "history.db-wal", "history.db-shm")),
+        )
+        for path in (*directories, *files):
+            if any(parent.is_symlink() for parent in (path, *path.parents)):
+                raise ValueError("Boost storage must not use symlink paths")
+            if path.exists():
+                info = path.stat()
+                regular = (
+                    stat.S_ISDIR(info.st_mode)
+                    if path in directories
+                    else stat.S_ISREG(info.st_mode)
+                )
+                if (
+                    not regular
+                    or info.st_uid != os.getuid()
+                    or (path in files and info.st_nlink != 1)
+                ):
+                    raise ValueError("Boost storage must use regular, owned paths")
+        for path in directories:
+            path.mkdir(parents=True, exist_ok=True)
+        for path in (*directories, *files):
+            if not path.exists():
+                continue
+            flags = os.O_RDONLY | os.O_NOFOLLOW
+            if path in directories:
+                flags |= os.O_DIRECTORY
+            descriptor = os.open(path, flags)
+            try:
+                info = os.fstat(descriptor)
+                if info.st_uid != os.getuid() or (
+                    path in files and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1)
+                ):
+                    raise ValueError("Boost storage must use regular, owned paths")
+                os.fchmod(descriptor, 0o700 if path in directories else 0o600)
+            finally:
+                os.close(descriptor)
 
     @contextmanager
     def _config_lock(self) -> Iterator[None]:
@@ -365,8 +448,10 @@ class BoostIntegration:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def ensure_safe_config(self) -> None:
+        self.ensure_private_storage()
         with self._config_lock():
             self._ensure_safe_config_locked()
+        self.ensure_private_storage()
 
     def _ensure_safe_config_locked(self) -> None:
         path = self.config_path
@@ -380,6 +465,9 @@ class BoostIntegration:
                 raise ValueError(f"Boost config is invalid TOML: {error}") from error
 
         updated = self._set_section_bool(existing, "tracing", "upload", False)
+        updated = self._set_section_bool(updated, "tracing", "telemetry", False)
+        for flag in RETIRED_FEATURE_FLAGS:
+            updated = self._remove_section_key(updated, f'feature_flags."{flag}"', "user")
         updated = self._set_section_bool(updated, "update", "auto_update", False)
         for flag, value in sorted(BOOST_FEATURE_POLICY.items()):
             # The quoted subtable name is the section, so the existing writer
@@ -396,6 +484,8 @@ class BoostIntegration:
             ) from error
         if parsed.get("tracing", {}).get("upload") is not False:
             raise ValueError("Boost tracing.upload could not be disabled")
+        if parsed.get("tracing", {}).get("telemetry") is not False:
+            raise ValueError("Boost tracing.telemetry could not be disabled")
         if parsed.get("update", {}).get("auto_update") is not False:
             raise ValueError("Boost update.auto_update could not be disabled")
         written = parsed.get("feature_flags", {})
@@ -616,6 +706,13 @@ class BoostIntegration:
             parsed.get("update", {}).get("auto_update") is False,
         )
 
+    def _telemetry_disabled(self) -> bool:
+        try:
+            parsed = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
+            return parsed.get("tracing", {}).get("telemetry") is False
+        except (OSError, tomllib.TOMLDecodeError):
+            return False
+
     def _hosts(self) -> tuple[_BoostHost, ...]:
         claude = self.paths.claude_home
         codex = self.paths.codex_home
@@ -757,6 +854,68 @@ class BoostIntegration:
         walk(hooks)
         return frozenset(names)
 
+    def _runtime_feature_flags(self, cli_path: Path | None) -> tuple[tuple[str, bool], ...] | None:
+        if cli_path is None:
+            return None
+        home = self.paths.codex_home.parent
+        env = {
+            "HOME": str(home),
+            "PATH": os.defpath,
+            "XDG_DATA_HOME": str(self.data_home.parent),
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
+            "BOOST_FEATURE_FLAGS_DISABLE": "1",
+            "NO_COLOR": "1",
+        }
+        result = CommandRunner().run(
+            [str(cli_path), "feature-flags"], cwd=home, env=env, timeout_seconds=10
+        )
+        if result.returncode:
+            return None
+        entries = re.findall(
+            r"^\s*(boost-[a-z0-9-]+)\s*=\s*(true|false)\b", result.stdout, re.MULTILINE
+        )
+        return (
+            tuple(sorted((name, value == "true") for name, value in entries)) if entries else None
+        )
+
+    def _capture_states(self) -> tuple[tuple[str, str], ...]:
+        states = {"Claude": "none", "Codex": "none", "Cursor": "none"}
+        database = self.data_home / "history.db"
+        try:
+            parsed = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
+            custom = parsed.get("tracking", {}).get("database_path")
+            if custom:
+                states = dict.fromkeys(states, "unavailable")
+            elif database.exists():
+                with closing(
+                    sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
+                ) as connection:
+                    rows = connection.execute("""SELECT tool, MAX(ts) FROM (
+                        SELECT v.tool AS tool,c.timestamp AS ts FROM commands c
+                        JOIN conversations v ON v.conversation_id=c.conversation_id
+                        UNION ALL
+                        SELECT v.tool,COALESCE(NULLIF(tc.ended_at,''),tc.started_at)
+                        FROM agent_tool_calls tc JOIN conversations v
+                        ON v.conversation_id=tc.conversation_id) GROUP BY tool""").fetchall()
+                names = {
+                    "claude": "Claude",
+                    "claude_code": "Claude",
+                    "codex": "Codex",
+                    "cursor": "Cursor",
+                }
+                cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+                for tool, raw in rows:
+                    if tool not in names or not raw:
+                        continue
+                    stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    states[names[tool]] = "recent" if stamp >= cutoff else "stale"
+        except (OSError, ValueError, sqlite3.Error):
+            states = dict.fromkeys(states, "unavailable")
+        return tuple(states.items())
+
     def _user_feature_flags(self) -> tuple[tuple[str, bool], ...]:
         """Feature flags this machine has pinned, whatever the remote default.
 
@@ -798,6 +957,7 @@ class BoostIntegration:
             if isinstance(entry, dict)
             and not name.startswith("_")
             and name not in BOOST_FEATURE_POLICY
+            and name not in RETIRED_FEATURE_FLAGS
         )
 
     def _stale_artifacts(self, cli_version: str | None) -> tuple[Path, ...]:
@@ -875,7 +1035,11 @@ class BoostIntegration:
             except (OSError, tomllib.TOMLDecodeError):
                 shadowing.append(candidate)
                 continue
-            if parsed.get("tracing", {}).get("upload") is not False:
+            if (
+                parsed.get("tracing", {}).get("upload") is not False
+                or parsed.get("tracing", {}).get("telemetry") is not False
+                or parsed.get("update", {}).get("auto_update") is not False
+            ):
                 shadowing.append(candidate)
         return tuple(shadowing)
 
@@ -925,6 +1089,19 @@ class BoostIntegration:
             if entries - allowed_names:
                 indexes.append(candidate)
         return tuple(indexes)
+
+    @staticmethod
+    def _remove_section_key(content: str, section: str, key: str) -> str:
+        current = ""
+        kept: list[str] = []
+        for line in content.splitlines(keepends=True):
+            match = re.match(r"^\s*\[([^]]+)]\s*(?:#.*)?$", line.rstrip("\r\n"))
+            if match:
+                current = match.group(1).strip()
+            if current == section and re.match(rf"^\s*{re.escape(key)}\s*=", line):
+                continue
+            kept.append(line)
+        return "".join(kept)
 
     @staticmethod
     def _set_section_bool(content: str, section: str, key: str, value: bool) -> str:

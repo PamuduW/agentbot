@@ -22,12 +22,12 @@ import re
 import stat
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-#: The key inside the file, matching the environment variable the facade and its
-#: admission test both read, so a saved credential can be exported unchanged.
+#: Shared by the saved store and the optional environment override.
 TOKEN_KEY = "GITLAB_MCP_READ_TOKEN"
 
 #: GitLab personal, project, and group tokens carry the first prefix. The
@@ -52,6 +52,10 @@ VERIFY_TIMEOUT_SECONDS = 10
 
 class TokenError(Exception):
     """A refusal that names the path, so a caller can show the operator why."""
+
+
+class MissingConfigurationError(TokenError):
+    """No environment or saved credential is configured."""
 
 
 @dataclass(frozen=True)
@@ -124,6 +128,24 @@ def read(config_home: Path) -> str:
         return _read_checked(token_file(config_home))
     except TokenError:
         return ""
+
+
+def resolve(config_home: Path, environ: Mapping[str, str]) -> str:
+    """Prefer an explicit environment token, otherwise use the private store."""
+    token = environ.get(TOKEN_KEY, "")
+    if token:
+        if not is_valid(token):
+            raise TokenError(f"{TOKEN_KEY} is invalid: {SHAPE_RULE}")
+        return token
+    try:
+        token = _read_checked(token_file(config_home))
+    except (OSError, UnicodeError):
+        raise TokenError("Could not read the saved GitLab credential; check Token Config") from None
+    if not token:
+        raise MissingConfigurationError(
+            f"Configure the GitLab read token in Token Config or set {TOKEN_KEY}"
+        )
+    return token
 
 
 def inspect(config_home: Path) -> str | None:

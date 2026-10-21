@@ -119,6 +119,20 @@ class McpService:
                     else:
                         status = "ok"
                         detail = "owned configuration matches"
+                    if entry.id == "gitlab_read":
+                        from . import gitlab_token
+
+                        try:
+                            gitlab_token.resolve(self.paths.config_home, self.environ)
+                        except gitlab_token.MissingConfigurationError as error:
+                            status = "auth-reference-missing"
+                            detail = str(error)
+                        except gitlab_token.TokenError as error:
+                            status = "config-invalid"
+                            detail = str(error)
+                        else:
+                            status = "ok"
+                            detail = "owned configuration matches; GitLab credential available"
                     if entry.id == "atlassian_read":
                         from .atlassian_token import MissingConfigurationError, TokenError, resolve
 

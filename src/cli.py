@@ -316,6 +316,23 @@ def _handle_vscode(context: CommandContext) -> int:
 
 def _handle_boost(context: CommandContext) -> int:
     command = getattr(context.args, "boost_command", None) or "status"
+    if command == "analyze":
+        from .boost_engine import BoostEngine
+
+        result = BoostEngine(context.paths).analyze(
+            Path(context.args.summary), confirmed=context.args.confirm
+        )
+        if not result.confirmed:
+            print(f"  Selected summary: {result.summary_bytes} bytes; nothing was sent.")
+            print("  Engine: Codex gpt-6.1-sol, low reasoning; one invocation, 90-second timeout.")
+            print("  Review and redact the summary, then rerun with --yes to use account quota.")
+            print("  These limits are not a hard token or dollar cap.")
+        else:
+            for line in result.proposal.rstrip().splitlines():
+                print(f"  {line}")
+            print("\n  Native usage: " + ", ".join(f"{key}={value}" for key, value in result.usage))
+            print("  Proposal only. No canonical policy or memory record was changed.")
+        return 0
     if command == "setup":
         status = context.lifecycle.setup_boost()
     elif command == "off":
@@ -1174,7 +1191,7 @@ def _handle_mcp(context: CommandContext) -> int:
         if context.args.catalog_id == "gitlab_read":
             from .gitlab_read_mcp import main as run_gitlab
 
-            return run_gitlab([])
+            return run_gitlab([], config_home=context.paths.config_home)
         if context.args.catalog_id == "atlassian_read":
             from .atlassian_read_mcp import main as run_atlassian
 
@@ -1855,11 +1872,23 @@ def build_parser() -> argparse.ArgumentParser:
     graphify_sub = graphify.add_subparsers(dest="graphify_command")
     graphify_sub.add_parser("status", help="Show Graphify CLI and skill state")
     graphify_sub.add_parser("setup", help="Install or refresh the generic Agent Skills copy")
-    boost = subparsers.add_parser("boost", help="Inspect or manage Boost shell integration")
+    boost = subparsers.add_parser(
+        "boost", help="Inspect or manage Boost integration and manual analysis"
+    )
     boost_sub = boost.add_subparsers(dest="boost_command")
     boost_sub.add_parser("status", help="Show Boost CLI, safety, and integration state")
     boost_sub.add_parser("setup", help="Set up Boost for installed Claude, Codex, and Cursor CLIs")
     boost_sub.add_parser("off", help="Remove Boost integration from Claude, Codex, and Cursor")
+    analyze = boost_sub.add_parser(
+        "analyze", help="Preview one summary; --yes uses Codex quota once"
+    )
+    analyze.add_argument("summary", help="UTF-8 summary file, at most 8192 bytes; redact it first")
+    analyze.add_argument(
+        "--yes",
+        dest="confirm",
+        action="store_true",
+        help="Allow one isolated analysis using the existing ChatGPT login",
+    )
     # The GitLab read credential. GitHub's token stays in the Bash helper both
     # products share; this one is Agentbot's, and the menu drives it through
     # here so the secret never crosses a shell argument vector.

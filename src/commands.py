@@ -211,9 +211,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "boost",
-        "agentbot boost status|setup|off",
+        "agentbot boost status|setup|off|analyze SUMMARY [--yes]",
         "mutating",
-        "Inspect, set up, or remove the optional Boost shell-output integration.",
+        "Inspect Boost integrations or preview one manual summary analysis.",
         (
             option("status", "Inspect CLI, safety config, and per-host state.", "default"),
             option(
@@ -222,11 +222,16 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 "explicit",
             ),
             option("off", "Remove Boost integration, including leftover host files.", "explicit"),
+            option(
+                "analyze SUMMARY",
+                "Preview a selected summary; --yes uses Codex account quota once.",
+                "explicit",
+            ),
         ),
-        "Status is read-only; setup/off may update Boost config and agent hooks.",
+        "Status inspects configuration and captures. Setup/off change config/hooks; analyze needs --yes to use quota. Learned output is a proposal.",
         ("agentbot boost status",),
         ("install", "doctor"),
-        ("boost status", "boost setup", "boost off"),
+        ("boost status", "boost setup", "boost off", "boost analyze"),
     ),
     CommandSpec(
         "mcp",

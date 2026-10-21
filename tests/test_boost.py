@@ -950,13 +950,16 @@ class BoostShadowingConfigTests(BoostIntegrationTests):
         self.assertEqual("unsafe-config", status.state)
         self.assertIn(str(shadow), status.message)
 
-    def test_a_repository_config_that_disables_upload_is_accepted(self) -> None:
+    def test_a_repository_config_with_all_privacy_and_update_controls_is_accepted(self) -> None:
         integration = self._ready_integration()
         workspace = self.root / "work"
         self._register_workspace(workspace)
         shadow = workspace / ".boost/config.toml"
         shadow.parent.mkdir(parents=True)
-        shadow.write_text("[tracing]\nupload = false\n", encoding="utf-8")
+        shadow.write_text(
+            "[tracing]\nupload = false\ntelemetry = false\n[update]\nauto_update = false\n",
+            encoding="utf-8",
+        )
 
         self.assertEqual((), integration.status().shadowing_configs)
 
@@ -1108,7 +1111,6 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
                 "boost-mcp-browser-budget": False,
                 "boost-measurement-mode": False,
                 "boost-mcp-filtering": True,
-                "boost-mcp-toon-format": True,
                 "boost-path-ignore": False,
                 "boost-pr-usage-comments": False,
                 "boost-share-cli-outputs": False,
@@ -1143,7 +1145,7 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
         self.assertIs(True, flags["boost-agent-facing-redaction"]["user"])
         self.assertIs(False, flags["boost-english-abbreviation"]["user"])
         self.assertIs(True, flags["boost-files-optimization"]["user"])
-        self.assertIs(True, flags["boost-mcp-toon-format"]["user"])
+        self.assertNotIn("boost-mcp-toon-format", flags)
         self.assertIs(False, flags["boost-auto-update"]["user"])
         self.assertIs(False, flags["boost-claude-status-line"]["user"])
         self.assertIs(False, flags["boost-cli-filtering"]["user"])
@@ -1223,7 +1225,6 @@ class BoostFeatureFlagTests(BoostIntegrationTests):
                 "boost-html-article-preserve-agent-html",
                 "boost-mcp-browser-budget",
                 "boost-mcp-filtering",
-                "boost-mcp-toon-format",
                 "boost-measurement-mode",
                 "boost-path-ignore",
                 "boost-pr-usage-comments",
@@ -1553,3 +1554,158 @@ class BoostAwarenessCorrectionTests(BoostIntegrationTests):
         with mock.patch.dict("src.boost.BOOST_FEATURE_POLICY", {"boost-cli-filtering": True}):
             self.assertEqual((), integration.correct_awareness())
         self.assertEqual(self.CLAUDE, files["claude"].read_text(encoding="utf-8"))
+
+
+class BoostReviewPolicyTests(BoostIntegrationTests):
+    def test_telemetry_and_retired_pin_migrate_without_losing_operator_settings(self):
+        integration = self._integration_type()(self._paths())
+        config = integration.config_path
+        config.parent.mkdir()
+        config.write_text(
+            '[llm]\nengine = "codex"\n[tracing]\ntelemetry = true\nupload = false\n'
+            '[feature_flags."boost-mcp-toon-format"]\nuser = true\nremote = true\n'
+            '[feature_flags."boost-future"]\nuser = false\n'
+        )
+        integration.ensure_safe_config()
+        parsed = tomllib.loads(config.read_text())
+        self.assertIs(False, parsed["tracing"].get("telemetry"))
+        self.assertNotIn("user", parsed["feature_flags"]["boost-mcp-toon-format"])
+        self.assertIs(True, parsed["feature_flags"]["boost-mcp-toon-format"]["remote"])
+        self.assertEqual("codex", parsed["llm"]["engine"])
+        self.assertIs(False, parsed["feature_flags"]["boost-future"]["user"])
+        first = config.read_bytes()
+        integration.ensure_safe_config()
+        self.assertEqual(first, config.read_bytes())
+
+    def test_safe_config_restricts_owned_files_even_when_content_is_current(self):
+        integration = self._integration_type()(self._paths())
+        integration.ensure_safe_config()
+        database = self.root / ".local/share/boost/history.db"
+        database.parent.mkdir(parents=True, exist_ok=True)
+        database.write_text("fixture")
+        for path in (integration.config_path.parent, database.parent):
+            path.chmod(0o755)
+        for path in (integration.config_path, database):
+            path.chmod(0o644)
+        integration.ensure_safe_config()
+        for path in (integration.config_path.parent, database.parent):
+            self.assertEqual(0o700, path.stat().st_mode & 0o777)
+        for path in (integration.config_path, database):
+            self.assertEqual(0o600, path.stat().st_mode & 0o777)
+
+    def test_symlinked_boost_directory_is_rejected_without_changing_target(self):
+        outside = self.root / "operator"
+        outside.mkdir()
+        outside.chmod(0o755)
+        (self.root / ".boost").symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "regular|symlink|owned"):
+            self._integration_type()(self._paths()).ensure_safe_config()
+        self.assertEqual(0o755, outside.stat().st_mode & 0o777)
+        self.assertFalse((outside / "config.toml").exists())
+
+
+class BoostReviewEvidenceTests(BoostIntegrationTests):
+    def test_runtime_only_unknown_flags_are_reported_without_remote_fetch(self):
+        from src.command_runner import CommandResult
+
+        integration = self._integration_type()(self._paths())
+        integration.ensure_safe_config()
+        boost = self.root / "boost"
+        boost.write_text("fixture")
+        with (
+            patch_boost_which(boost=boost),
+            mock.patch(
+                "src.boost.CommandRunner.run",
+                return_value=CommandResult(
+                    0,
+                    stdout="  boost-future-runtime = true (default true)\n  boost-cli-filtering = false (default false)\n",
+                ),
+            ) as run,
+        ):
+            status = integration.status()
+        self.assertIn("boost-future-runtime", status.unruled_flags)
+        self.assertIn("boost-files-optimization", status.unsupported_flags)
+        self.assertEqual("1", run.call_args.kwargs["env"]["BOOST_FEATURE_FLAGS_DISABLE"])
+
+    def test_readonly_capture_recency_and_unavailable_database(self):
+        import sqlite3
+        from datetime import datetime, timedelta, timezone
+
+        integration = self._integration_type()(self._paths())
+        integration.ensure_safe_config()
+        database = integration.data_home / "history.db"
+        with sqlite3.connect(database) as db:
+            db.executescript(
+                "CREATE TABLE conversations(conversation_id TEXT,tool TEXT); CREATE TABLE commands(conversation_id TEXT,timestamp TEXT); CREATE TABLE agent_tool_calls(conversation_id TEXT,started_at TEXT,ended_at TEXT);"
+            )
+            db.executemany(
+                "INSERT INTO conversations VALUES(?,?)", [("new", "codex"), ("old", "claude_code")]
+            )
+            db.execute(
+                "INSERT INTO commands VALUES(?,?)",
+                ("old", (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()),
+            )
+            db.execute(
+                "INSERT INTO agent_tool_calls VALUES(?,?,?)",
+                ("new", "", datetime.now(timezone.utc).isoformat()),
+            )
+        db.close()
+        before = database.read_bytes()
+        states = dict(integration.status().capture_states)
+        self.assertEqual("recent", states["Codex"])
+        self.assertEqual("stale", states["Claude"])
+        self.assertEqual("none", states["Cursor"])
+        self.assertEqual(before, database.read_bytes())
+        database.write_text("invalid database")
+        self.assertEqual({"unavailable"}, set(dict(integration.status().capture_states).values()))
+
+    def test_awareness_covers_host_limits_and_original_file_recovery(self):
+        from src.boost import _AWARENESS_BODY
+
+        self.assertIn("Codex MCP capture does not prove", _AWARENESS_BODY)
+        self.assertIn("original file", _AWARENESS_BODY)
+        self.assertIn("preview", _AWARENESS_BODY)
+        self.assertIn("proposal", _AWARENESS_BODY)
+        self.assertNotIn("Boost still compacts file reads and MCP tool output", _AWARENESS_BODY)
+
+    def test_reports_separate_registration_capture_and_runtime_policy(self):
+        from dataclasses import replace
+
+        from src.diagnostics import Diagnostics
+        from src.ui.reports import _boost_rows
+
+        status = replace(
+            self._integration_type()(self._paths()).status(),
+            unsupported_flags=("boost-files-optimization",),
+            capture_states=(("Codex", "recent"), ("Cursor", "none")),
+        )
+        rows = _boost_rows(status)
+        rendered = " ".join(str(value) for row in rows for value in row)
+        self.assertIn("Telemetry", rendered)
+        self.assertIn("Codex capture", rendered)
+        self.assertIn("not verified", rendered)
+        self.assertIn(
+            "unsupported",
+            " ".join(issue.message.lower() for issue in Diagnostics._boost_flag_issues(status)),
+        )
+
+    def test_effective_runtime_drift_is_reported_even_when_saved_pins_match(self):
+        from src.boost import BOOST_FEATURE_POLICY
+
+        integration = self._integration_type()(self._paths())
+        integration.ensure_safe_config()
+        effective = dict(BOOST_FEATURE_POLICY, **{"boost-cli-filtering": True})
+        with mock.patch.object(
+            integration, "_runtime_feature_flags", return_value=tuple(effective.items())
+        ):
+            self.assertIn("boost-cli-filtering", integration.status().diverged_flags)
+
+    def test_boolean_environment_values_cannot_redact_effective_runtime_flags(self):
+        integration = self._integration_type()(self._paths())
+        boost = self.root / "fake-runtime"
+        boost.write_text("#!/bin/sh\nprintf '  boost-cli-filtering = false (default false)\\n'\n")
+        boost.chmod(0o700)
+        with mock.patch.dict("os.environ", {"BOOST_TEST_BOOLEAN_ENV": "false"}):
+            self.assertEqual(
+                (("boost-cli-filtering", False),), integration._runtime_feature_flags(boost)
+            )

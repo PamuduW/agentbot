@@ -314,7 +314,14 @@
           "enabled": true
         },
         "codex": {
-          "enabled": true
+          "enabled": true,
+          "environment": {
+            "GITLAB_MCP_READ_TOKEN": "GITLAB_MCP_READ_TOKEN",
+            "GITLAB_MCP_ORIGIN": "GITLAB_MCP_ORIGIN",
+            "XDG_CONFIG_HOME": "XDG_CONFIG_HOME",
+            "SSL_CERT_FILE": "SSL_CERT_FILE",
+            "SSL_CERT_DIR": "SSL_CERT_DIR"
+          }
         },
         "cursor": {
           "enabled": true
@@ -324,10 +331,8 @@
         }
       },
       "credential": {
-        "mode": "header_env",
-        "environment": [
-          "GITLAB_MCP_READ_TOKEN"
-        ]
+        "mode": "none",
+        "environment": []
       },
       "allowed_tools": [
         "gitlab_project",

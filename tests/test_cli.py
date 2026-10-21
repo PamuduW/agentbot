@@ -1365,5 +1365,35 @@ class CliTests(unittest.TestCase):
         self.assertEqual(xdg / "agentbot" / "workspaces.json", paths.workspace_state_file)
 
 
+class BoostAnalysisCliTests(unittest.TestCase):
+    def test_parser_and_handler_preview_then_explicit_quota_confirmation(self):
+        from contextlib import redirect_stdout
+        from types import SimpleNamespace
+
+        from src.boost_engine import EngineAnalysis
+        from src.cli import _handle_boost, build_parser
+
+        for confirm in (False, True):
+            argv = ["boost", "analyze", "summary.md"] + (["--yes"] if confirm else [])
+            try:
+                args = build_parser().parse_args(argv)
+            except SystemExit:
+                self.fail("The manual Boost analysis command is missing")
+            self.assertEqual(confirm, args.confirm)
+            engine = MagicMock()
+            engine.analyze.return_value = EngineAnalysis(
+                confirm, 20, "# Proposal", (("input_tokens", 30),)
+            )
+            output = io.StringIO()
+            context = SimpleNamespace(args=args, paths=object())
+            with (
+                patch("src.boost_engine.BoostEngine", return_value=engine),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(0, _handle_boost(context))
+            engine.analyze.assert_called_once_with(Path("summary.md"), confirmed=confirm)
+            self.assertIn("Proposal" if confirm else "nothing was sent", output.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

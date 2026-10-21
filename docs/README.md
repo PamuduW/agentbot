@@ -25,3 +25,8 @@ How every surface in this repository is laid out — headings, tables, colour,
 rollups, prompts — is one contract shared with Dotfiles:
 [`docs/presentation.md`](https://github.com/PamuduW/dotfiles-shared/blob/main/docs/presentation.md)
 in dotfiles-shared.
+
+Completed implementation plans are kept in [archive/](archive/2026-10-15-atlassian-read-plan.md).
+They preserve release evidence and validation limits; current product pages
+and source govern operation. A review of all four agent CLI settings and
+Agentbot's apply behavior is active workspace TODO work, not yet completed.
