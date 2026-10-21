@@ -87,6 +87,86 @@ agentbot mcp status               # inspect MCP ownership without network access
 
 ## Memory vault
 
+### First-time setup
+
+Installing Agentbot does not create a memory vault. Each person needs their
+own private vault; use the same vault on their other machines. Run these steps
+in your own terminal (inside WSL when using Windows).
+
+1. Check that Git has your name and email:
+
+   ```bash
+   git config --global user.name
+   git config --global user.email
+   ```
+
+   If either is missing or belongs to someone else, set your own values:
+
+   ```bash
+   git config --global user.name "Your Name"
+   git config --global user.email "you@example.com"
+   ```
+
+2. Create an empty **private** repository named `agent-memory` in your GitHub
+   account. Leave the README, license, and `.gitignore` options unchecked.
+   Make sure Git in this terminal can authenticate to your account. The
+   commands below use SSH; an HTTPS remote with a Git credential helper also
+   works.
+
+3. Preview the new vault, replacing `YOUR_USERNAME` with your GitHub username:
+
+   ```bash
+   agentbot memory setup --new "$HOME/agent-memory" \
+     --remote git@github.com:YOUR_USERNAME/agent-memory.git
+   ```
+
+   Review the preview, then apply it:
+
+   ```bash
+   agentbot memory setup --new "$HOME/agent-memory" \
+     --remote git@github.com:YOUR_USERNAME/agent-memory.git --yes
+   ```
+
+   Use an empty or nonexistent destination outside other Git repositories.
+   On WSL, keep it on the Linux filesystem, such as `~/agent-memory`, rather
+   than a Windows drive under `/mnt/c`. Setup creates the initial local
+   commit and records the vault location; it does not push.
+
+4. Push the initial vault and check its state:
+
+   ```bash
+   git -C "$HOME/agent-memory" push -u origin main
+   agentbot memory status
+   agentbot memory validate
+   agentbot memory sync --status
+   ```
+
+5. From each project repository, register it for project memory:
+
+   ```bash
+   cd ~/path/to/your-project
+   agentbot boot
+   agentbot memory project
+   ```
+
+   Agents can then save project decisions, lessons, and notes. Personal
+   preferences and profile changes go through proposals that you approve
+   in your terminal with `agentbot memory review`.
+
+For a local-only vault, skip the GitHub repository and initial push, and omit
+`--remote` from both setup commands. Memory stays on this machine without a
+remote backup or sync.
+
+On another machine, clone your existing vault instead of creating a new one.
+Replace `YOUR_USERNAME`, preview the command, then repeat it with `--yes`:
+
+```bash
+agentbot memory setup --clone git@github.com:YOUR_USERNAME/agent-memory.git \
+  --dest "$HOME/agent-memory"
+```
+
+### Commands and behavior
+
 `agentbot memory status` and `agentbot memory validate` inspect the private
 Markdown memory vault without writing to it. Agentbot never searches for a
 vault; each machine is set up explicitly, from the CLI or the menu's
