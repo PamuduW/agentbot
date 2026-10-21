@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import io
 import json
+import os
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from mcp import Client, MCPError
 from src.gitlab_read_client import GitLabReadError
@@ -70,10 +77,18 @@ class GitLabReadMcpTests(unittest.IsolatedAsyncioTestCase):
         # proven to make no upstream request.
         self.assertTrue(entry.eligible)
         self.assertEqual(EXPECTED_TOOLS, entry.allowed_tools)
-        self.assertEqual(("GITLAB_MCP_READ_TOKEN",), entry.credential.environment)
+        self.assertEqual("none", entry.credential.mode)
+        self.assertEqual((), entry.credential.environment)
         rendered = render_mcp_config("codex", "", (entry,))
         native = parse_mcp_config("codex", rendered)["mcp_servers"][entry.name]
-        self.assertEqual(["GITLAB_MCP_READ_TOKEN"], native["env_vars"])
+        self.assertCountEqual(
+            ["GITLAB_MCP_READ_TOKEN", "GITLAB_MCP_ORIGIN", "XDG_CONFIG_HOME",
+             "SSL_CERT_FILE", "SSL_CERT_DIR"], native["env_vars"],
+        )
+        for client in ("claude", "cursor", "antigravity"):
+            with self.subTest(client=client):
+                document = parse_mcp_config(client, render_mcp_config(client, "", (entry,)))
+                self.assertNotIn("env", document["mcpServers"][entry.name])
 
     async def test_exact_fifteen_tool_surface_and_minimal_capabilities(self) -> None:
         self.assertEqual(EXPECTED_TOOLS, tuple(tool.name for tool in self.facade.tools()))
@@ -247,3 +262,76 @@ class RedactionTests(unittest.TestCase):
 
         self.assertNotIn("GR1348941leakyvalue", text)
         self.assertEqual(REDACTED, _json.loads(text)["runners_token"])
+
+
+class GitLabStartupTests(unittest.TestCase):
+    def test_fresh_process_loads_saved_token_without_export(self) -> None:
+        from src import gitlab_token
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            token = "glpat-syntheticabcdefghijklmnop"
+            gitlab_token.write(root / "config" / "agentbot", token)
+            environment = dict(os.environ, HOME=str(root), XDG_CONFIG_HOME=str(root / "config"))
+            environment.pop(gitlab_token.TOKEN_KEY, None)
+            script = """
+import sys
+from unittest.mock import patch
+from src import cli, gitlab_read_mcp, gitlab_token
+from src.paths import default_paths
+async def check(facade):
+    assert facade.client.token == gitlab_token.read(default_paths().config_home), 'wrong credential'
+with patch.object(gitlab_read_mcp, 'run_gitlab_stdio', check):
+    sys.argv = ["agentbot", "mcp", "serve", "--catalog-id", "gitlab_read"]
+    raise SystemExit(cli.main())
+"""
+            result = subprocess.run(
+                [sys.executable, "-c", script], env=environment,
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            self.assertTrue(result.returncode == 0, "saved-token startup failed")
+            self.assertTrue(result.stdout == result.stderr == "", "startup produced output")
+
+    def test_startup_errors_are_secret_safe_and_leave_stdout_empty(self) -> None:
+        from src import gitlab_read_mcp, gitlab_token
+
+        with tempfile.TemporaryDirectory() as directory:
+            config_home = Path(directory) / "agentbot"
+            token = "glpat-syntheticabcdefghijklmnop"
+            for scenario in ("missing", "unsafe", "invalid-environment", "invalid-encoding"):
+                with self.subTest(scenario=scenario):
+                    environment = {}
+                    if scenario != "missing":
+                        path = gitlab_token.write(config_home, token)
+                        if scenario == "unsafe":
+                            path.chmod(0o644)
+                        elif scenario == "invalid-environment":
+                            environment[gitlab_token.TOKEN_KEY] = token + " invalid"
+                        else:
+                            path.write_bytes(b"\xff" + token.encode())
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    with (
+                        patch.dict(os.environ, environment, clear=True),
+                        patch("sys.stdout", stdout), patch("sys.stderr", stderr),
+                        patch.object(gitlab_read_mcp, "run_gitlab_stdio") as run,
+                    ):
+                        result = gitlab_read_mcp.main([], config_home=config_home)
+                    self.assertEqual(1, result)
+                    self.assertEqual("", stdout.getvalue())
+                    self.assertTrue(bool(stderr.getvalue()))
+                    self.assertFalse(token in stderr.getvalue())
+                    self.assertNotIn("Traceback", stderr.getvalue())
+                    run.assert_not_called()
+                    if scenario != "missing":
+                        path.unlink()
+
+    def test_cli_forwards_its_config_directory_to_gitlab_startup(self) -> None:
+        from src import cli, gitlab_read_mcp
+
+        context = SimpleNamespace(
+            args=SimpleNamespace(mcp_command="serve", catalog_id="gitlab_read"),
+            paths=SimpleNamespace(config_home=Path("/isolated/config/agentbot")),
+        )
+        with patch.object(gitlab_read_mcp, "main", return_value=7) as run:
+            self.assertEqual(7, cli._handle_mcp(context))
+        run.assert_called_once_with([], config_home=context.paths.config_home)

@@ -500,6 +500,18 @@ an argument vector, and is only ever reported by fingerprint. Nothing else is
 stored beside it: every facade tool takes `project_id` as a call argument, so
 what may be read is decided by the token's own access.
 
+Startup and `agentbot mcp status` use the same credential lookup. A non-empty
+`GITLAB_MCP_READ_TOKEN` overrides the saved token; an unset or empty variable
+uses the saved file, so a fresh session needs no manual export. An invalid
+explicit value or an unsafe saved file is refused without showing its contents.
+The file must have mode `0600` and its directory mode `0700`. Status checks
+credential configuration locally; they do not verify access with GitLab.
+Claude, Cursor and Antigravity inherit optional environment overrides. Codex
+forwards the token, origin, XDG configuration location and TLS certificate
+variables when present. No client configuration contains the token itself.
+Reapply Agentbot's managed MCP configuration after updating from a version
+that required token interpolation in Claude or Cursor.
+
 **A credential that can write is refused, not warned about.** Both token
 screens check scopes before storing anything, and check them again on demand,
 because a token that was read-only when it was saved is exactly the thing whose
@@ -590,8 +602,7 @@ because the candidate is not eligible.
 
 ### GitLab admission status
 
-The Agentbot-owned GitLab facade is also present as an ineligible candidate.
-It exposes fifteen typed REST `GET` operations and no GraphQL, generic-request,
+The Agentbot-owned GitLab facade exposes fifteen typed REST `GET` operations and no GraphQL, generic-request,
 pipeline-action, artifact, package, registry, or mutation tool. Its credential
 must have only GitLab's
 [`read_api` scope](https://docs.gitlab.com/security/tokens/access_token_scopes/).
@@ -603,7 +614,9 @@ Free, Premium, and Ultimate. Internal projects can be visible beyond their
 membership boundary to authenticated users, so use an explicitly safe test
 project and verify its visibility before admission.
 
-Keep the token only in `GITLAB_MCP_READ_TOKEN`. Set `GITLAB_MCP_ORIGIN` to the
+Save the token through **Token Config › GitLab** for normal use. The optional
+live acceptance test below still requires `GITLAB_MCP_READ_TOKEN` explicitly.
+Set `GITLAB_MCP_ORIGIN` to the
 fixed HTTPS origin for a self-managed instance; omit it for GitLab.com. The
 opt-in acceptance gate also requires declarations that make the tested
 environment auditable without recording the credential or returned content:
@@ -622,8 +635,8 @@ AGENTBOT_TEST_GITLAB_MCP=1 \
 The safe project needs a default branch with at least one file, one merge
 request, and one completed CI job. The suite calls all fifteen tools, rejects
 write-shaped and generic bypass names locally, bounds every request, and keeps
-response data out of test output. GitLab remains ineligible until this suite
-and isolated Claude, Codex, and Cursor launches pass with the same credential.
+response data out of test output. Run this suite and isolated Claude, Codex,
+and Cursor launches when verifying live access with a credential.
 
 ### Atlassian Cloud read MCP
 

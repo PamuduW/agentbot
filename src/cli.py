@@ -1174,7 +1174,7 @@ def _handle_mcp(context: CommandContext) -> int:
         if context.args.catalog_id == "gitlab_read":
             from .gitlab_read_mcp import main as run_gitlab
 
-            return run_gitlab([])
+            return run_gitlab([], config_home=context.paths.config_home)
         if context.args.catalog_id == "atlassian_read":
             from .atlassian_read_mcp import main as run_atlassian
 

@@ -234,6 +234,28 @@ class McpInstallComponentTests(unittest.TestCase):
         self.catalog_file.write_text(shipped, encoding="utf-8")
         self.service = McpService(self.paths)
 
+    def test_gitlab_status_resolves_saved_and_environment_credentials(self) -> None:
+        from src import gitlab_token
+
+        token = "glpat-syntheticabcdefghijklmnop"
+        service = McpService(self.paths, environ={})
+        service.setup(("gitlab_read",), ("codex",), confirmed=True)
+        def gitlab_item(service):
+            return next(item for item in service.status().items
+                        if item.catalog_id == "gitlab_read" and item.client == "codex")
+
+        self.assertEqual("auth-reference-missing", gitlab_item(service).status)
+        path = gitlab_token.write(self.paths.config_home, token)
+        self.assertEqual("ok", gitlab_item(service).status)
+        path.chmod(0o644)
+        self.assertEqual("config-invalid", gitlab_item(service).status)
+        override = McpService(self.paths, environ={gitlab_token.TOKEN_KEY: token})
+        self.assertEqual("ok", gitlab_item(override).status)
+        invalid = McpService(self.paths, environ={gitlab_token.TOKEN_KEY: token + " invalid"})
+        item = gitlab_item(invalid)
+        self.assertEqual("config-invalid", item.status)
+        self.assertFalse(token in item.detail)
+
     def test_selection_is_every_eligible_entry_and_its_clients(self) -> None:
         selection, targets = _eligible_selection(self.service)
         catalog = self.service.catalog()

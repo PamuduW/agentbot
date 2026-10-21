@@ -4,7 +4,9 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from mcp.server.lowlevel import Server
@@ -22,6 +24,8 @@ from mcp.types import (
 from mcp import MCPError
 
 from .gitlab_read_client import GitLabReadClient, GitLabReadError
+from .gitlab_token import TokenError, resolve
+from .paths import default_paths
 
 
 @dataclass(frozen=True)
@@ -366,14 +370,18 @@ async def run_gitlab_stdio(facade: GitLabReadMcp) -> None:
         )
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, config_home: Path | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agentbot-gitlab-read")
     parser.add_argument(
         "--origin", default=os.environ.get("GITLAB_MCP_ORIGIN", "https://gitlab.com")
     )
     args = parser.parse_args(argv)
-    token = os.environ.get("GITLAB_MCP_READ_TOKEN", "")
-    client = GitLabReadClient(args.origin, token)
+    try:
+        token = resolve(config_home or default_paths().config_home, os.environ)
+        client = GitLabReadClient(args.origin, token)
+    except (TokenError, GitLabReadError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
     asyncio.run(run_gitlab_stdio(GitLabReadMcp(client)))
     return 0
 
