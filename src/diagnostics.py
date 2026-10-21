@@ -94,6 +94,7 @@ class Diagnostics:
         issues.extend(self._token_doctor_issues())
         issues.extend(facts.mcp_issues)
         issues.extend(self._memory_doctor_issues())
+        issues.extend(self._codex_baseline_issues())
 
         if not self.paths.global_agents.exists():
             issues.append(
@@ -230,6 +231,21 @@ class Diagnostics:
                 )
             issues.append(DoctorIssue("warning", "reproducibility", message))
         return issues
+
+    def _codex_baseline_issues(self) -> list[DoctorIssue]:
+        policy = self.paths.codex_home / "AGENTS.md"
+        try:
+            if not policy.is_file() or policy.read_text(encoding="utf-8").strip() != "@BOOST.md":
+                return []
+        except (OSError, UnicodeError):
+            return [DoctorIssue("warning", "global", f"Cannot read Codex global policy: {policy}")]
+        return [
+            DoctorIssue(
+                "warning",
+                "global",
+                "Codex global policy contains only @BOOST.md; Agentbot baseline is missing.",
+            )
+        ]
 
     def _memory_doctor_issues(self) -> list[DoctorIssue]:
         """What the memory vault needs from the user. Local only: never fetches or syncs.
