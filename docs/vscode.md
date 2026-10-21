@@ -150,3 +150,11 @@ against a real `settings.json` rather than a fixture:
 
 The original is copied to `settings.json.agentbot-backup` immediately before the
 replace, and the write itself is atomic.
+
+The managed font-family settings use Ubuntu Sans Mono throughout, including
+editor text, chat, hints, the debug console, notebooks, source control input,
+REST Client and Markdown preview. Ligatures and variable-font features are
+disabled for the static font build. Dotfiles installs the fonts for WSL and,
+when interop is available, the current Windows user. Windows desktop VS Code
+needs the Windows installation even when editing files through Remote–WSL.
+Apply the declared settings with `agentbot vscode apply`.
