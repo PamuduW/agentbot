@@ -88,6 +88,59 @@ class SlimBootstrapEngineTests(unittest.TestCase):
         render_global_outputs(paths)
         self.assertNotIn("@BOOST.md", agents.read_text(encoding="utf-8"))
 
+    def test_install_replaces_the_boost_created_codex_stub_with_the_baseline(self) -> None:
+        from src.lifecycle import Lifecycle
+        from src.render import GENERATED_AGENTS_HEADER, render_global_outputs
+
+        paths = self._paths()
+
+        def setup_boost():
+            paths.codex_home.mkdir(parents=True, exist_ok=True)
+            policy = paths.codex_home / "AGENTS.md"
+            existing = policy.read_text(encoding="utf-8") if policy.exists() else ""
+            if "@BOOST.md" not in existing:
+                policy.write_text(existing + "@BOOST.md\n", encoding="utf-8")
+            (paths.codex_home / "BOOST.md").write_text(
+                "# Boost (Codex CLI)\n# boost-skill-version: v0.16.5\n", encoding="utf-8"
+            )
+
+        boost = mock.Mock()
+        boost.setup_if_cli_available.side_effect = setup_boost
+        lifecycle = Lifecycle(paths, boost=boost, graphify=mock.Mock(), diagnostics=mock.Mock())
+        with mock.patch.object(lifecycle, "_read_platform"):
+            lifecycle.install(components=("boost",))
+
+        agents = paths.codex_home / "AGENTS.md"
+        actual = agents.read_text(encoding="utf-8")
+        self.assertTrue(actual.startswith(GENERATED_AGENTS_HEADER))
+        self.assertIn("Shared global instructions.", actual)
+        self.assertTrue(actual.endswith("\n@BOOST.md\n"))
+        self.assertFalse((paths.codex_home / "AGENTS_temp.md").exists())
+        render_global_outputs(paths)
+        self.assertEqual(actual, agents.read_text(encoding="utf-8"))
+
+    def test_boost_import_with_custom_instructions_is_preserved(self) -> None:
+        from src.render import render_global_outputs
+
+        paths = self._paths()
+        paths.codex_home.mkdir(parents=True)
+        agents = paths.codex_home / "AGENTS.md"
+        custom = "@BOOST.md\n\n# My rules\nKeep my instructions.\n"
+        agents.write_text(custom, encoding="utf-8")
+        (paths.codex_home / "BOOST.md").write_text("# Boost\n", encoding="utf-8")
+        render_global_outputs(paths)
+        self.assertEqual(custom, agents.read_text(encoding="utf-8"))
+
+    def test_boost_import_without_its_target_is_preserved(self) -> None:
+        from src.render import render_global_outputs
+
+        paths = self._paths()
+        paths.codex_home.mkdir(parents=True)
+        agents = paths.codex_home / "AGENTS.md"
+        agents.write_text("@BOOST.md\n", encoding="utf-8")
+        render_global_outputs(paths)
+        self.assertEqual("@BOOST.md\n", agents.read_text(encoding="utf-8"))
+
     def test_render_global_outputs_syncs_claude_skill_links(self) -> None:
         from src.render import render_global_outputs
 

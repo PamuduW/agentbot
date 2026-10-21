@@ -52,6 +52,14 @@ Global Codex and Claude policy adapters, Claude skill links, and the managed
 Claude statusline are rendered from canonical sources. Use install, update, or
 the relevant resync/setup flow to reconcile them.
 
+On a fresh machine, Boost can create `~/.codex/AGENTS.md` containing only
+`@BOOST.md` before Agentbot renders its baseline. Agentbot replaces that exact
+stub with the generated baseline and keeps the Boost import when `BOOST.md`
+is a regular file. This also repairs existing stubs through `agentbot global`
+or resync. Files with custom instructions remain untouched, including files
+that combine a Boost import with user rules. Doctor warns if the active Codex
+policy still contains only the Boost import.
+
 Antigravity (`agy`) gets two global outputs once it is installed (the
 `~/.local/bin/agy` binary, or an existing `~/.gemini/antigravity-cli/` or
 `~/.gemini/config/`): the merged baseline at `~/.gemini/config/AGENTS.md`,

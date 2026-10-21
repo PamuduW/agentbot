@@ -40,6 +40,27 @@ class GlobalResyncTests(unittest.TestCase):
         self.assertNotIn("~/.claude/AGENTS.md", actions)
         self.assertEqual("create", actions["~/.claude/statusline-command.sh"].kind)
 
+    def test_resync_previews_and_repairs_a_boost_only_codex_policy(self) -> None:
+        from src.render import plan_global_resync_actions, resync_global_outputs
+
+        paths = self._paths()
+        self.codex_home.mkdir(parents=True)
+        agents = self.codex_home / "AGENTS.md"
+        agents.write_text("@BOOST.md\n", encoding="utf-8")
+        (self.codex_home / "BOOST.md").write_text("# Boost\n", encoding="utf-8")
+        saved = self.codex_home / "AGENTS_temp.md"
+        saved.write_text("# Saved user edits\n", encoding="utf-8")
+
+        actions = {action.relative_path: action for action in plan_global_resync_actions(paths)}
+        self.assertEqual("update", actions["~/.codex/AGENTS.md"].kind)
+        self.assertEqual("@BOOST.md\n", agents.read_text(encoding="utf-8"))
+        resync_global_outputs(paths, apply=True)
+        self.assertIn("# Global Baseline", agents.read_text(encoding="utf-8"))
+        self.assertTrue(agents.read_text(encoding="utf-8").endswith("\n@BOOST.md\n"))
+        self.assertEqual("# Saved user edits\n", saved.read_text(encoding="utf-8"))
+        actions = {action.relative_path: action for action in plan_global_resync_actions(paths)}
+        self.assertEqual("unchanged", actions["~/.codex/AGENTS.md"].kind)
+
     def test_resync_apply_writes_global_outputs_and_statusline(self) -> None:
         from src.render import resync_global_outputs
 

@@ -168,7 +168,7 @@ def _plan_global_instruction_action(label: str, destination: Path, desired: str)
     existing = destination.read_text(encoding="utf-8") if destination.is_file() else None
     if existing is None:
         return RenderAction(label, "create", desired, f"would create managed {label}")
-    if GENERATED_AGENTS_HEADER in existing:
+    if _is_managed_global_instruction(existing, desired):
         if existing == desired:
             return RenderAction(label, "unchanged", None, f"managed {label} is current")
         return RenderAction(label, "update", desired, f"would refresh managed {label}")
@@ -177,6 +177,15 @@ def _plan_global_instruction_action(label: str, destination: Path, desired: str)
         "unchanged",
         None,
         f"preserving user-owned {label}; review template may be refreshed on apply",
+    )
+
+
+def _is_managed_global_instruction(existing: str, desired: str) -> bool:
+    # On a fresh machine Boost runs first and creates this import-only Codex
+    # stub. It has no user policy to preserve; adopt it only when the rendered
+    # output retains the import to an existing, regular BOOST.md.
+    return GENERATED_AGENTS_HEADER in existing or (
+        existing.strip() == "@BOOST.md" and desired.endswith("\n@BOOST.md\n")
     )
 
 
@@ -234,7 +243,7 @@ def _render_global_output(destination: Path, desired: str) -> None:
     existing = destination.read_text(encoding="utf-8") if destination.is_file() else None
     review_files = _read_review_templates(destination)
 
-    if existing is None or GENERATED_AGENTS_HEADER in existing:
+    if existing is None or _is_managed_global_instruction(existing, desired):
         if existing != desired:
             write_text_atomic(destination, desired)
     else:

@@ -14,6 +14,33 @@ from tests.support import (
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_doctor_warns_when_boost_is_the_entire_codex_policy(self) -> None:
+        from src.diagnostics import Diagnostics
+        from src.render import render_global_outputs
+
+        with isolated_agentbot_paths() as (root, paths):
+            write_skills_manifest(root)
+            paths.global_agents.parent.mkdir()
+            paths.global_agents.write_text("# Baseline\n", encoding="utf-8")
+            paths.codex_home.mkdir(parents=True)
+            policy = paths.codex_home / "AGENTS.md"
+            policy.write_text("@BOOST.md\n", encoding="utf-8")
+            (paths.codex_home / "BOOST.md").write_text("# Boost\n", encoding="utf-8")
+            issues = Diagnostics(paths).doctor_issues()
+            self.assertTrue(
+                any(
+                    issue.scope == "global"
+                    and issue.level == "warning"
+                    and "Codex" in issue.message
+                    for issue in issues
+                )
+            )
+            self.assertEqual("@BOOST.md\n", policy.read_text(encoding="utf-8"))
+            render_global_outputs(paths)
+            self.assertFalse(
+                any(issue.scope == "global" for issue in Diagnostics(paths).doctor_issues())
+            )
+
     def test_unconfigured_optional_mcp_credentials_are_not_doctor_issues(self) -> None:
         from src.diagnostics import Diagnostics
         from src.mcp_service import McpService
