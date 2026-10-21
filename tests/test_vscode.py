@@ -526,11 +526,16 @@ class InstallExecutionTests(unittest.TestCase):
             0, stdout="Command is only available in WSL or inside a Visual Studio Code terminal."
         )
         with redirect_stdout(io.StringIO()):
-            results = install_extensions(self._host(self.root / "code"), ("a.one", "b.two"), runner)
+            results = install_extensions(
+                self._host(self.root / "code"),
+                ("a.one", "b.two", *(f"p.ext{i}" for i in range(7))),
+                runner,
+            )
 
         self.assertIn("not found", results["a.one"])
         self.assertIn("Command is only available", results["a.one"])
-        self.assertIn("not attempted", results["b.two"])
+        self.assertIn("not found", results["b.two"])
+        self.assertIn("not attempted", results["p.ext6"])
         self.assertEqual(runner.run.call_count, 1)
 
     def test_windows_bridge_failure_stops_before_attempting_installation(self):
@@ -546,113 +551,145 @@ class InstallExecutionTests(unittest.TestCase):
         runner.run.assert_not_called()
         self.assertEqual(results, dict.fromkeys(("a.one", "b.two"), "cannot resolve Windows path"))
 
-    def test_windows_extensions_share_bounded_cli_invocations(self) -> None:
+    def test_extensions_share_bounded_cli_invocations(self) -> None:
         from unittest import mock
 
         from src.command_runner import CommandResult
 
-        host = replace(self._host(self.root / "code"), name="windows")
-        host.extensions_dir.mkdir(parents=True)
-        identifiers = tuple(f"publisher.extension{i}" for i in range(9))
-        output = io.StringIO()
+        for name in ("windows", "wsl"):
+            with self.subTest(host=name):
+                host = replace(
+                    self._host(self.root / name / "code"),
+                    name=name,
+                    extensions_dir=self.root / name / "extensions",
+                )
+                host.extensions_dir.mkdir(parents=True)
+                identifiers = tuple(f"publisher.extension{i}" for i in range(9))
+                output = io.StringIO()
 
-        def run(argv, **kwargs):
-            self.assertIn("VS Code windows [", output.getvalue())
-            requested = argv[2:-1:2]
-            self.assertLessEqual(len(requested), 8)
-            self.assertEqual(kwargs["timeout_seconds"], 300.0 * len(requested))
-            for identifier in requested:
-                (host.extensions_dir / f"{identifier}-1.0.0").mkdir()
-            return CommandResult(0)
+                def run(argv, *, name=name, output=output, host=host, **kwargs):
+                    self.assertIn(f"VS Code {name} [", output.getvalue())
+                    requested = [
+                        argv[i + 1] for i, flag in enumerate(argv) if flag == "--install-extension"
+                    ]
+                    self.assertLessEqual(len(requested), 8)
+                    self.assertEqual(kwargs["timeout_seconds"], 300.0 * len(requested))
+                    for identifier in requested:
+                        (host.extensions_dir / f"{identifier}-1.0.0").mkdir()
+                    return CommandResult(0)
 
-        runner = mock.Mock()
-        runner.run.side_effect = run
-        with redirect_stdout(output):
-            results = install_extensions(host, identifiers, runner)
+                runner = mock.Mock()
+                runner.run.side_effect = run
+                with redirect_stdout(output):
+                    results = install_extensions(host, identifiers, runner)
 
-        self.assertEqual(runner.run.call_count, 2)
-        self.assertEqual(results, dict.fromkeys(identifiers, "installed"))
-        first = runner.run.call_args_list[0].args[0]
-        self.assertEqual(first[0], str(host.cli))
-        self.assertEqual(first[-1], "--force")
-        self.assertEqual(first[1:-1:2], ["--install-extension"] * 8)
+                self.assertEqual(runner.run.call_count, 2)
+                self.assertEqual(results, dict.fromkeys(identifiers, "installed"))
+                first = runner.run.call_args_list[0].args[0]
+                self.assertEqual(first[0], str(host.cli))
+                self.assertEqual(first[-1], "--force")
+                self.assertEqual(first.count("--install-extension"), 8)
 
-    def test_windows_batch_checks_each_extension_after_partial_failure(self) -> None:
+    def test_batch_checks_each_extension_after_partial_failure(self) -> None:
         from unittest import mock
 
         from src.command_runner import CommandResult
 
-        host = replace(self._host(self.root / "code"), name="windows")
-        host.extensions_dir.mkdir(parents=True)
+        for name in ("windows", "wsl"):
+            with self.subTest(host=name):
+                host = replace(
+                    self._host(self.root / name / "code"),
+                    name=name,
+                    extensions_dir=self.root / name / "extensions",
+                )
+                host.extensions_dir.mkdir(parents=True)
 
-        def run(*args, **kwargs):
-            (host.extensions_dir / "a.one-1.0.0").mkdir(exist_ok=True)
-            return CommandResult(1, stderr="download failed")
+                def run(*args, host=host, **kwargs):
+                    (host.extensions_dir / "a.one-1.0.0").mkdir(exist_ok=True)
+                    return CommandResult(1, stderr="download failed")
 
-        runner = mock.Mock()
-        runner.run.side_effect = run
-        with redirect_stdout(io.StringIO()):
-            results = install_extensions(host, ("a.one", "b.two"), runner)
+                runner = mock.Mock()
+                runner.run.side_effect = run
+                with redirect_stdout(io.StringIO()):
+                    results = install_extensions(host, ("a.one", "b.two"), runner)
 
-        self.assertEqual(results["a.one"], "installed")
-        self.assertEqual(runner.run.call_count, 1)
-        self.assertIn("download failed", results["b.two"])
+                self.assertEqual(results["a.one"], "installed")
+                self.assertEqual(runner.run.call_count, 1)
+                self.assertIn("download failed", results["b.two"])
 
-    def test_windows_batch_does_not_trust_success_without_installed_extensions(self) -> None:
+    def test_batch_does_not_trust_success_without_installed_extensions(self) -> None:
         from unittest import mock
 
         from src.command_runner import CommandResult
 
-        runner = mock.Mock()
-        runner.run.return_value = CommandResult(0, stdout="Opening remote window instead")
-        host = replace(self._host(self.root / "code"), name="windows")
-        identifiers = tuple(f"publisher.extension{i}" for i in range(9))
-        output = io.StringIO()
-        with redirect_stdout(output):
-            results = install_extensions(host, identifiers, runner)
+        for name in ("windows", "wsl"):
+            with self.subTest(host=name):
+                runner = mock.Mock()
+                runner.run.return_value = CommandResult(0, stdout="Opening remote window instead")
+                host = replace(
+                    self._host(self.root / name / "code"),
+                    name=name,
+                    extensions_dir=self.root / name / "extensions",
+                )
+                identifiers = tuple(f"publisher.extension{i}" for i in range(9))
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    results = install_extensions(host, identifiers, runner)
 
-        self.assertIn("not found", results[identifiers[0]])
-        self.assertIn("Opening remote window instead", results[identifiers[0]])
-        self.assertIn(str(host.extensions_dir), output.getvalue())
-        self.assertIn("not attempted", results[identifiers[-1]])
-        self.assertEqual(runner.run.call_count, 1)
+                self.assertIn("not found", results[identifiers[0]])
+                self.assertIn("Opening remote window instead", results[identifiers[0]])
+                self.assertIn(str(host.extensions_dir), output.getvalue())
+                self.assertIn("not attempted", results[identifiers[-1]])
+                self.assertEqual(runner.run.call_count, 1)
 
-    def test_windows_batch_progress_keeps_extension_names_out_of_the_spinner(self) -> None:
+    def test_batch_progress_keeps_extension_names_out_of_the_spinner(self) -> None:
         from unittest import mock
 
         from src.command_runner import CommandResult
 
-        runner = mock.Mock()
-        runner.run.return_value = CommandResult(0)
-        host = replace(self._host(self.root / "code"), name="windows")
-        with mock.patch("src.ui.install_log.log_line") as log:
-            install_extensions(host, ("long-publisher.long-extension",), runner)
+        for name in ("windows", "wsl"):
+            with self.subTest(host=name):
+                runner = mock.Mock()
+                runner.run.return_value = CommandResult(0)
+                host = replace(
+                    self._host(self.root / name / "code"),
+                    name=name,
+                    extensions_dir=self.root / name / "extensions",
+                )
+                with mock.patch("src.ui.install_log.log_line") as log:
+                    install_extensions(host, ("long-publisher.long-extension",), runner)
 
-        steps = [call.args[1] for call in log.call_args_list if call.args[0] == "STEP"]
-        self.assertEqual(steps, ["VS Code windows [1-1/1]: installing 1 extension(s)"])
+                steps = [call.args[1] for call in log.call_args_list if call.args[0] == "STEP"]
+                self.assertEqual(steps, [f"VS Code {name} [1-1/1]: installing 1 extension(s)"])
 
-    def test_windows_timeout_preserves_completed_installs_and_stops_later_batches(self) -> None:
+    def test_timeout_preserves_completed_installs_and_stops_later_batches(self) -> None:
         from unittest import mock
 
         from src.command_runner import CommandResult
 
-        host = replace(self._host(self.root / "code"), name="windows")
-        host.extensions_dir.mkdir(parents=True)
-        identifiers = tuple(f"publisher.extension{i}" for i in range(9))
+        for name in ("windows", "wsl"):
+            with self.subTest(host=name):
+                host = replace(
+                    self._host(self.root / name / "code"),
+                    name=name,
+                    extensions_dir=self.root / name / "extensions",
+                )
+                host.extensions_dir.mkdir(parents=True)
+                identifiers = tuple(f"publisher.extension{i}" for i in range(9))
 
-        def run(*args, **kwargs):
-            (host.extensions_dir / f"{identifiers[0]}-1.0.0").mkdir()
-            return CommandResult(124, timed_out=True)
+                def run(*args, host=host, identifiers=identifiers, **kwargs):
+                    (host.extensions_dir / f"{identifiers[0]}-1.0.0").mkdir()
+                    return CommandResult(124, timed_out=True)
 
-        runner = mock.Mock()
-        runner.run.side_effect = run
-        with redirect_stdout(io.StringIO()):
-            results = install_extensions(host, identifiers, runner)
+                runner = mock.Mock()
+                runner.run.side_effect = run
+                with redirect_stdout(io.StringIO()):
+                    results = install_extensions(host, identifiers, runner)
 
-        self.assertEqual(runner.run.call_count, 1)
-        self.assertEqual(results[identifiers[0]], "installed")
-        self.assertIn("timed out", results[identifiers[1]])
-        self.assertIn("not attempted", results[identifiers[-1]])
+                self.assertEqual(runner.run.call_count, 1)
+                self.assertEqual(results[identifiers[0]], "installed")
+                self.assertIn("timed out", results[identifiers[1]])
+                self.assertIn("not attempted", results[identifiers[-1]])
 
     def test_progress_names_the_extension_before_running_its_command(self) -> None:
         from unittest import mock
@@ -662,7 +699,8 @@ class InstallExecutionTests(unittest.TestCase):
         output = io.StringIO()
 
         def run(*args, **kwargs):
-            self.assertIn("wsl [1/1]: a.one", output.getvalue())
+            self.assertIn("Requested WSL extensions: a.one", output.getvalue())
+            self.assertIn("wsl [1-1/1]: installing 1 extension(s)", output.getvalue())
             host.extensions_dir.mkdir(parents=True)
             (host.extensions_dir / "a.one-1.0.0").mkdir()
             return CommandResult(0)
@@ -681,11 +719,16 @@ class InstallExecutionTests(unittest.TestCase):
         runner = mock.Mock()
         runner.run.return_value = CommandResult(124, timed_out=True)
         with redirect_stdout(io.StringIO()):
-            result = install_extensions(self._host(self.root / "code"), ("a.one", "b.two"), runner)
+            result = install_extensions(
+                self._host(self.root / "code"),
+                ("a.one", "b.two", *(f"p.ext{i}" for i in range(7))),
+                runner,
+            )
 
         self.assertEqual(1, runner.run.call_count)
         self.assertIn("timed out", result["a.one"])
-        self.assertIn("not attempted", result["b.two"])
+        self.assertIn("timed out", result["b.two"])
+        self.assertIn("not attempted", result["p.ext6"])
 
     class _Runner:
         def __init__(self, returncode: int = 0) -> None:
@@ -696,8 +739,10 @@ class InstallExecutionTests(unittest.TestCase):
             self.calls.append(list(argv))
             if self._returncode == 0:
                 extensions_dir = Path(argv[argv.index("--extensions-dir") + 1])
-                identifier = argv[argv.index("--install-extension") + 1]
-                (extensions_dir / f"{identifier}-1.0.0").mkdir(parents=True, exist_ok=True)
+                for index, argument in enumerate(argv):
+                    if argument == "--install-extension":
+                        identifier = argv[index + 1]
+                        (extensions_dir / f"{identifier}-1.0.0").mkdir(parents=True, exist_ok=True)
 
             class _Result:
                 returncode = self._returncode
@@ -734,8 +779,9 @@ class InstallExecutionTests(unittest.TestCase):
 
         results = install_extensions(self._host(cli), ("a.one", "b.two"), runner)
 
-        self.assertEqual([call[0] for call in runner.calls], [str(cli), str(cli)])
-        self.assertEqual(runner.calls[0][1:3], ["--install-extension", "a.one"])
+        self.assertEqual([call[0] for call in runner.calls], [str(cli)])
+        self.assertIn("a.one", runner.calls[0])
+        self.assertIn("b.two", runner.calls[0])
         self.assertIn(str(self._host(cli).extensions_dir), runner.calls[0])
         self.assertEqual(results, {"a.one": "installed", "b.two": "installed"})
 

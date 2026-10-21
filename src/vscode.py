@@ -23,7 +23,7 @@ from .command_runner import CommandRunner
 
 SUPPORTED_VERSION = 1
 INSTALL_TIMEOUT_SECONDS = 300.0
-WINDOWS_INSTALL_BATCH_SIZE = 8
+INSTALL_BATCH_SIZE = 8
 SETTINGS_DIRECTORY = "vscode"
 
 WINDOWS_MOUNT_ROOT = Path("/mnt/c")
@@ -554,57 +554,11 @@ def install_extensions(
     runner: CommandRunner,
 ) -> dict[str, str]:
     """Install missing extensions through this host's own CLI."""
-    from .ui.install_log import duration, log_line
-
-    results: dict[str, str] = {}
     if not identifiers:
-        return results
+        return {}
     if host.cli is None:
         return dict.fromkeys(identifiers, "no CLI for this host")
-    if host.name == "windows":
-        return _install_windows_extensions(host, identifiers, runner)
-    for index, identifier in enumerate(identifiers, 1):
-        log_line("STEP", f"VS Code {host.name} [{index}/{len(identifiers)}]: {identifier}")
-        outcome = runner.run(
-            [
-                str(host.cli),
-                "--install-extension",
-                identifier,
-                "--extensions-dir",
-                str(host.extensions_dir),
-                "--force",
-            ],
-            timeout_seconds=INSTALL_TIMEOUT_SECONDS,
-        )
-        if outcome.timed_out:
-            results[identifier] = f"installation timed out after {duration(INSTALL_TIMEOUT_SECONDS)}"
-            results.update(
-                dict.fromkeys(identifiers[index:], f"not attempted after {identifier} timed out")
-            )
-            log_line(
-                "WARN",
-                f"VS Code {host.name}: {identifier}: {results[identifier]}; "
-                "remaining installs on this host stopped. Run `agentbot vscode apply` to retry.",
-            )
-            break
-        unverified = outcome.returncode == 0 and identifier.casefold() not in {
-            present.casefold() for present in installed_extensions(host)
-        }
-        results[identifier] = (
-            f"not found in {host.extensions_dir} after installation; CLI output: {outcome.detail()}"
-            if unverified
-            else "installed" if outcome.returncode == 0 else outcome.detail()
-        )
-        log_line(
-            "OK" if results[identifier] == "installed" else "WARN",
-            f"VS Code {host.name}: {identifier}: {results[identifier]}",
-        )
-        if unverified:
-            results.update(
-                dict.fromkeys(identifiers[index:], f"not attempted after {identifier} was not installed")
-            )
-            break
-    return results
+    return _install_extension_batches(host, identifiers, runner)
 
 
 def _windows_install_command(
@@ -633,7 +587,7 @@ def _windows_install_command(
     return ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], ""
 
 
-def _install_windows_extensions(
+def _install_extension_batches(
     host: VSCodeHost,
     identifiers: tuple[str, ...],
     runner: CommandRunner,
@@ -641,15 +595,23 @@ def _install_windows_extensions(
     from .ui.install_log import duration, log_line
 
     results: dict[str, str] = {}
-    for start in range(0, len(identifiers), WINDOWS_INSTALL_BATCH_SIZE):
-        batch = identifiers[start : start + WINDOWS_INSTALL_BATCH_SIZE]
-        log_line("INFO", "Requested Windows extensions: " + ", ".join(batch))
+    for start in range(0, len(identifiers), INSTALL_BATCH_SIZE):
+        batch = identifiers[start : start + INSTALL_BATCH_SIZE]
+        label = "Windows" if host.name == "windows" else "WSL"
+        log_line("INFO", f"Requested {label} extensions: " + ", ".join(batch))
         log_line(
             "STEP",
             f"VS Code {host.name} [{start + 1}-{start + len(batch)}/{len(identifiers)}]: "
             f"installing {len(batch)} extension(s)",
         )
-        argv, error = _windows_install_command(host, batch, runner)
+        if host.name == "windows":
+            argv, error = _windows_install_command(host, batch, runner)
+        else:
+            argv = [str(host.cli), "--extensions-dir", str(host.extensions_dir)]
+            for identifier in batch:
+                argv.extend(("--install-extension", identifier))
+            argv.append("--force")
+            error = ""
         if error:
             results.update(dict.fromkeys(identifiers[start:], error))
             log_line("WARN", f"VS Code {host.name}: {error}")
