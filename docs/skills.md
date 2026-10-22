@@ -263,8 +263,10 @@ It does not prove that a fresh session delivered hooks or received compressed
 output. Status reports seven-day capture evidence separately for each host:
 `recent`, `stale`, `none` or `unavailable`. These are read-only timestamp aggregates,
 not transcript text. A custom database path currently reports unavailable capture
-evidence. Doctor warns when a configured host lacks recent evidence. Verify that
-host with a harmless task; do not enable CLI filtering to clear a warning.
+evidence. No captured activity (`none`) is informational and can be normal for an
+unused host; it does not establish hook delivery. Doctor still warns for stale
+or unavailable capture evidence on configured hosts. If you use the host, verify
+it with a harmless task; do not enable CLI filtering to clear a warning.
 
 Agentbot corrects the vendor awareness body after setup while preserving its
 version marker and Cursor frontmatter. For Codex, the global renderer also embeds

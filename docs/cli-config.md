@@ -115,22 +115,28 @@ moves on), and Codex's `[memories]` keys only matter when
 
 ## Remote Control
 
-Both agents are kept reachable from the Claude and ChatGPT mobile apps.
+Claude and Codex have separate Remote Control behavior.
 
 - **Claude Code:** `cli/claude.settings.json` declares
-  `remoteControlAtStartup: true`, so every interactive session connects to
-  Remote Control on start.
-- **Codex:** Codex has no config key for Remote Control. Its app-server daemon
-  saves the setting in `~/.codex/app-server-daemon/settings.json`, and Codex
-  owns that file. So `apply` and the install component run
-  `codex remote-control start` instead. That command saves the setting and
-  starts the daemon, and it does nothing when both are already done. `status`
-  only reads that file and asks whether the daemon is running. The daemon does
-  not start again after a reboot on its own. The next `codex` session starts it,
-  with Remote Control on.
+  `remoteControlAtStartup: true`, so interactive sessions request Remote Control.
+- **Codex:** its daemon owns
+  `~/.codex/app-server-daemon/settings.json`. Normal Agentbot install, update and
+  `cli-config apply` preserve the saved on/off choice. Missing/disabled settings
+  are skipped without invoking Codex. Enable Remote Control yourself through
+  `codex remote-control start` when you want it.
 
-`agentbot update` merges only the declared keys. It does not run the Codex
-step. `agentbot full` gets it from its install phase.
+For an already-enabled Codex host, Agentbot checks `codex login status` first.
+Only a successful status identifying ChatGPT login allows a daemon start;
+signed-out, API-key-only, timed-out and unrecognized login results are skipped.
+No login output or credential is printed. This check does not establish account
+entitlements or relay connectivity: an enabled, authenticated host can still
+report a connection failure that needs attention.
+
+`cli-config status` inspects without starting the daemon. The lifecycle update
+also maintains already-enabled, authenticated remote control after its Doctor
+gate. No command here logs in, pairs a device, disables an existing setting, or
+stops a running daemon. Settings saved by older auto-enable behavior are
+preserved too; an enabled flag alone does not prove the user opted in.
 
 Pairing a phone to Codex is a one-time step you do yourself:
 `codex remote-control pair`. The pairing code is a secret. Do not log it,

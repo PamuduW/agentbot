@@ -45,8 +45,59 @@ class CodexRemoteControlTests(unittest.TestCase):
         self.assertEqual("skipped", codex_remote_control.inspect(self.paths, self.runner)[1])
         self.runner.run.assert_not_called()
 
-    def test_ensure_starts_the_daemon_with_remote_control(self) -> None:
+    def test_disabled_or_unconfigured_remote_control_is_never_enabled_by_ensure(self):
         self.runner.run.return_value = CommandResult(0, stdout=_CONNECTED)
+        for enabled in (None, False):
+            with self.subTest(enabled=enabled):
+                if enabled is not None:
+                    self._persist(enabled)
+                self.assertEqual("skipped", codex_remote_control.ensure(self.paths, self.runner)[1])
+                self.runner.run.assert_not_called()
+
+    def test_signed_out_codex_does_not_start_or_probe_the_daemon(self):
+        self._persist(True)
+        self.runner.run.return_value = CommandResult(1, stderr="Not logged in")
+        for operation in (codex_remote_control.ensure, codex_remote_control.inspect):
+            with self.subTest(operation=operation.__name__):
+                self.runner.reset_mock()
+                detail, result = operation(self.paths, self.runner)
+                self.assertEqual("skipped", result, detail)
+                self.assertEqual(
+                    [["/bin/codex", "login", "status"]],
+                    [call.args[0] for call in self.runner.run.call_args_list],
+                )
+                self.assertTrue(codex_remote_control._persisted_enabled(self.paths))
+
+    def test_api_key_login_is_skipped_without_echoing_login_output(self):
+        self._persist(True)
+        self.runner.run.return_value = CommandResult(
+            0, stderr="Logged in using an API key: synthetic-private-marker"
+        )
+        detail, result = codex_remote_control.ensure(self.paths, self.runner)
+        self.assertEqual("skipped", result)
+        self.assertNotIn("synthetic-private-marker", detail)
+        self.assertEqual(1, self.runner.run.call_count)
+
+    def test_unrecognized_or_failed_login_never_starts_remote_control(self):
+        self._persist(True)
+        for response in (
+            CommandResult(0, stderr="Not logged in using ChatGPT"),
+            CommandResult(0, stdout="Previous account: Logged in using ChatGPT"),
+            CommandResult(124, stdout="Logged in using ChatGPT", timed_out=True),
+        ):
+            with self.subTest(response=response):
+                self.runner.reset_mock()
+                self.runner.run.return_value = response
+                detail, result = codex_remote_control.ensure(self.paths, self.runner)
+                self.assertEqual("skipped", result, detail)
+                self.assertEqual(1, self.runner.run.call_count)
+
+    def test_ensure_starts_the_daemon_with_remote_control(self) -> None:
+        self._persist(True)
+        self.runner.run.side_effect = [
+            CommandResult(0, stderr="Logged in using ChatGPT"),
+            CommandResult(0, stdout=_CONNECTED),
+        ]
 
         detail, result = codex_remote_control.ensure(self.paths, self.runner)
 
@@ -55,31 +106,42 @@ class CodexRemoteControlTests(unittest.TestCase):
         self.assertEqual(["/bin/codex", "remote-control", "start", "--json"], argv)
 
     def test_ensure_reports_a_failed_start(self) -> None:
-        self.runner.run.return_value = CommandResult(1, stderr="not logged in")
+        self._persist(True)
+        self.runner.run.side_effect = [
+            CommandResult(0, stderr="Logged in using ChatGPT"),
+            CommandResult(1, stderr="relay unavailable"),
+        ]
 
         detail, result = codex_remote_control.ensure(self.paths, self.runner)
 
         self.assertEqual("check", result)
-        self.assertIn("not logged in", detail)
+        self.assertIn("relay unavailable", detail)
 
     def test_ensure_reports_a_relay_that_did_not_connect(self) -> None:
-        self.runner.run.return_value = CommandResult(0, stdout='{"status": "timedOut"}')
+        self._persist(True)
+        self.runner.run.side_effect = [
+            CommandResult(0, stderr="Logged in using ChatGPT"),
+            CommandResult(0, stdout='{"status": "timedOut"}'),
+        ]
 
         detail, result = codex_remote_control.ensure(self.paths, self.runner)
 
         self.assertEqual("check", result)
         self.assertIn("timedOut", detail)
 
-    def test_inspect_flags_remote_control_that_is_off(self) -> None:
+    def test_inspect_respects_remote_control_that_is_off(self) -> None:
         self._persist(False)
 
-        self.assertEqual("check", codex_remote_control.inspect(self.paths, self.runner)[1])
+        self.assertEqual("skipped", codex_remote_control.inspect(self.paths, self.runner)[1])
         self.runner.run.assert_not_called()
 
     def test_inspect_accepts_a_stopped_daemon_once_persisted(self) -> None:
         """After a reboot the next `codex` session starts the daemon again."""
         self._persist(True)
-        self.runner.run.return_value = CommandResult(1)
+        self.runner.run.side_effect = [
+            CommandResult(0, stderr="Logged in using ChatGPT"),
+            CommandResult(1),
+        ]
 
         detail, result = codex_remote_control.inspect(self.paths, self.runner)
 
@@ -88,7 +150,10 @@ class CodexRemoteControlTests(unittest.TestCase):
 
     def test_inspect_never_starts_anything(self) -> None:
         self._persist(True)
-        self.runner.run.return_value = CommandResult(0, stdout="{}")
+        self.runner.run.side_effect = [
+            CommandResult(0, stderr="Logged in using ChatGPT"),
+            CommandResult(0, stdout="{}"),
+        ]
 
         codex_remote_control.inspect(self.paths, self.runner)
 

@@ -1,18 +1,8 @@
-"""Keep Codex Remote Control on, so the ChatGPT app can reach this machine.
+"""Maintain the saved Codex Remote Control choice for ChatGPT users.
 
-Claude's equivalent is one key in its settings file, `remoteControlAtStartup`,
-and lives in `cli/claude.settings.json`. Codex has no config key for it: the
-switch is persisted by its app-server daemon in
-`~/.codex/app-server-daemon/settings.json`, which Codex owns and rewrites. So
-this module drives Codex's own command rather than editing that file.
-
-`codex remote-control start` persists the setting, starts the daemon if it is
-not running, and is a no-op when both are already true. Every later daemon
-start -- including the one the interactive `codex` TUI triggers itself --
-honours the persisted setting.
-
-Pairing a phone is deliberately not here: its code is a secret and pairing is
-a one-time operator step (`codex remote-control pair`).
+Codex owns its daemon settings. Agentbot leaves an off/unconfigured setting
+alone and uses native commands only after confirming ChatGPT login. Pairing
+remains a human action; no pairing code or login output is shown here.
 """
 
 from __future__ import annotations
@@ -44,12 +34,26 @@ def _persisted_enabled(paths: AgentbotPaths) -> bool:
         return False
 
 
+def _chatgpt_login(codex: str, paths: AgentbotPaths, runner: CommandRunner) -> bool:
+    result = runner.run(
+        [codex, "login", "status"],
+        cwd=paths.codex_home.parent,
+        timeout_seconds=15,
+    )
+    return result.ok and any(
+        line.strip().casefold() == "logged in using chatgpt"
+        for line in (result.stdout + "\n" + result.stderr).splitlines()
+    )
+
+
 def inspect(paths: AgentbotPaths, runner: CommandRunner) -> tuple[str, str]:
     codex = _codex(paths)
     if codex is None:
         return "codex not set up", "skipped"
     if not _persisted_enabled(paths):
-        return "remote control off; run `agentbot cli-config apply`", "check"
+        return "remote control off; enable explicitly with `codex remote-control start`", "skipped"
+    if not _chatgpt_login(codex, paths, runner):
+        return "ChatGPT login not confirmed; remote control unchanged", "skipped"
     running = runner.run([codex, "app-server", "daemon", "version"], timeout_seconds=30)
     if not running.ok:
         # Persisted but stopped is the normal state after a reboot: the next
@@ -62,6 +66,10 @@ def ensure(paths: AgentbotPaths, runner: CommandRunner) -> tuple[str, str]:
     codex = _codex(paths)
     if codex is None:
         return "codex not set up", "skipped"
+    if not _persisted_enabled(paths):
+        return "remote control off; enable explicitly with `codex remote-control start`", "skipped"
+    if not _chatgpt_login(codex, paths, runner):
+        return "ChatGPT login not confirmed; remote control unchanged", "skipped"
     result = runner.run(
         [codex, "remote-control", "start", "--json"],
         cwd=paths.codex_home.parent,

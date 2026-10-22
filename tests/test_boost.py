@@ -1670,6 +1670,31 @@ class BoostReviewEvidenceTests(BoostIntegrationTests):
             "Boost still compacts file reads and MCP tool output", BOOST_AWARENESS_BODY
         )
 
+    def test_no_capture_is_informational_but_lost_capture_history_still_warns(self):
+        from dataclasses import replace
+
+        from src.diagnostics import Diagnostics
+        from src.ui.reports import _boost_rows
+
+        base = replace(
+            self._integration_type()(self._paths()).status(),
+            codex_state="ready",
+            diverged_flags=(),
+            unruled_flags=(),
+            unsupported_flags=(),
+        )
+        idle = replace(base, capture_states=(("Codex", "none"),))
+        self.assertEqual([], Diagnostics._boost_flag_issues(idle))
+        row = next(row for row in _boost_rows(idle) if row[0] == "Codex capture")
+        self.assertEqual("info", row[2])
+        self.assertIn("unused", row[1])
+        self.assertIn("not verified", row[1])
+        for capture in ("stale", "unavailable"):
+            issues = Diagnostics._boost_flag_issues(
+                replace(base, capture_states=(("Codex", capture),))
+            )
+            self.assertTrue(any(issue.level == "warning" for issue in issues))
+
     def test_reports_separate_registration_capture_and_runtime_policy(self):
         from dataclasses import replace
 
