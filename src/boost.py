@@ -66,7 +66,7 @@ _ARTIFACT_VERSION_RE = re.compile(
 # `boost`: without `pipefail` that pipeline exits with boost's status, so a
 # failing command reads as a success. Its version-marker header is kept, because
 # the stale-artifact check reads it.
-_AWARENESS_BODY = """<!-- Rewritten by `agentbot boost setup`: Boost's own text describes shell
+BOOST_AWARENESS_BODY = """<!-- Rewritten by `agentbot boost setup`: Boost's own text describes shell
 rewriting, which Agentbot's Boost policy turns off (boost-cli-filtering). -->
 
 Boost is installed with shell-output filtering off. Run shell commands as they
@@ -622,7 +622,7 @@ class BoostIntegration:
             end = marker
             while end + 1 < len(lines) and lines[end + 1].startswith("#"):
                 end += 1
-            text = "\n".join(lines[: end + 1]) + "\n\n" + _AWARENESS_BODY
+            text = "\n".join(lines[: end + 1]) + "\n\n" + BOOST_AWARENESS_BODY
             if path.read_text(encoding="utf-8") != text:
                 write_text_atomic(path, text)
                 rewritten.append(path)

@@ -10,6 +10,7 @@ from .antigravity import (
     plan_antigravity_skills_config,
 )
 from .atomic_io import write_text_atomic
+from .boost import BOOST_AWARENESS_BODY
 from .claude_bridge import run_claude_bridge
 from .claude_statusline import (
     STATUSLINE_SCRIPT_NAME,
@@ -110,7 +111,7 @@ def _codex_instruction_text(paths: AgentbotPaths, base: str) -> str:
     boost_awareness = paths.codex_home / "BOOST.md"
     if not boost_awareness.is_file() or boost_awareness.is_symlink():
         return base
-    return f"{base.rstrip()}\n\n@BOOST.md\n"
+    return f"{base.rstrip()}\n\n## Boost integration\n\n{BOOST_AWARENESS_BODY.rstrip()}\n"
 
 
 def resync_global_outputs(paths: AgentbotPaths, *, apply: bool) -> tuple[RenderAction, ...]:
@@ -183,9 +184,9 @@ def _plan_global_instruction_action(label: str, destination: Path, desired: str)
 def _is_managed_global_instruction(existing: str, desired: str) -> bool:
     # On a fresh machine Boost runs first and creates this import-only Codex
     # stub. It has no user policy to preserve; adopt it only when the rendered
-    # output retains the import to an existing, regular BOOST.md.
+    # output includes canonical awareness for an existing, regular BOOST.md.
     return GENERATED_AGENTS_HEADER in existing or (
-        existing.strip() == "@BOOST.md" and desired.endswith("\n@BOOST.md\n")
+        existing.strip() == "@BOOST.md" and "\n## Boost integration\n" in desired
     )
 
 

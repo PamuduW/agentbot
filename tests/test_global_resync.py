@@ -56,9 +56,32 @@ class GlobalResyncTests(unittest.TestCase):
         self.assertEqual("@BOOST.md\n", agents.read_text(encoding="utf-8"))
         resync_global_outputs(paths, apply=True)
         self.assertIn("# Global Baseline", agents.read_text(encoding="utf-8"))
-        self.assertTrue(agents.read_text(encoding="utf-8").endswith("\n@BOOST.md\n"))
+        self.assertIn(
+            "Boost is installed with shell-output filtering off.",
+            agents.read_text(encoding="utf-8"),
+        )
         self.assertEqual("# Saved user edits\n", saved.read_text(encoding="utf-8"))
         actions = {action.relative_path: action for action in plan_global_resync_actions(paths)}
+        self.assertEqual("unchanged", actions["~/.codex/AGENTS.md"].kind)
+
+    def test_codex_guidance_includes_awareness_without_an_import_expander(self) -> None:
+        from src.render import resync_global_outputs
+
+        paths = self._paths()
+        self.codex_home.mkdir(parents=True)
+        awareness = self.codex_home / "BOOST.md"
+        awareness.write_text("# Boost\nOld shell-piping instructions.\n", encoding="utf-8")
+        resync_global_outputs(paths, apply=True)
+
+        instructions = (self.codex_home / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Boost is installed with shell-output filtering off.", instructions)
+        self.assertIn("Never assume a preview is complete.", instructions)
+        self.assertNotIn("@BOOST.md", instructions)
+        self.assertNotIn("Old shell-piping instructions.", instructions)
+        self.assertEqual("# Boost\nOld shell-piping instructions.\n", awareness.read_text())
+        actions = {
+            action.relative_path: action for action in resync_global_outputs(paths, apply=False)
+        }
         self.assertEqual("unchanged", actions["~/.codex/AGENTS.md"].kind)
 
     def test_resync_apply_writes_global_outputs_and_statusline(self) -> None:

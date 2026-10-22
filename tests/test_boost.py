@@ -1660,13 +1660,15 @@ class BoostReviewEvidenceTests(BoostIntegrationTests):
         self.assertEqual({"unavailable"}, set(dict(integration.status().capture_states).values()))
 
     def test_awareness_covers_host_limits_and_original_file_recovery(self):
-        from src.boost import _AWARENESS_BODY
+        from src.boost import BOOST_AWARENESS_BODY
 
-        self.assertIn("Codex MCP capture does not prove", _AWARENESS_BODY)
-        self.assertIn("original file", _AWARENESS_BODY)
-        self.assertIn("preview", _AWARENESS_BODY)
-        self.assertIn("proposal", _AWARENESS_BODY)
-        self.assertNotIn("Boost still compacts file reads and MCP tool output", _AWARENESS_BODY)
+        self.assertIn("Codex MCP capture does not prove", BOOST_AWARENESS_BODY)
+        self.assertIn("original file", BOOST_AWARENESS_BODY)
+        self.assertIn("preview", BOOST_AWARENESS_BODY)
+        self.assertIn("proposal", BOOST_AWARENESS_BODY)
+        self.assertNotIn(
+            "Boost still compacts file reads and MCP tool output", BOOST_AWARENESS_BODY
+        )
 
     def test_reports_separate_registration_capture_and_runtime_policy(self):
         from dataclasses import replace
