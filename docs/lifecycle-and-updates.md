@@ -86,8 +86,14 @@ source-owned deltas once, and uses the shared rollback boundary for managed
 surfaces.
 
 Inside that transaction the update reconciles skills, refreshes Graphify, MCP,
-registered workspaces and CLI configuration, then runs Doctor as a silent
-gate: an error rolls the whole update back. Only after that gate does it
+registered workspaces and CLI configuration. If Boost is selected and its CLI
+is installed, it migrates the global Boost safety configuration before Doctor.
+This includes explicit telemetry/upload/auto-update controls and reviewed flags;
+the config file is included in rollback. Older machines therefore do not fail
+Doctor before their safety settings can be migrated. No agent login or installed
+Codex/Cursor CLI is required for this configuration step. Missing Boost and
+explicitly deselected Boost are left untouched. The update then runs Doctor as
+a silent gate: an error rolls the managed update back. Only after that gate does it
 refresh the editor and shell integrations (Boost, VS Code, the Cursor
 statusline, Codex Remote Control), the recorded memory backup, and the memory
 vault's commit and push checks, which it installs when absent or outdated and
