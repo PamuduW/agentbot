@@ -494,6 +494,9 @@ class Lifecycle:
                         raise RuntimeError(
                             "CLI configuration refresh failed: " + "; ".join(cli_config.failures)
                         )
+                    if chosen("boost") and self.boost.status().cli_path is not None:
+                        stage_begins("Refreshing Boost safety configuration")
+                        self.boost.ensure_safe_config()
                     stage_begins("Running diagnostics")
                     diagnostics = self.diagnostics.collect()
                     errors = [
@@ -561,6 +564,7 @@ class Lifecycle:
             self.paths.codex_home / "skills",
             self.paths.claude_skills_home,
             self.paths.workspace_state_file,
+            self.boost.config_path,
             self.paths.codex_home / "AGENTS.md",
             self.paths.claude_home / "CLAUDE.md",
             self.paths.claude_home / "statusline-command.sh",

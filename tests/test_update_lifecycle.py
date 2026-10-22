@@ -3,9 +3,14 @@ import io
 import os
 import tempfile
 import unittest
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest import mock
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 compatibility
+    import tomli as tomllib
 
 
 def tree_fingerprint(root: Path) -> tuple[tuple[str, str], ...]:
@@ -46,6 +51,122 @@ class UpdateLifecycleTests(unittest.TestCase):
             agents_home=home / ".agents",
         )
         return root, home, paths
+
+    def _boost_migration_fixture(self, temporary, *, installed=True, later_error=False):
+        from src.boost import BoostIntegration
+        from src.command_runner import CommandResult
+        from src.graphify import GraphifyStatus
+        from src.lifecycle import Lifecycle
+        from src.models import DiagnosticsSnapshot, DoctorIssue
+        from src.skill_catalog import SourceCatalog
+        from src.workspace_service import WorkspaceReport
+
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        root, home, paths = self._fixture(temporary)
+        runner = mock.Mock()
+        runner.run.return_value = CommandResult(0, "boost v0.16.6")
+        boost = BoostIntegration(paths, runner=runner)
+        boost.config_path.parent.mkdir(mode=0o700)
+        boost.config_path.write_text(
+            '[tracing]\nupload = false\n[update]\nauto_update = false\n[llm]\nengine = "codex"\n',
+            encoding="utf-8",
+        )
+        boost.config_path.chmod(0o600)
+        stack.enter_context(
+            mock.patch.object(
+                boost, "_find_cli", return_value=(Path("/fixture/boost") if installed else None)
+            )
+        )
+        # Host presence is independent of the safety migration, including a
+        # work laptop without Codex and a home laptop without Cursor.
+        stack.enter_context(mock.patch.object(boost, "_cli_present", return_value=False))
+        graphify = mock.Mock()
+        graphify.status.return_value = GraphifyStatus(
+            "not-installed",
+            None,
+            None,
+            home / "graphify/SKILL.md",
+            None,
+            "missing",
+            "missing",
+            "not installed",
+        )
+        observations = []
+
+        def diagnose():
+            parsed = tomllib.loads(boost.config_path.read_text())
+            safe = parsed.get("tracing", {}).get("telemetry") is False
+            observations.append(safe)
+            issues = (
+                ()
+                if safe or not installed
+                else (DoctorIssue("error", "boost", "unsafe privacy config"),)
+            )
+            if safe and later_error:
+                issues = (DoctorIssue("error", "fixture", "another check failed"),)
+            return DiagnosticsSnapshot((), 1, True, True, True, 1, 1, 0, 1, "ok", issues)
+
+        diagnostics = mock.Mock()
+        diagnostics.collect.side_effect = diagnose
+
+        @contextmanager
+        def checkouts(_config, _expected):
+            yield {"source": root}
+
+        lifecycle = Lifecycle(
+            paths,
+            boost=boost,
+            graphify=graphify,
+            diagnostics=diagnostics,
+            catalog_discoverer=lambda _config: (
+                SourceCatalog("source", "owner/repo", "abc123", ("alpha",)),
+            ),
+            repository_head=lambda _root: "head123",
+            workspace_preview=lambda: WorkspaceReport(()),
+            checkout_provider=checkouts,
+            planned_installer=lambda _paths, _checkouts: [],
+            integration_refresher=lambda **_kwargs: (),
+        )
+        lifecycle.resync_workspaces = lambda **_kwargs: WorkspaceReport(())
+        stack.enter_context(mock.patch.dict(os.environ, {"HOME": str(home)}, clear=False))
+        return lifecycle, boost, observations
+
+    def test_update_migrates_old_boost_privacy_before_doctor_without_agent_clis(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle, boost, observations = self._boost_migration_fixture(temporary)
+            plan = lifecycle.plan_update()
+            self.assertNotIn("telemetry", tomllib.loads(boost.config_path.read_text())["tracing"])
+            outcome = lifecycle.apply_update(plan)
+            self.assertEqual("applied", outcome.status, outcome.message)
+            self.assertEqual([True], observations)
+            parsed = tomllib.loads(boost.config_path.read_text())
+            self.assertEqual("codex", parsed["llm"]["engine"])
+            self.assertIs(False, parsed["feature_flags"]["boost-cli-filtering"]["user"])
+
+    def test_update_restores_boost_config_when_another_doctor_check_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle, boost, observations = self._boost_migration_fixture(
+                temporary, later_error=True
+            )
+            original = boost.config_path.read_bytes()
+            outcome = lifecycle.apply_update(lifecycle.plan_update())
+            self.assertEqual([True], observations)
+            self.assertEqual("failed", outcome.status)
+            self.assertIn("another check failed", outcome.message)
+            self.assertEqual(original, boost.config_path.read_bytes())
+
+    def test_update_does_not_migrate_deselected_or_missing_boost(self):
+        for installed, components in [(True, ("vscode",)), (False, ("boost",))]:
+            with self.subTest(installed=installed), tempfile.TemporaryDirectory() as temporary:
+                lifecycle, boost, observations = self._boost_migration_fixture(
+                    temporary, installed=installed
+                )
+                original = boost.config_path.read_bytes()
+                outcome = lifecycle.apply_update(lifecycle.plan_update(), components=components)
+                self.assertEqual([False], observations)
+                self.assertEqual("failed" if installed else "applied", outcome.status)
+                self.assertEqual(original, boost.config_path.read_bytes())
 
     def test_plan_update_is_read_only_and_uses_remote_catalog(self) -> None:
         from src.graphify import GraphifyStatus
@@ -312,9 +433,9 @@ class UpdateLifecycleTests(unittest.TestCase):
                 checkout_provider=checkouts,
                 reconcile_applier=reconcile,
                 planned_installer=install,
-                integration_refresher=lambda selected=None: events.append(
-                    ("integrations", selected)
-                ) or (),
+                integration_refresher=lambda selected=None: (
+                    events.append(("integrations", selected)) or ()
+                ),
             )
             lifecycle.resync_workspaces = lambda *, apply, paths=(): WorkspaceReport(())
             mcp_applied: list[bool] = []

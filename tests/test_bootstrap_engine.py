@@ -72,7 +72,9 @@ class SlimBootstrapEngineTests(unittest.TestCase):
         self.assertTrue((codex_skills / "alpha-skill").is_symlink())
         self.assertTrue((codex_skills / "beta-skill").is_symlink())
 
-    def test_render_global_outputs_keeps_boost_import_only_while_boost_md_exists(self) -> None:
+    def test_render_global_outputs_includes_boost_awareness_only_while_boost_md_exists(
+        self,
+    ) -> None:
         from src.render import render_global_outputs
 
         paths = self._paths()
@@ -82,11 +84,17 @@ class SlimBootstrapEngineTests(unittest.TestCase):
 
         render_global_outputs(paths)
         agents = paths.codex_home / "AGENTS.md"
-        self.assertTrue(agents.read_text(encoding="utf-8").endswith("\n@BOOST.md\n"))
+        self.assertIn(
+            "Boost is installed with shell-output filtering off.",
+            agents.read_text(encoding="utf-8"),
+        )
 
         boost_md.unlink()
         render_global_outputs(paths)
-        self.assertNotIn("@BOOST.md", agents.read_text(encoding="utf-8"))
+        self.assertNotIn(
+            "Boost is installed with shell-output filtering off.",
+            agents.read_text(encoding="utf-8"),
+        )
 
     def test_install_replaces_the_boost_created_codex_stub_with_the_baseline(self) -> None:
         from src.lifecycle import Lifecycle
@@ -114,7 +122,7 @@ class SlimBootstrapEngineTests(unittest.TestCase):
         actual = agents.read_text(encoding="utf-8")
         self.assertTrue(actual.startswith(GENERATED_AGENTS_HEADER))
         self.assertIn("Shared global instructions.", actual)
-        self.assertTrue(actual.endswith("\n@BOOST.md\n"))
+        self.assertIn("Boost is installed with shell-output filtering off.", actual)
         self.assertFalse((paths.codex_home / "AGENTS_temp.md").exists())
         render_global_outputs(paths)
         self.assertEqual(actual, agents.read_text(encoding="utf-8"))

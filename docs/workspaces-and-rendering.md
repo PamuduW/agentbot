@@ -54,9 +54,13 @@ the relevant resync/setup flow to reconcile them.
 
 On a fresh machine, Boost can create `~/.codex/AGENTS.md` containing only
 `@BOOST.md` before Agentbot renders its baseline. Agentbot replaces that exact
-stub with the generated baseline and keeps the Boost import when `BOOST.md`
-is a regular file. This also repairs existing stubs through `agentbot global`
-or resync. Files with custom instructions remain untouched, including files
+stub with the generated baseline and embeds the canonical Boost awareness
+when `BOOST.md` is a regular file. Codex loads the policy as part of `AGENTS.md`;
+it does not need to expand an `@BOOST.md` reference. The renderer uses Agentbot
+source rather than copying potentially stale instructions from the awareness
+file. Removing the file removes the embedded awareness on the next render.
+Symlink targets are not adopted. This also repairs existing stubs through
+`agentbot global` or resync. Files with custom instructions remain untouched, including files
 that combine a Boost import with user rules. Doctor warns if the active Codex
 policy still contains only the Boost import.
 

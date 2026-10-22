@@ -267,7 +267,11 @@ evidence. Doctor warns when a configured host lacks recent evidence. Verify that
 host with a harmless task; do not enable CLI filtering to clear a warning.
 
 Agentbot corrects the vendor awareness body after setup while preserving its
-version marker and Cursor frontmatter. Ordinary code reads are not document
+version marker and Cursor frontmatter. For Codex, the global renderer also embeds
+Agentbot's canonical awareness in managed `AGENTS.md` while the regular `BOOST.md`
+file exists. This avoids relying on an `@BOOST.md` import expander and excludes
+stale local awareness text. User-owned instruction files remain untouched.
+Ordinary code reads are not document
 optimization. CSV and notebook reads can be incomplete previews, including with
 `--level none`; use the original file when no retrieval marker exists. Secret
 reduction is supplementary. CLI filtering off means raw shell output is outside
