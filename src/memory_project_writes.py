@@ -63,11 +63,14 @@ def _enabled() -> bool:
     return os.environ.get(FLAG, "on").strip().lower() not in {"off", "0", "false", "no"}
 
 
-def _project(vault: Path, cwd: Path, config_home: Path) -> str:
+def _project(vault: Path, cwd: Path, config_home: Path, *, project_id: str | None = None) -> str:
     read_marker(vault)
     if not _enabled():
         raise MemoryVaultError(f"project writes are turned off ({FLAG}); reads still work")
-    return str(memory_projects.require_project(vault, cwd, config_home)["folder"])
+    project = memory_projects.require_project(vault, cwd, config_home)
+    if project_id is not None and project["id"] != project_id:
+        raise MemoryVaultError("capture project identity changed")
+    return str(project["folder"])
 
 
 def _slug(title: str) -> str:
@@ -89,6 +92,8 @@ def render(
     supersedes: list[str] | None = None,
     replaces: list[str] | None = None,
     created: str | None = None,
+    review_after: str | None = None,
+    valid_until: str | None = None,
 ) -> bytes:
     lines = [
         "---",
@@ -107,6 +112,9 @@ def render(
     lines.append(f"up: {json.dumps(project_hub_link(folder))}")
     if replaces:
         lines.append(f"replaces: {_yaml_list([json.dumps(link) for link in replaces])}")
+    for key, value in (("review_after", review_after), ("valid_until", valid_until)):
+        if value is not None:
+            lines.append(f"{key}: {json.dumps(value)}")
     lines += ["---", ""]
     return ("\n".join(lines) + (body if body.endswith("\n") else body + "\n")).encode("utf-8")
 
@@ -219,9 +227,13 @@ def add(
     body: str,
     tags: list[str] | None = None,
     supersedes: str | None = None,
+    review_after: str | None = None,
+    valid_until: str | None = None,
     client: str = "agent",
+    capture: dict[str, str] | None = None,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
-    folder = _project(vault, cwd, config_home)
+    folder = _project(vault, cwd, config_home, project_id=project_id)
     if kind not in KIND_DIRS:
         raise MemoryVaultError(f"kind must be one of {', '.join(sorted(KIND_DIRS))}")
     record_id = str(uuid.uuid4())
@@ -230,6 +242,11 @@ def add(
     if (vault / relative).exists():
         relative = relative[:-3] + f"-{record_id[:8]}.md"
     target = _supersede_target(vault, folder, supersedes) if supersedes else None
+    if target:
+        previous = _front_matter(target[1].decode("utf-8"))
+        if review_after is None and previous.get("review_after"):
+            review_after = max(previous["review_after"], today)
+        valid_until = previous.get("valid_until") if valid_until is None else valid_until
     data = render(
         record_id=record_id,
         kind=KIND_TYPES[kind],
@@ -237,15 +254,19 @@ def add(
         folder=folder,
         body=body,
         tags=list(tags or []),
+        created=today,
         supersedes=[supersedes] if supersedes else None,
         replaces=[record_link(target[0])] if target else None,
+        review_after=review_after,
+        valid_until=valid_until,
     )
     _require_valid(relative, data)
     warnings = _pressure(vault, folder, relative, data, adding=not supersedes)
     changes: list[tuple[str, bytes | None]] = [(relative, data)]
     if target:
         changes.append(target)
-    op = memory_sync.change_project(vault, folder, changes, client=client)
+    receipt = None if capture is None else {**capture, "id": record_id, "path": relative}
+    op = memory_sync.change_project(vault, folder, changes, client=client, capture=receipt)
     return _result(op, path=relative, id=record_id, kind=kind, warnings=warnings)
 
 

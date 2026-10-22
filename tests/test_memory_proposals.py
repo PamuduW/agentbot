@@ -183,6 +183,30 @@ class ApproveRejectTests(ProposalCase):
 
 
 class ProposalCliTests(ProposalCase):
+    def test_cli_propose_preserves_capture_dates_without_accepting(self) -> None:
+        rc, result = self._cli(
+            "memory",
+            "propose",
+            "--type",
+            "preference",
+            "--scope",
+            "global",
+            "--title",
+            "Dated CLI proposal",
+            "--review-after",
+            "2098-12-01",
+            "--valid-until",
+            "2099-01-01",
+            "--stdin",
+            stdin=b"Synthetic preference.\n",
+        )
+        self.assertEqual(0, rc, self.stderr)
+        record = next(r for r in memory.validate(self.a).records if r.id == result["id"])
+        self.assertEqual(
+            ("draft", "2098-12-01", "2099-01-01"),
+            (record.status, record.review_after, record.valid_until),
+        )
+
     def setUp(self) -> None:
         super().setUp()
         self.config = self.tmp / "xdg" / "agentbot"

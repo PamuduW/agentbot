@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import tempfile
@@ -200,10 +201,10 @@ class ScopeAndLifecycleTests(RetrieveTestCase):
         self.assertEqual(("superseded",), labels["core/lessons/superseded.md"])
         self.assertEqual(("retired",), labels["core/lessons/retired.md"])
 
-    def test_hot_pool_limit_makes_old_records_cold_not_gone(self) -> None:
+    def test_query_search_is_not_limited_to_the_recent_pool(self) -> None:
         result = self.search("record", project=HOT, limit=100)
-        # 128 records plus the project hub.
-        self.assertEqual(129 - retrieve.HOT_LIMITS["project"], result.excluded.get("cold"))
+        self.assertNotIn("cold", result.excluded)
+        self.assertLessEqual(len(result.hits), retrieve.SEARCH_MAX)
         oldest = min(
             (r for r in memory.validate(self.root).records if HOT in r.projects),
             key=lambda r: (r.date, r.path),
@@ -211,12 +212,28 @@ class ScopeAndLifecycleTests(RetrieveTestCase):
         historical = retrieve.search(
             self.root,
             oldest.title,
-            retrieve.Request(project=HOT, history=True),
+            retrieve.Request(project=HOT),
             limit=100,
             today=TODAY,
         )
         self.assertIn(oldest.path, [hit.record.path for hit in historical.hits])
         self.assertTrue((self.root / oldest.path).exists())
+
+    def test_old_unique_fact_is_found_without_enabling_history(self) -> None:
+        oldest = min(
+            (
+                r
+                for r in memory.validate(self.root).records
+                if r.path.startswith(f"projects/{HOT}/notes/")
+            ),
+            key=lambda r: (r.date, r.path),
+        )
+        path = self.root / oldest.path
+        original = path.read_text()
+        self.addCleanup(path.write_text, original)
+        path.write_text(original + "\nUnique durable fact: kestrelamber782.\n")
+        result = self.search("kestrelamber782", project=HOT, limit=3)
+        self.assertEqual([oldest.id], [hit.record.id for hit in result.hits])
 
     def test_filters_and_provenance(self) -> None:
         result = self.search(project=HOT, kind="decision")
@@ -367,6 +384,63 @@ class UnsafeRecordTests(unittest.TestCase):
 
 
 class RetrieveCliTests(RetrieveTestCase):
+    def test_optional_refresh_failure_does_not_block_valid_recall(self) -> None:
+        for code in (errno.EROFS, errno.EACCES):
+            for command in (
+                ("search", "deploy"),
+                ("brief",),
+                ("show", "core/decisions/global-0.md"),
+            ):
+                with (
+                    self.subTest(code=code, command=command),
+                    patch(
+                        "src.memory_autosync.before_read", side_effect=OSError(code, "synthetic")
+                    ),
+                ):
+                    rc, stdout = self._cli("memory", *command, "--json")
+                    self.assertEqual(0, rc, stdout)
+                    payload = json.loads(stdout)
+                    self.assertEqual("degraded", payload["refresh"]["state"])
+                    self.assertTrue(payload["refresh"]["local_only"])
+                    self.assertNotIn("synthetic", json.dumps(payload["refresh"]))
+
+    def test_refresh_offline_is_reported_without_claiming_current(self) -> None:
+        with patch("src.memory_autosync.before_read", return_value={"state": "offline"}):
+            rc, stdout = self._cli("memory", "brief", "--json")
+        self.assertEqual(0, rc)
+        self.assertEqual("offline", json.loads(stdout)["refresh"]["reason"])
+
+    def test_refresh_timestamp_write_failure_falls_back_to_local_recall(self) -> None:
+        from src.memory_sync import SyncResult
+
+        with (
+            patch("src.memory_sync.setup_obsidian"),
+            patch("src.memory_sync.sync", return_value=SyncResult("synced")),
+            patch(
+                "src.memory_autosync.write_text_atomic",
+                side_effect=OSError(errno.EROFS, "synthetic"),
+            ),
+        ):
+            rc, stdout = self._cli("memory", "brief", "--json")
+        self.assertEqual(0, rc)
+        self.assertEqual("degraded", json.loads(stdout)["refresh"]["state"])
+
+    def test_interrupted_write_is_unavailable_instead_of_a_broken_vault(self) -> None:
+        state = self.root / ".git/agentbot-memory"
+        state.mkdir(parents=True, exist_ok=True)
+        journal = state / "writing.json"
+        journal.write_text("synthetic interrupted write")
+        self.addCleanup(journal.unlink, missing_ok=True)
+        with patch(
+            "src.memory_autosync.before_read", side_effect=OSError(errno.EROFS, "synthetic")
+        ):
+            rc, stdout = self._cli("memory", "brief", "--json")
+        payload = json.loads(stdout)
+        self.assertEqual(1, rc)
+        self.assertEqual("unavailable", payload["state"])
+        self.assertNotIn("text", payload)
+        self.assertEqual("synthetic interrupted write", journal.read_text())
+
     def _cli(self, *argv: str) -> tuple[int, str]:
         env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")}
         env.update(

@@ -84,6 +84,13 @@ class Op:
     # The registry ID the project folder had when the write was made. Replay
     # refuses the write if the folder now belongs to another project.
     project_id: str | None = None
+    capture: dict[str, str] | None = None
+
+    def serialized(self) -> dict[str, Any]:
+        result = asdict(self)
+        if self.capture is None:
+            result.pop("capture")
+        return result
 
     def data(self) -> bytes | None:
         return None if self.content is None else base64.b64decode(self.content)
@@ -139,15 +146,16 @@ def _branch(root: Path) -> str:
     return _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
 
 
-def _state(root: Path) -> Path:
+def _state(root: Path, *, create: bool = True) -> Path:
     git_dir = Path(_git(root, "rev-parse", "--absolute-git-dir").stdout.strip())
     path = git_dir / STATE_DIR
-    path.mkdir(mode=0o700, exist_ok=True)
+    if create:
+        path.mkdir(mode=0o700, exist_ok=True)
     return path
 
 
 def _load(root: Path, name: str) -> list[dict[str, Any]]:
-    path = _state(root) / name
+    path = _state(root, create=False) / name
     if not path.exists():
         return []
     return json.loads(path.read_text(encoding="utf-8"))
@@ -209,7 +217,7 @@ def _in_history(root: Path, op_id: str, rev: str) -> str | None:
 
 def _journal(root: Path, op: Op) -> None:
     """Name the operation about to change files, before it changes any."""
-    _save(root, WRITING, [asdict(op)])
+    _save(root, WRITING, [op.serialized()])
 
 
 def _unjournal(root: Path) -> None:
@@ -425,6 +433,8 @@ def _scan(relative: str, data: bytes) -> None:
 
 def _record(root: Path, op: Op) -> Op:
     """Apply to the local tree, check the whole vault, queue, then commit."""
+    if op.capture is not None:
+        op.capture = {"op": op.id, **op.capture}
     with _locked(root):
         _require_clean(root)
         before = _snapshot(root)
@@ -447,7 +457,7 @@ def _record(root: Path, op: Op) -> Op:
                 index.unlink(missing_ok=True)
             raise
         pending = _load(root, "pending.json")
-        pending.append(asdict(op))
+        pending.append(op.serialized())
         _save(root, "pending.json", pending)
         _unjournal(root)
         try:
@@ -831,6 +841,7 @@ def change_core(
     *,
     tier: Literal["core", "proposal"],
     client: str = "unknown",
+    capture: dict[str, str] | None = None,
 ) -> Op:
     """Put or delete core records and proposals as one operation.
 
@@ -855,12 +866,27 @@ def change_core(
                 "expected": None if prior is None else _sha(prior),
             }
         )
-    op = Op(str(uuid.uuid4()), "multi", tier, ".", None, json.dumps(items), None, client=client)
+    op = Op(
+        str(uuid.uuid4()),
+        "multi",
+        tier,
+        ".",
+        None,
+        json.dumps(items),
+        None,
+        client=client,
+        capture=capture,
+    )
     return _record(root, op)
 
 
 def change_project(
-    root: Path, project: str, changes: list[tuple[str, bytes | None]], *, client: str = "unknown"
+    root: Path,
+    project: str,
+    changes: list[tuple[str, bytes | None]],
+    *,
+    client: str = "unknown",
+    capture: dict[str, str] | None = None,
 ) -> Op:
     """Put or delete several records of one project as a single operation."""
     folder = f"projects/{project}"
@@ -893,6 +919,7 @@ def change_project(
         None,
         client=client,
         project_id=_project_id(root, project),
+        capture=capture,
     )
     return _record(root, op)
 
@@ -1006,6 +1033,8 @@ def _commit(root: Path, op: Op, index: Path) -> str:
         f"memory({op.tier}): {_summary(op)}\n\n"
         f"Agentbot-Op: {op.id}\nAgentbot-Tier: {op.tier}\nAgentbot-Client: {op.client}\n"
     )
+    if op.capture is not None:
+        message += f"Agentbot-Capture: {json.dumps(op.capture, sort_keys=True)}\n"
     # Plumbing, not `git commit`: a user's git wrapper or commit hooks (for
     # example one that fetches first) must not change what the engine does,
     # and offline commits must work. The staged vault was validated first.
@@ -1213,7 +1242,7 @@ def _preserve(root: Path, op: Op, reason: str, result: SyncResult) -> None:
         "recovery_ref": ref,
         "resolver": "human" if op.tier == "core" else "agent",
         # The whole operation, so "keep mine" can re-apply it later.
-        "op_data": asdict(op),
+        "op_data": op.serialized(),
     }
     conflicts = _load(root, "conflicts.json")
     conflicts.append(conflict)

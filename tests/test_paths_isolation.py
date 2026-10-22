@@ -8,9 +8,11 @@ injection contract so that cannot recur.
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.paths import AgentbotPaths, default_paths
 
@@ -126,6 +128,34 @@ class PathIsolationTests(unittest.TestCase):
             config = root / "cfg"
             paths = AgentbotPaths(root, root / "c", root / "cl", root / "cu", config)
             self.assertEqual(config, paths.config_home)
+
+    def test_documented_client_home_overrides_leave_other_homes_independent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            with (
+                patch("src.paths.Path.home", return_value=home),
+                patch.dict(os.environ, {
+                    "CODEX_HOME": str(home / "custom-codex"),
+                    "CLAUDE_CONFIG_DIR": str(home / "custom-claude"),
+                }),
+            ):
+                paths = default_paths(home / "product")
+            self.assertEqual(home / "custom-codex", paths.codex_home)
+            self.assertEqual(home / "custom-claude", paths.claude_home)
+            self.assertEqual(home / ".gemini", paths.antigravity_home)
+            self.assertEqual(home / ".cursor", paths.cursor_home)
+            self.assertEqual(home / ".agents", paths.agents_home)
+
+    def test_empty_client_home_overrides_use_normal_defaults(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            with (
+                patch("src.paths.Path.home", return_value=home),
+                patch.dict(os.environ, {"CODEX_HOME": "", "CLAUDE_CONFIG_DIR": ""}),
+            ):
+                paths = default_paths(home / "product")
+            self.assertEqual(home / ".codex", paths.codex_home)
+            self.assertEqual(home / ".claude", paths.claude_home)
 
     def test_default_paths_still_resolves_the_real_home(self):
         # The production default must keep pointing at the user's home; only

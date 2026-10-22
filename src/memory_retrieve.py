@@ -5,9 +5,10 @@ records it returns. Only records that validate with no finding at all are
 eligible, so a file with a schema error or a secret-scanner hit is never
 returned. Drafts are never retrieved.
 
-Default retrieval excludes superseded, retired, and expired records, and
-records beyond each pool's hot limit; ``history=True`` is the deliberate way
-back to them. Scope is never guessed: with no project named, only global and
+Default retrieval excludes superseded, retired, and expired records;
+``history=True`` is the deliberate way back to them. Query searches consider
+all eligible records; brief and header-only index retain the hot limits.
+Scope is never guessed: with no project named, only global and
 shared records are eligible. A named project adds that project's records, and
 other projects' records need an explicit cross-project request.
 
@@ -153,7 +154,7 @@ def _lifecycle(record: Record, today: date) -> str | None:
 
 
 def candidates(
-    root: Path, request: Request, *, today: date | None = None
+    root: Path, request: Request, *, today: date | None = None, recent_only: bool = True
 ) -> tuple[list[tuple[Record, str, tuple[str, ...]]], Retrieval]:
     """Eligible (record, pool, labels) and the exclusion counts."""
     _check_request(request)
@@ -197,7 +198,7 @@ def candidates(
     for key, members in pools.items():
         members.sort(key=lambda item: (item[0].date, item[0].path), reverse=True)
         limit = HOT_LIMITS.get(key.split(":")[0], HOT_LIMITS["project"])
-        if not request.history and len(members) > limit:
+        if recent_only and not request.history and len(members) > limit:
             exclude_count = len(members) - limit
             summary.excluded["cold"] = summary.excluded.get("cold", 0) + exclude_count
             members = members[:limit]
@@ -313,7 +314,7 @@ def search(
     if not query.strip():
         return index(root, request, limit=limit, today=today)
     terms = _terms(query)
-    eligible, summary = candidates(root, request, today=today)
+    eligible, summary = candidates(root, request, today=today, recent_only=False)
     ranked: dict[str, list[Hit]] = {}
     for record, pool, labels in eligible:
         score, line, excerpt = _match(root, record, terms)

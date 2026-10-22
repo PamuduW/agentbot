@@ -52,6 +52,27 @@ class CliConfigTests(unittest.TestCase):
         # JSONC: these files may carry the operator's comments.
         return tomllib.loads(text) if cli.fmt == "toml" else json.loads(strip_jsonc(text))
 
+    def test_declared_memory_controls_preserve_existing_memory_history_and_hooks(self) -> None:
+        source_root = Path(__file__).resolve().parents[1]
+        for name in ("claude", "codex"):
+            source = source_root / "cli" / self.clis[name].source_name
+            self._declare(name, source.read_text(encoding="utf-8"))
+        self._write_config("claude", '{"autoMemoryEnabled":true,"hooks":{"Stop":[]}}')
+        self._write_config("codex", '[features]\nmemories=true\napps=true\n')
+        keep = []
+        for home in (self.paths.claude_home, self.paths.codex_home):
+            for relative in ("memories/old.md", "sessions/old.jsonl"):
+                path = home / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("synthetic retained data", encoding="utf-8")
+                keep.append(path)
+        apply(self.paths)
+        self.assertIs(self._read_config("claude")["autoMemoryEnabled"], False)
+        self.assertEqual({"Stop": []}, self._read_config("claude")["hooks"])
+        self.assertIs(self._read_config("codex")["features"]["memories"], False)
+        self.assertIs(self._read_config("codex")["features"]["apps"], True)
+        self.assertTrue(all(p.read_text() == "synthetic retained data" for p in keep))
+
     def test_nothing_declared_is_a_skip(self) -> None:
         report = preview(self.paths)
 

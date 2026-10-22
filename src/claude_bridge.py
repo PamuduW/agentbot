@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .paths import default_paths
+
 if TYPE_CHECKING:
     from .paths import AgentbotPaths
 
@@ -29,7 +31,7 @@ def default_agents_skills_home() -> Path:
 
 
 def default_claude_skills_home() -> Path:
-    return Path.home() / ".claude" / "skills"
+    return default_paths().claude_skills_home
 
 
 def bridge_claude_skills(

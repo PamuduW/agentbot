@@ -437,6 +437,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Every vault write (project writes, propose, approve, reject, register) is "
         "committed and synced; hook --yes writes only Agentbot-marked hooks; backup and "
         "restore --yes write only their destination. "
+        "Session adapters prepare context/reminders and private content-free receipts; they do not prove model use or save facts. "
         "Exit 2 means no vault is configured.",
         ("agentbot memory status", "agentbot memory validate", "agentbot memory review"),
         ("status", "doctor"),
@@ -465,6 +466,14 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory show",
             "memory brief",
             "memory propose",
+            "memory capture",
+            "memory serve",
+            "memory session recall",
+            "memory session checkpoint",
+            "memory session hook",
+            "memory capture-queue status",
+            "memory capture-queue drain",
+            "memory capture-queue discard",
             "memory review",
             "memory approve",
             "memory reject",
