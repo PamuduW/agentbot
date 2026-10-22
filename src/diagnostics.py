@@ -494,7 +494,7 @@ class Diagnostics:
             "Cursor": status.cursor_state,
         }
         for host, capture in status.capture_states:
-            if configured[host] == "ready" and capture != "recent":
+            if configured[host] == "ready" and capture in {"stale", "unavailable"}:
                 issues.append(
                     DoctorIssue(
                         "warning",

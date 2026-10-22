@@ -566,7 +566,12 @@ def _boost_rows(status) -> list[tuple[str, str, str]]:
         )
     )
     for host, capture in status.capture_states:
-        rows.append((f"{host} capture", f"{capture}; compression not verified", "info"))
+        detail = (
+            "none; no recorded activity (normal for an unused host)"
+            if capture == "none"
+            else capture
+        )
+        rows.append((f"{host} capture", f"{detail}; compression not verified", "info"))
     if status.unsupported_flags:
         rows.append(("Unsupported policy flags", ", ".join(status.unsupported_flags), "check"))
     if status.unruled_flags:
