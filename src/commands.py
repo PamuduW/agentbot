@@ -471,6 +471,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "memory session recall",
             "memory session checkpoint",
             "memory session hook",
+            "memory session configure",
             "memory capture-queue status",
             "memory capture-queue drain",
             "memory capture-queue discard",

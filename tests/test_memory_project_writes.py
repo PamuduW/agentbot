@@ -139,6 +139,23 @@ class AddAndEditTests(WritesTestCase):
         self.assertEqual((uid(6),), records[result["path"]].supersedes)
         self.valid(self.a)
 
+    def test_repeated_corrections_preserve_history_and_return_only_current_fact(self) -> None:
+        first = writes.add(self.a, self.code, self.config, kind="lesson", title="Matrix retry one",
+                           body="matrix remedy first")
+        second = writes.add(self.a, self.code, self.config, kind="lesson", title="Matrix retry two",
+                            body="matrix remedy second", supersedes=first["id"])
+        third = writes.add(self.a, self.code, self.config, kind="lesson", title="Matrix retry three",
+                           body="matrix remedy third", supersedes=second["id"])
+        self.valid(self.a)
+        records = {r.id: r for r in memory.validate(self.a).records}
+        self.assertEqual("superseded", records[first["id"]].status)
+        self.assertEqual((first["id"],), records[second["id"]].supersedes)
+        self.assertEqual((second["id"],), records[third["id"]].supersedes)
+        hits = retrieve.search(self.a, "matrix remedy", retrieve.Request(project="alpha"))
+        self.assertEqual([third["id"]], [hit.record.id for hit in hits.hits])
+        writes.retire(self.a, self.code, self.config, third["path"])
+        self.valid(self.a)
+
     def test_supersession_never_leaves_the_project(self) -> None:
         head = self.head(self.a)
         for target in (uid(3), uid(99)):  # a core lesson; an unknown ID

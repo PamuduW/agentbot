@@ -512,7 +512,29 @@ Session adapters are explicit and opt-in:
 agentbot memory session recall --client codex --session-id SESSION --json
 agentbot memory session checkpoint --client codex --session-id SESSION --event-id EVENT --json
 agentbot memory session hook --client antigravity --event SessionStart --project-root /absolute/checkout
+agentbot memory session configure --client codex --project-root /absolute/checkout --surface hooks --json
+agentbot memory session configure --client codex --project-root /absolute/checkout --surface hooks --yes --json
+agentbot memory session configure --client codex --project-root /absolute/checkout --surface mcp --yes --json
 ```
+
+`session configure` previews by default. Choose `hooks` or `mcp`; each apply
+atomically writes one project-local file and backs up an existing file with
+`.agentbot-backup`. Preview each surface before using `--yes`. The checkout
+must be the root of a registered project. Existing unrelated hooks, servers and
+settings are preserved. Identical memory entries are unchanged; differing
+memory entries are refused for manual review. Symlinked configuration paths
+and malformed files are refused. JSON with comments needs manual review;
+Codex TOML comments are preserved. Configuration paths are machine-local: do not
+commit the generated files or their backups. Configure each machine separately.
+
+The generated `agentbot_memory` MCP process is bound to that checkout, vault
+and config home. No credential, transcript, login or trust grant is copied.
+Client settings, tool permissions and native-memory controls stay separate.
+Use `cli-config` to preview/apply verified Claude/Codex memory switches; no
+equivalent Cursor/Antigravity switch is assumed. Hook/MCP configuration does
+not prove delivery: approve the exact project integration in the client's
+normal interface, restart it and verify a harmless fact. Unused clients need
+no registration. Cursor and Antigravity native delivery remain version-specific.
 
 `recall` prepares a local bounded brief using the same consistency guard.
 It reports `model_use_verified: false`: preparing context is not evidence that
@@ -533,8 +555,9 @@ Codex `PreToolUse`, Cursor `postToolUse` and Antigravity `PreInvocation`.
 Unknown events, bad payloads and unavailable memory fail open with `{}` and a
 sanitized stderr notice. No transcript, prompt or tool-result text is stored.
 No hook grants permissions, blocks a turn, forces continuation or launches a
-model. Installing Agentbot does not register these hooks; preserve existing
-hooks and obtain native trust before testing delivery in each installed client.
+model. Installing Agentbot does not register these hooks automatically;
+`session configure` is an explicit project-level opt-in. Obtain native trust
+before testing delivery in each installed client.
 Context-loss delivery and tool readiness remain host-specific acceptance checks.
 Checkpoint cadence needs tuning before broad registration; every eligible new
 event can issue a reminder. These contracts follow the current

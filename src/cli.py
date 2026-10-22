@@ -736,7 +736,7 @@ def _handle_memory_serve(context: CommandContext) -> int:
 
 
 def _handle_memory_session(context: CommandContext) -> int:
-    from . import memory, memory_client_hooks, memory_session
+    from . import memory, memory_client_hooks, memory_session, memory_session_config
 
     args = context.args
     hook = args.session_action == "hook"
@@ -749,7 +749,12 @@ def _handle_memory_session(context: CommandContext) -> int:
             result = {"state": "unconfigured", "saved": False}
             print(json.dumps(result))
             return 2
-        if hook:
+        if args.session_action == "configure":
+            result = memory_session_config.configure(
+                root, caller_path(args.project_root), context.paths,
+                client=args.client, surface=args.surface, apply=args.confirm,
+            )
+        elif hook:
             raw = sys.stdin.buffer.read(65_537)
             if len(raw) > 65_536:
                 raise memory.MemoryVaultError("memory hook payload exceeds limit")
@@ -1963,6 +1968,12 @@ def _add_memory_session_parser(memory_sub: argparse._SubParsersAction) -> None:
     hook.add_argument("--client", choices=CLIENTS, required=True)
     hook.add_argument("--event", required=True)
     hook.add_argument("--project-root", required=True)
+    configure = actions.add_parser("configure", help="Preview one project-local hook or MCP file")
+    configure.add_argument("--client", choices=CLIENTS, required=True)
+    configure.add_argument("--project-root", required=True)
+    configure.add_argument("--surface", choices=("hooks", "mcp"), required=True)
+    configure.add_argument("--yes", action="store_true", dest="confirm")
+    configure.add_argument("--json", action="store_true", dest="memory_json")
 
 
 def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:

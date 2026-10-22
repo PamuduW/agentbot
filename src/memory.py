@@ -669,8 +669,6 @@ class _RecordCheck:
         targets = fields["supersedes"]
         if kind not in SUPERSEDING_TYPES:
             self.fail("MEMORY_SUPERSEDES", f"a {kind} record cannot supersede")
-        elif not self.destination.draft and fields["status"] != "accepted":
-            self.fail("MEMORY_SUPERSEDES", "only an accepted record may supersede")
         if not isinstance(targets, list) or not 1 <= len(targets) <= SUPERSEDES_MAX:
             self.fail("MEMORY_SUPERSEDES", f"supersedes must list 1-{SUPERSEDES_MAX} IDs")
         elif not all(isinstance(item, str) and UUID4.match(item) for item in targets):
