@@ -344,8 +344,12 @@ def _reapply(vault: Path, conflict: dict[str, Any]) -> memory_sync.Op:
         if op.tier in {"core", "proposal"}:
             # A core approval (and the proposal it removes) goes back
             # through the core path, not the project one.
-            return memory_sync.change_core(vault, changes, tier=op.tier, client="human")
-        return memory_sync.change_project(vault, op.project or "", changes, client="resolution")
+            return memory_sync.change_core(
+                vault, changes, tier=op.tier, client="human", capture=op.capture
+            )
+        return memory_sync.change_project(
+            vault, op.project or "", changes, client="resolution", capture=op.capture
+        )
     if op.kind == "put":
         return memory_sync.put_project(
             vault, op.project or "", rel, op.data() or b"", client="resolution"

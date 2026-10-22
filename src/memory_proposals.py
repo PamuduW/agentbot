@@ -138,7 +138,10 @@ def propose(
     projects: list[str] | None = None,
     tags: list[str] | None = None,
     supersedes: list[str] | None = None,
+    review_after: str | None = None,
+    valid_until: str | None = None,
     client: str = "agent",
+    capture: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     _require_v3(vault)
     if kind not in KIND_DIRS:
@@ -171,11 +174,17 @@ def propose(
     ]
     if supersedes:
         lines.append(f"supersedes: [{', '.join(supersedes)}]")
+    for key, value in (("review_after", review_after), ("valid_until", valid_until)):
+        if value is not None:
+            lines.append(f"{key}: {json.dumps(value)}")
     data = ("\n".join([*lines, "---", ""]) + (body if body.endswith("\n") else body + "\n")).encode(
         "utf-8"
     )
     _require_valid(relative, data)
-    op = memory_sync.change_core(vault, [(relative, data)], tier="proposal", client=client)
+    receipt = None if capture is None else {**capture, "id": record_id, "path": relative}
+    op = memory_sync.change_core(
+        vault, [(relative, data)], tier="proposal", client=client, capture=receipt
+    )
     waiting = len(open_items) + 1
     result: dict[str, Any] = {
         "state": "proposed",

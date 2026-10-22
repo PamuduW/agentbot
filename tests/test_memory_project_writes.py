@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
@@ -136,6 +137,23 @@ class AddAndEditTests(WritesTestCase):
         records = {r.path: r for r in memory.validate(self.a).records}
         self.assertEqual("superseded", records[LESSON].status)
         self.assertEqual((uid(6),), records[result["path"]].supersedes)
+        self.valid(self.a)
+
+    def test_repeated_corrections_preserve_history_and_return_only_current_fact(self) -> None:
+        first = writes.add(self.a, self.code, self.config, kind="lesson", title="Matrix retry one",
+                           body="matrix remedy first")
+        second = writes.add(self.a, self.code, self.config, kind="lesson", title="Matrix retry two",
+                            body="matrix remedy second", supersedes=first["id"])
+        third = writes.add(self.a, self.code, self.config, kind="lesson", title="Matrix retry three",
+                           body="matrix remedy third", supersedes=second["id"])
+        self.valid(self.a)
+        records = {r.id: r for r in memory.validate(self.a).records}
+        self.assertEqual("superseded", records[first["id"]].status)
+        self.assertEqual((first["id"],), records[second["id"]].supersedes)
+        self.assertEqual((second["id"],), records[third["id"]].supersedes)
+        hits = retrieve.search(self.a, "matrix remedy", retrieve.Request(project="alpha"))
+        self.assertEqual([third["id"]], [hit.record.id for hit in hits.hits])
+        writes.retire(self.a, self.code, self.config, third["path"])
         self.valid(self.a)
 
     def test_supersession_never_leaves_the_project(self) -> None:
@@ -279,6 +297,124 @@ class ForgetAndConcurrencyTests(WritesTestCase):
 
 
 class ProjectWriteCliTests(WritesTestCase):
+    def test_capture_io_failure_is_explicit_without_printing_private_errors(self) -> None:
+        args = (
+            "memory",
+            "capture",
+            "--event-id",
+            "5d82633f-bcc5-45b6-a0e6-086cc429aa71",
+            "--client",
+            "codex",
+            "--target",
+            "project",
+            "--kind",
+            "note",
+            "--title",
+            "Denied CLI fixture",
+            "--stdin",
+            "--json",
+        )
+        for target, extra in (
+            ("src.memory_capture.save", ()),
+            ("src.memory_capture_queue.enqueue", ("--defer",)),
+        ):
+            with (
+                self.subTest(target=target),
+                patch(target, side_effect=OSError(errno.EROFS, "private fixture error")),
+            ):
+                rc, stdout = self._cli(self.code, *args, *extra, stdin=b"Synthetic denied detail.")
+            self.assertEqual((1, "unavailable"), (rc, json.loads(stdout)["state"]))
+            self.assertNotIn("private fixture error", stdout)
+
+    def test_cli_defer_and_drain_distinguish_queued_from_saved(self) -> None:
+        head = self.head(self.a)
+        rc, stdout = self._cli(
+            self.code,
+            "memory",
+            "capture",
+            "--defer",
+            "--event-id",
+            "5d82633f-bcc5-45b6-a0e6-086cc429aa71",
+            "--client",
+            "codex",
+            "--target",
+            "project",
+            "--kind",
+            "note",
+            "--title",
+            "Deferred CLI fixture",
+            "--stdin",
+            "--json",
+            stdin=b"Deferred fixture detail.\n",
+        )
+        self.assertEqual(0, rc, stdout)
+        self.assertEqual("queued", json.loads(stdout)["state"])
+        self.assertEqual(head, self.head(self.a))
+        rc, stdout = self._cli(self.code, "memory", "capture-queue", "status", "--json")
+        self.assertEqual((0, 1), (rc, json.loads(stdout)["pending"]))
+        rc, stdout = self._cli(
+            self.code, "memory", "capture-queue", "drain", "--limit", "1", "--json"
+        )
+        self.assertEqual(
+            (0, 1, 0), (rc, json.loads(stdout)["committed"], json.loads(stdout)["pending"])
+        )
+
+    def test_cli_capture_retries_return_the_same_receipt(self) -> None:
+        args = (
+            "memory",
+            "capture",
+            "--event-id",
+            "5d82633f-bcc5-45b6-a0e6-086cc429aa71",
+            "--client",
+            "antigravity",
+            "--target",
+            "project",
+            "--kind",
+            "note",
+            "--title",
+            "CLI capture",
+            "--valid-until",
+            "2099-01-01",
+            "--stdin",
+            "--json",
+        )
+        rc, stdout = self._cli(self.code, *args, stdin=b"CLI fixture endpoint.\n")
+        self.assertEqual(0, rc, stdout)
+        first = json.loads(stdout)
+        head = self.head(self.a)
+        rc, stdout = self._cli(self.code, *args, stdin=b"CLI fixture endpoint.\n")
+        self.assertEqual(0, rc, stdout)
+        second = json.loads(stdout)
+        self.assertEqual(first["receipt"], second["receipt"])
+        self.assertTrue(second["replayed"])
+        self.assertEqual(head, self.head(self.a))
+        record = next(r for r in memory.validate(self.a).records if r.id == first["receipt"]["id"])
+        self.assertEqual("2099-01-01", record.valid_until)
+
+    def test_cli_add_preserves_capture_dates(self) -> None:
+        rc, stdout = self._cli(
+            self.code,
+            "memory",
+            "project",
+            "add",
+            "--kind",
+            "note",
+            "--title",
+            "Dated CLI note",
+            "--review-after",
+            "2098-12-01",
+            "--valid-until",
+            "2099-01-01",
+            "--stdin",
+            "--json",
+            stdin=b"Synthetic dated endpoint.\n",
+        )
+        self.assertEqual(0, rc, stdout)
+        record = next(
+            r for r in memory.validate(self.a).records if r.id == json.loads(stdout)["id"]
+        )
+        self.assertEqual(("2098-12-01", "2099-01-01"), (record.review_after, record.valid_until))
+
     def _cli(self, cwd: Path, *argv: str, stdin: bytes = b"") -> tuple[int, str]:
         env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTBOT_MEMORY")}
         env.update(

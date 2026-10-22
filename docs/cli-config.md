@@ -13,8 +13,9 @@ Codex, Cursor, and Antigravity config files if a later update stage fails.
 Agentbot owns only the keys you declare, merged key by key into each CLI's own
 config. Everything you have not declared is left exactly as it was.
 The Claude declaration includes the current model, effort, display, and
-notification preferences. Hooks, permission rules, plugins, and client state
-remain outside this declaration; Codex tables also remain outside it.
+notification preferences, plus its supported automatic-memory switch. Hooks,
+permission rules, plugins and client state remain outside this declaration.
+Codex owns only the declared keys, including `features.memories`.
 
 ## Verified paths
 
@@ -27,6 +28,12 @@ archived research:
 | Codex | `~/.codex/config.toml` | TOML |
 | Cursor CLI | `~/.cursor/cli-config.json` | JSON (comments tolerated) |
 | Antigravity CLI | `~/.gemini/antigravity-cli/settings.json` | JSON |
+
+Agentbot resolves `CODEX_HOME` and `CLAUDE_CONFIG_DIR` when set; otherwise the
+defaults above apply. The resolved homes are shared by configuration, rendering,
+MCP and skill-link consumers. Empty overrides use the defaults. A custom Codex
+home does not move Cursor, Antigravity or the shared skills directory. Overrides
+select existing client homes; they do not copy authentication or history.
 
 ## Declaring desired state
 
@@ -60,8 +67,21 @@ model_reasoning_effort = "medium"
 A TOML desired file may declare one table level. Each key in it is merged on
 its own, so the table's other keys stay; nested tables such as `[hooks.state]`
 are refused. Codex's desired state uses this to turn off Codex's own memory
-(`[features] memories = false`), so the `agentbot memory` vault is the only
-memory Codex consults (ADR-0008).
+(`[features] memories = false`). This disables Codex's native memory feature
+when it is the effective configuration; it does not delete generated memories
+or session history. Profile overrides and live client behavior require their
+own checks. [Codex memory controls](https://learn.chatgpt.com/docs/customization/memories).
+
+Claude's declaration now owns `autoMemoryEnabled: false`. Applying it disables
+Claude's automatic memory through its supported setting while preserving existing
+memories, session history, hooks and unowned settings. Higher-precedence client
+settings or environment overrides still need checking. This source change does
+not apply itself to a running client. Do not claim all four clients' native
+memories are disabled: the checked Cursor CLI and Antigravity documentation does
+not establish equivalent controls. Fresh-session delivery remains a separate
+acceptance check. The optional `agentbot memory serve` interface is documented
+in the [memory commands](../README.md); it is not automatically registered or
+trusted. [Claude auto memory](https://code.claude.com/docs/en/memory).
 
 Claude's desired state also owns `skillOverrides`, which decides how each
 skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
@@ -90,8 +110,10 @@ and web tools without asking; `request-review` asks first, as the other three
 clients do. It was per machine until the 2026-10-13 setup review found
 `always-proceed` on the home PC, and the operator chose to declare the asking
 value everywhere (declaring it grants nothing). `trustedWorkspaces` stays
-per machine too, because it lists local paths. Antigravity has no setting that
-turns off its own memory, which stays advisory (ADR-0008).
+per machine too, because it lists local paths. The checked Antigravity CLI
+settings documentation does not establish a native-memory disable switch.
+Treat that control as unverified; instruction policy alone does not enforce
+exclusive memory use. [Antigravity settings](https://www.antigravity.google/docs/settings).
 
 **Checked 2026-10-12** with `agentbot setup-review --scope cli-config`, then by
 hand. Two keys were dropped: Codex `service_tier = "default"` (no model

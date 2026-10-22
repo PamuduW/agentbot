@@ -4,6 +4,6 @@ plan_mode_reasoning_effort = "high"
 personality = "friendly"
 approvals_reviewer = "auto_review"
 
-# The agentbot memory vault is the only memory (ADR-0008, Ticket 12 run 4).
+# Disable native automatic memory; preserve existing memory and session history.
 [features]
 memories = false

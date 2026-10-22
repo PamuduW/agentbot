@@ -83,8 +83,8 @@ def default_paths(root: Path | None = None) -> AgentbotPaths:
     )
     return AgentbotPaths(
         root=product_root,
-        codex_home=home / ".codex",
-        claude_home=home / ".claude",
+        codex_home=Path(os.environ.get("CODEX_HOME") or home / ".codex").expanduser(),
+        claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser(),
         cursor_home=home / ".cursor",
         agents_home=home / ".agents",
         gemini_home=home / ".gemini",

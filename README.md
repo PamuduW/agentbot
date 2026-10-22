@@ -394,14 +394,194 @@ through its `valid_until` day. Both flags are derived; neither changes a
 record's status or file, and superseded or retired records never appear.
 `memory status` shows the due and expired counts.
 
+`memory project add` and `memory propose` accept `--review-after YYYY-MM-DD`
+and `--valid-until YYYY-MM-DD`. They store validated metadata rather than a
+date only in the note body. Invalid dates, dates before the record's creation
+date, or a review date later than expiry are refused before a commit. Core
+proposals remain drafts requiring the existing human approval.
+
+A project correction made with `--supersedes ID` inherits an omitted expiry.
+An inherited future review date is retained; an already due review stays due
+on the replacement's creation date. Supply new date flags to change those
+dates deliberately. An already expired record cannot be made permanent by
+omitting its expiry when superseding it.
+
+`memory capture` gives an extracted fact a stable delivery receipt:
+
+```bash
+agentbot memory capture --event-id EVENT_UUID --client antigravity \
+  --target project --kind note --title "Local tool workaround" --stdin --json
+```
+
+Generate the event UUID once and retain it for retries. The registered calling
+repository determines the project; there is no foreign-project override. Clients
+are `claude`, `codex`, `cursor`, and `antigravity`. Project captures support
+`decision`, `lesson`, and `note`; `--target proposal` supports the existing core
+proposal kinds and creates a global draft requiring human review. Tags, dates
+and one `--supersedes ID` are supported. This command accepts an extracted fact;
+it does not extract transcripts or call a model.
+
+Repeated delivery with the same project, client, event UUID and payload returns
+the original operation receipt without a new record. Reusing an event for a
+different payload is refused. Receipt lookup and writing share the writer lock.
+Hashes and receipt identifiers travel with the validated transaction and its
+Git commit; fact text is not copied into commit metadata. A receipt identifies
+the historical save, not whether that fact is still active or was later retired.
+
+An interrupted operation that has not committed returns `pending`, never saved;
+run `agentbot memory sync` and retry the same event. A preserved sync conflict
+returns `conflict`, or `resolved` after resolution, without recreating the event.
+These states return exit 1; a locally committed receipt returns exit 0, with sync
+reported separately. Sync failures still leave committed facts available locally.
+
+This prevents duplicate delivery within one clone and against committed history
+already synced to another clone. Disconnected machines cannot coordinate
+simultaneous claims. Conflict receipts are local state and do not follow a
+discarded operation to another clone. Do not downgrade Agentbot while captured
+operations remain pending; uncaptured operations retain their existing queue
+format. This is not a durable queue for facts that have never reached the writer,
+and client hook delivery remains a separate integration check.
+
+When the vault cannot currently accept a write, use the same capture arguments
+with `--defer`. This validates and secret-scans the extracted fact, then stores
+it in a private local delivery queue. Exit 0 with `state: queued` confirms only
+that queue write; it does not confirm accepted memory. No model runs and no
+transcript is collected. Bodies are limited to 16 KiB, with at most 64 entries
+and 2 MiB of queue data across projects.
+
+```bash
+agentbot memory capture-queue status --json
+agentbot memory capture-queue drain --limit 1 --json
+agentbot memory capture-queue discard QUEUE_ID       # preview only
+agentbot memory capture-queue discard QUEUE_ID --yes # discard this pending input
+```
+
+The queue is under Agentbot's config home in `memory-capture/`, with directory
+mode 700 and file mode 600. It contains fact text, stays on this machine and is
+not included in the vault's Git backup or sync. Status shows counts and opaque
+event IDs, attempts and reasons without fact text; `other_pending` counts items
+bound elsewhere. Run commands from the original registered checkout. Nested
+directories resolve to that checkout's root. A changed project identity cannot
+redirect queued facts to another project.
+
+Drain defaults to one entry and accepts limits from 1 to 8. It uses the normal
+validated writer, retaining failures as pending. The existing capture receipt
+handles a crash after commit but before dequeue without duplicating the record.
+Drain exits 1 if this checkout still has pending entries. Fix the write or vault
+problem and retry; for a permanently invalid or expired input, preview its
+discard before confirming. Discard never changes accepted vault records. Unsafe
+or malformed queue files are refused and preserved for recovery. Facts never
+extracted and submitted cannot be recovered by this queue.
+
+`agentbot memory serve --project-root /absolute/path/to/repository --client CLIENT`
+runs a local stdio MCP server using Agentbot's existing environment. Configure
+that exact command in the client's trusted workspace connection. The path must
+resolve to a registered checkout. Startup binds its project UUID, vault and
+client; tools cannot override them. The validated identity reaches the final
+writer, so changing the checkout's origin cannot redirect a capture elsewhere.
+This interface is opt-in; installing Agentbot does not register or approve it.
+
+It exposes `memory_brief`, `memory_search`, `memory_show`, `memory_capture`,
+`memory_queue_status` and `memory_queue_drain`. Reads use the consistency guard
+and normal retrieval scope and budgets. They read the local vault without
+fetching; freshness metadata explicitly reports that limitation. Capture takes
+an extracted fact and a stable event UUID. It checks an existing committed
+receipt first, otherwise queues the fact privately and attempts that exact event.
+Only a committed receipt returns `saved: true`; `state: queued, saved: false`
+means pending delivery. A saved proposal is a durable draft, not accepted core
+memory. Capture and drain use the existing best-effort sync after local commits.
+
+Unknown tools, extra fields, invalid types and oversized inputs are rejected.
+Operational refusals and failed drain attempts set the MCP error flag without
+printing private exception text. Retrieved text carries its data-only notice.
+There are no tools for arbitrary files, commands, core approval, permission
+changes or discarding pending inputs. No listening port or model service is
+created. These choices follow the [MCP tool contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+and [stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+
+The client must actually launch and trust the process with the required access.
+Its shell sandbox and MCP process can have different permissions. A configured
+connection does not prove successful tool delivery or model use. In the current
+restricted test harness, even an empty SDK server's stdio handshake times out;
+the same probe and synthetic save/restart/recall tests pass outside that sandbox.
+Keep per-host acceptance separate from the storage and protocol checks.
+
+Session adapters are explicit and opt-in:
+
+```bash
+agentbot memory session recall --client codex --session-id SESSION --json
+agentbot memory session checkpoint --client codex --session-id SESSION --event-id EVENT --json
+agentbot memory session hook --client antigravity --event SessionStart --project-root /absolute/checkout
+agentbot memory session configure --client codex --project-root /absolute/checkout --surface hooks --json
+agentbot memory session configure --client codex --project-root /absolute/checkout --surface hooks --yes --json
+agentbot memory session configure --client codex --project-root /absolute/checkout --surface mcp --yes --json
+```
+
+`session configure` previews by default. Choose `hooks` or `mcp`; each apply
+atomically writes one project-local file and backs up an existing file with
+`.agentbot-backup`. Preview each surface before using `--yes`. The checkout
+must be the root of a registered project. Existing unrelated hooks, servers and
+settings are preserved. Identical memory entries are unchanged; differing
+memory entries are refused for manual review. Symlinked configuration paths
+and malformed files are refused. JSON with comments needs manual review;
+Codex TOML comments are preserved. Configuration paths are machine-local: do not
+commit the generated files or their backups. Configure each machine separately.
+
+The generated `agentbot_memory` MCP process is bound to that checkout, vault
+and config home. No credential, transcript, login or trust grant is copied.
+Client settings, tool permissions and native-memory controls stay separate.
+Use `cli-config` to preview/apply verified Claude/Codex memory switches; no
+equivalent Cursor/Antigravity switch is assumed. Hook/MCP configuration does
+not prove delivery: approve the exact project integration in the client's
+normal interface, restart it and verify a harmless fact. Unused clients need
+no registration. Cursor and Antigravity native delivery remain version-specific.
+
+`recall` prepares a local bounded brief using the same consistency guard.
+It reports `model_use_verified: false`: preparing context is not evidence that
+an agent received or used it. `checkpoint` prepares a short capture reminder;
+it always says `saved: false`. Facts must still go through validated capture.
+Receipt logging is private and best-effort; logging failure does not invalidate
+successful recall. Receipts contain hashed identities, client, event kind and
+time, never memory bodies, raw session identifiers or transcripts. State lives
+in `memory-sessions/`, directory mode `0700`, file mode `0600`. The latest 256
+receipts suppress duplicate checkpoint reminders; older events can be reminded
+again. Recall is never suppressed, including after context loss.
+
+`session hook` consumes at most 64 KiB of JSON stdin, validates its single
+workspace against the explicitly bound checkout and emits only the host's
+context envelope. It supports Claude/Codex `SessionStart`, Cursor `sessionStart`
+and Antigravity `SessionStart`. Checkpoint envelopes use Claude `PostToolUse`,
+Codex `PreToolUse`, Cursor `postToolUse` and Antigravity `PreInvocation`.
+Unknown events, bad payloads and unavailable memory fail open with `{}` and a
+sanitized stderr notice. No transcript, prompt or tool-result text is stored.
+No hook grants permissions, blocks a turn, forces continuation or launches a
+model. Installing Agentbot does not register these hooks automatically;
+`session configure` is an explicit project-level opt-in. Obtain native trust
+before testing delivery in each installed client.
+Context-loss delivery and tool readiness remain host-specific acceptance checks.
+Checkpoint cadence needs tuning before broad registration; every eligible new
+event can issue a reminder. These contracts follow the current
+[Claude](https://code.claude.com/docs/en/hooks),
+[Codex](https://learn.chatgpt.com/docs/hooks),
+[Cursor](https://cursor.com/docs/hooks) and
+[Antigravity](https://www.antigravity.google/docs/hooks) references.
+
+Doctor reads sync state without creating its directory and uses a consistent
+vault snapshot. Incomplete snapshots need a retry, not a broken-vault claim.
+Private capture input pending for this vault produces a count-only warning;
+it is separate from committed writes waiting for remote sync. Queue corruption
+is reported without exposing its contents or deleting the pending input.
+
 `agentbot memory search QUERY`, `memory show PATH`, and `memory brief` read
 validated records straight from the files; there is no index to go stale.
 A record under a project's `notes/` keeps the schema type `project` in its
 file but reads as kind `note` in their output, and `--type note` selects it.
 Only records with no validation or scanner finding are eligible, and proposals
-never are. Superseded, retired, and expired records, and records past each
-pool's hot limit (64 per project, 32 global, 48 shared, newest first), are
-left out unless `--history` asks for them, labelled. Scope is never guessed:
+never are. Superseded, retired, and expired records are left out unless
+`--history` asks for them, labelled. A query searches all eligible records
+before ranking and bounding its output, so older accepted facts remain
+searchable. The brief and header-only index retain each pool's hot limit
+(64 per project, 32 global, 48 shared, newest first). Scope is never guessed:
 without `--project SLUG` only global and shared records are offered, and other
 projects need `--cross-project`. Search reserves slots before merging (the
 best global, shared, and target-project result, then one per other project),
@@ -409,7 +589,7 @@ caps the target project at 4 and each other project at 1, skips near-duplicate
 titles, and returns 8 results by default with provenance and a bounded
 excerpt. Without a query, `search` is the index: record headers (title, type,
 tags, date, path) with no excerpt, newest first, 30 by default and at most
-100, within the same scope. It lists every record in that scope, without the
+100, within the same scope. It lists eligible headers from the recent pools, without the
 search's near-duplicate skip or per-project quota, and reports any past the
 limit as `over-limit`, so an agent can see what exists before reading anything. A
 bad request (an overlong query, a path outside scope) is refused as `refused`,
@@ -417,6 +597,21 @@ never reported as a broken vault. A record over about 400 tokens is still
 written, with advice to split it into one record per idea. `brief` prints a disposable Markdown brief of 800 tokens by default
 and at most 1,200 (four characters per token), with the project slice capped
 at 65%.
+
+Optional sync failures do not prevent `search`, `show`, or `brief` from reading
+a consistent local view. Their JSON output includes `refresh` with `state`
+(`current`, `skipped`, or `degraded`), a content-free `reason`, and `local_only`.
+`current` means this invocation completed synchronization; `skipped` does not
+claim that the local data is fresh. Human output reports degraded refresh on
+stderr. Explicit sync and all write failures keep their existing behavior.
+
+Recall opens an existing writer lock read-only and checks file identities
+before publishing a result. It creates no sync state and performs no journal
+recovery. An active writer, an interrupted journal, an uncommitted operation,
+unsafe state or repeated concurrent edits returns `state: unavailable`, with
+no memory body, rather than presenting a mixed snapshot as valid. A normal
+writer/sync operation must perform any required recovery. This guard also covers session recall and Doctor vault inspection. It does not
+establish universal availability or automatic model-facing capture.
 
 `agentbot memory backup --destination PATH` previews, and with `--yes` writes,
 a private (`0700`) backup: a bare mirror of the vault's committed refs plus a

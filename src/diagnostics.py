@@ -253,16 +253,25 @@ class Diagnostics:
         Silent when no vault is configured (memory is optional) or when
         nothing needs attention, so a healthy vault adds nothing to Doctor.
         """
-        from . import memory, memory_proposals, memory_sync
+        from . import memory, memory_read
 
         try:
             root, _ = memory.find_vault(self.paths.root, config_home=self.paths.config_home)
             if root is None:
                 return []
-            memory.read_marker(root)
-            report = memory.validate(root)
+            return memory_read.consistent(root, lambda: self._memory_vault_issues(root))
+        except memory_read.MemoryReadUnavailable:
+            return [DoctorIssue("warning", "memory", "memory snapshot unavailable; retry after the writer finishes")]
         except memory.MemoryVaultError as error:
             return [DoctorIssue("error", "memory", f"memory vault: {error}")]
+        except (OSError, ValueError):
+            return [DoctorIssue("warning", "memory", "memory inspection unavailable; check vault and state access")]
+
+    def _memory_vault_issues(self, root: Path) -> list[DoctorIssue]:
+        from . import memory, memory_capture_queue, memory_proposals, memory_sync
+
+        memory.read_marker(root)
+        report = memory.validate(root)
         issues: list[DoctorIssue] = []
         errors = [item for item in report.findings if item.severity == "error"]
         if errors:
@@ -311,6 +320,18 @@ class Diagnostics:
                     "agentbot memory review",
                 )
             )
+        try:
+            captures = memory_capture_queue.summary(root, self.paths.config_home)["pending"]
+            if captures:
+                issues.append(DoctorIssue(
+                    "warning", "memory", f"{captures} private capture(s) pending delivery; "
+                    "run agentbot memory capture-queue status in the owning checkout",
+                ))
+        except (OSError, ValueError, memory.MemoryVaultError):
+            issues.append(DoctorIssue(
+                "warning", "memory", "private capture queue is unavailable; preserve it "
+                "and inspect agentbot memory capture-queue status",
+            ))
         _, due, _ = memory.due_queue(root)
         if due:
             issues.append(

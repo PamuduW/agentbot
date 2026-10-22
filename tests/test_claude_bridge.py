@@ -1,6 +1,8 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 class ClaudeBridgeTests(unittest.TestCase):
@@ -18,6 +20,19 @@ class ClaudeBridgeTests(unittest.TestCase):
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
         return skill_dir
+
+    def test_default_bridge_destination_honors_claude_config_dir(self) -> None:
+        from src.claude_bridge import bridge_claude_skills
+
+        source = self._write_skill("alpha")
+        custom = self.root / "custom-claude"
+        with (
+            patch("src.claude_bridge.Path.home", return_value=self.root),
+            patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(custom)}),
+        ):
+            result = bridge_claude_skills(self.agents_home)
+        self.assertEqual(1, result.linked)
+        self.assertEqual(source.resolve(), (custom / "skills/alpha").resolve())
 
     def test_bridge_creates_symlinks_for_each_skill(self) -> None:
         from src.claude_bridge import bridge_claude_skills

@@ -133,7 +133,10 @@ def main() -> int:
 
 
 def _requires_raw_stdout(argv: tuple[str, ...]) -> bool:
-    return any(argv[index : index + 2] == ("mcp", "serve") for index in range(len(argv) - 1))
+    return any(
+        argv[index : index + 2] in {("mcp", "serve"), ("memory", "serve")}
+        for index in range(len(argv) - 1)
+    )
 
 
 def _run() -> int:
@@ -427,8 +430,10 @@ def _handle_memory_due(context: CommandContext) -> int:
     return 0
 
 
-def _handle_memory_retrieve(context: CommandContext) -> int:
-    from . import memory
+def _handle_memory_retrieve(
+    context: CommandContext, *, refresh: dict[str, Any] | None = None
+) -> int:
+    from . import memory, memory_read
     from . import memory_retrieve as retrieve
 
     args = context.args
@@ -438,47 +443,64 @@ def _handle_memory_retrieve(context: CommandContext) -> int:
         return _print_memory_state(
             memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=as_json
         )
-    project, source = args.project, "explicit" if args.project else None
-    if project is None and not args.cross_project and not getattr(args, "no_auto_project", False):
-        from . import memory_projects
+    scope = {"project": args.project, "project_source": "explicit" if args.project else None}
 
-        # cwd -> Git top level -> origin -> registry. Unresolved, colliding, or
-        # outside a repository: global and shared only, never a guess.
-        resolution = memory_projects.resolve(root, caller_path("."), context.paths.config_home)
-        if resolution.state == "resolved" and resolution.entry is not None:
-            project, source = resolution.entry["folder"], "auto"
-    scope = {"project": project, "project_source": source}
-    request = retrieve.Request(
-        project=project,
-        cross_project=args.cross_project,
-        history=bool(getattr(args, "history", False)),
-        kind=getattr(args, "memory_type", None),
-        tag=getattr(args, "tag", None),
-    )
-    try:
+    def read() -> tuple[dict[str, Any], Any]:
+        project, source = args.project, "explicit" if args.project else None
+        if (
+            project is None
+            and not args.cross_project
+            and not getattr(args, "no_auto_project", False)
+        ):
+            from . import memory_projects
+
+            resolution = memory_projects.resolve(root, caller_path("."), context.paths.config_home)
+            if resolution.state == "resolved" and resolution.entry is not None:
+                project, source = resolution.entry["folder"], "auto"
+        scope.update(project=project, project_source=source)
+        request = retrieve.Request(
+            project=project,
+            cross_project=args.cross_project,
+            history=bool(getattr(args, "history", False)),
+            kind=getattr(args, "memory_type", None),
+            tag=getattr(args, "tag", None),
+        )
+        result: Any
         if args.memory_command == "search":
             default = retrieve.SEARCH_DEFAULT if args.query.strip() else retrieve.INDEX_DEFAULT
             result = retrieve.search(root, args.query, request, limit=args.limit or default)
-            if as_json:
-                print(json.dumps({**retrieve.search_json(result), **scope}, indent=2))
-            else:
-                print_memory_search(result)
-        elif args.memory_command == "show":
+            return retrieve.search_json(result), result
+        if args.memory_command == "show":
             hit, body = retrieve.show(root, args.record_path, request, max_bytes=args.max_bytes)
-            if as_json:
-                print(json.dumps({**retrieve.show_json(hit, body), **scope}, indent=2))
-            else:
-                print_memory_record(hit, body)
+            return retrieve.show_json(hit, body), (hit, body)
+        result = retrieve.brief(root, request, tokens=args.tokens)
+        return retrieve.brief_json(result), result
+
+    try:
+        payload, result = memory_read.consistent(root, read)
+        if as_json:
+            print(json.dumps({**payload, **scope, "refresh": refresh}, indent=2))
         else:
-            summary = retrieve.brief(root, request, tokens=args.tokens)
-            if as_json:
-                print(json.dumps({**retrieve.brief_json(summary), **scope}, indent=2))
+            if refresh and refresh["state"] == "degraded":
+                print(
+                    "  Memory refresh unavailable; returning a consistent local view.",
+                    file=sys.stderr,
+                )
+            if args.memory_command == "search":
+                print_memory_search(result)
+            elif args.memory_command == "show":
+                print_memory_record(*result)
             else:
-                print(summary.text, end="")
+                print(result.text, end="")
     except memory.MemoryRequestError as error:
-        # The vault is fine; this request is not. Never report it as broken.
         if as_json:
             print(json.dumps({"state": "refused", "problem": str(error), **scope}, indent=2))
+        else:
+            print(f"  {error}", file=sys.stderr)
+        return 1
+    except memory_read.MemoryReadUnavailable as error:
+        if as_json:
+            print(json.dumps({"state": "unavailable", "problem": str(error), **scope}, indent=2))
         else:
             print(f"  {error}", file=sys.stderr)
         return 1
@@ -640,6 +662,8 @@ def _handle_memory_project(context: CommandContext) -> int:
             body=body(),
             tags=args.tag or [],
             supersedes=args.supersedes,
+            review_after=args.review_after,
+            valid_until=args.valid_until,
         )
     elif action == "edit":
         text = body() if (args.stdin or args.from_file) else None
@@ -684,6 +708,147 @@ def _handle_memory_project(context: CommandContext) -> int:
     return 0
 
 
+def _handle_memory_serve(context: CommandContext) -> int:
+    from . import memory
+
+    try:
+        from . import memory_mcp
+
+        root, _ = memory.find_vault(context.paths.root)
+        if root is None:
+            raise memory.MemoryVaultError("no configured vault")
+        facade = memory_mcp.MemoryMcp(
+            root,
+            caller_path(context.args.project_root),
+            context.paths.config_home,
+            client=context.args.client,
+        )
+    except (ImportError, OSError, ValueError, memory.MemoryVaultError):
+        print(
+            "  Memory server unavailable; check the repository environment, vault and project registration.",
+            file=sys.stderr,
+        )
+        return 1
+    import asyncio
+
+    asyncio.run(memory_mcp.run_stdio(facade))
+    return 0
+
+
+def _handle_memory_session(context: CommandContext) -> int:
+    from . import memory, memory_client_hooks, memory_session, memory_session_config
+
+    args = context.args
+    hook = args.session_action == "hook"
+    try:
+        root, _ = memory.find_vault(context.paths.root)
+        if root is None:
+            if hook:
+                print(json.dumps({}))
+                return 0
+            result = {"state": "unconfigured", "saved": False}
+            print(json.dumps(result))
+            return 2
+        if args.session_action == "configure":
+            result = memory_session_config.configure(
+                root, caller_path(args.project_root), context.paths,
+                client=args.client, surface=args.surface, apply=args.confirm,
+            )
+        elif hook:
+            raw = sys.stdin.buffer.read(65_537)
+            if len(raw) > 65_536:
+                raise memory.MemoryVaultError("memory hook payload exceeds limit")
+            result = memory_client_hooks.adapt(
+                root, caller_path(args.project_root), context.paths.config_home,
+                client=args.client, event=args.event, payload=json.loads(raw),
+            )
+        else:
+            operation = memory_session.recall if args.session_action == "recall" else memory_session.checkpoint
+            kwargs = {"client": args.client, "session_id": args.session_id}
+            if args.event_id is not None:
+                kwargs["event_id"] = args.event_id
+            result = operation(root, caller_path("."), context.paths.config_home, **kwargs)
+    except (OSError, ValueError, TypeError, RecursionError, memory.MemoryVaultError):
+        if hook:
+            print(json.dumps({}))
+            print("  Agentbot memory hook unavailable; use manual recall or checkpoint.", file=sys.stderr)
+            return 0
+        result = {"state": "unavailable", "saved": False,
+                  "detail": "memory session unavailable; check vault, project and private state"}
+        print(json.dumps(result))
+        return 1
+    if hook or args.memory_json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print_memory_result(result, title="session " + args.session_action)
+    return 0
+
+
+def _handle_memory_capture(context: CommandContext) -> int:
+    from . import memory, memory_autosync, memory_capture, memory_capture_queue, memory_proposals
+
+    args = context.args
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=args.memory_json
+        )
+    source = caller_path(args.from_file) if args.from_file else None
+    request = {
+        "event_id": args.event_id,
+        "client": args.client,
+        "target": args.target,
+        "kind": args.kind,
+        "title": args.title,
+        "body": memory_proposals.read_body(source, sys.stdin.buffer),
+        "tags": args.tag,
+        "supersedes": args.supersedes,
+        "review_after": args.review_after,
+        "valid_until": args.valid_until,
+    }
+    if args.defer:
+        result = memory_capture_queue.enqueue(
+            root, caller_path("."), context.paths.config_home, request
+        )
+    else:
+        result = memory_capture.save(root, caller_path("."), context.paths.config_home, **request)
+    if result["state"] == "committed-locally":
+        result["sync"] = memory_autosync.after_write(root, context.paths.config_home)
+    if args.memory_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print_memory_result(result, title="capture")
+    return 0 if result["state"] in {"committed-locally", "queued"} else 1
+
+
+def _handle_memory_capture_queue(context: CommandContext) -> int:
+    from . import memory, memory_autosync, memory_capture_queue
+
+    args = context.args
+    root, looked = memory.find_vault(context.paths.root)
+    if root is None:
+        return _print_memory_state(
+            memory.VaultStatus(state="unconfigured", looked_in=looked), as_json=args.memory_json
+        )
+    if args.queue_action == "status":
+        result = memory_capture_queue.status(root, caller_path("."), context.paths.config_home)
+    elif args.queue_action == "discard":
+        result = memory_capture_queue.discard(
+            root, caller_path("."), context.paths.config_home, args.queue_id, confirm=args.confirm
+        )
+    else:
+        result = memory_capture_queue.drain(
+            root, caller_path("."), context.paths.config_home, limit=args.limit
+        )
+        if result["committed"]:
+            result["sync"] = memory_autosync.after_write(root, context.paths.config_home)
+    if args.memory_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print_memory_result(result, title="capture queue")
+    return 1 if args.queue_action == "drain" and result["pending"] else 0
+
+
 def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
     """Tracked core proposals. Approve and reject are the user's."""
     from . import memory, memory_autosync
@@ -706,6 +871,8 @@ def _handle_memory_proposals(context: CommandContext, root: Path) -> int:
             projects=list(args.project or []),
             tags=list(args.tag or []),
             supersedes=list(args.supersedes or []) or None,
+            review_after=args.review_after,
+            valid_until=args.valid_until,
         )
     elif command == "review":
         items = proposals.queue(root)
@@ -819,18 +986,32 @@ def _walk_proposals(context: CommandContext, root: Path, items: list[dict[str, A
 READ_COMMANDS = frozenset({"status", "search", "show", "brief", "due", "project"})
 
 
-def _refresh_before_read(context: CommandContext) -> None:
-    """Fetch the shared vault first, at most once per interval; never block the read."""
+def _refresh_before_read(context: CommandContext) -> dict[str, Any]:
+    """Best-effort sync, with content-free metadata for the subsequent local read."""
     from . import memory, memory_autosync
 
+    skipped = {"state": "skipped", "reason": "not-due-or-disabled", "local_only": True}
     if context.args.memory_command == "project" and getattr(context.args, "project_action", None):
-        return
+        return skipped
     try:
         root, _ = memory.find_vault(context.paths.root)
-        if root is not None:
-            memory_autosync.before_read(root, context.paths.config_home)
+        outcome = memory_autosync.before_read(root, context.paths.config_home) if root else None
+    except OSError as error:
+        return {"state": "degraded", "reason": f"refresh-io-{error.errno}", "local_only": True}
     except memory.MemoryVaultError:
-        return
+        return {"state": "degraded", "reason": "refresh-unavailable", "local_only": True}
+    if outcome is None:
+        return skipped
+    state = outcome.get("state")
+    if state == "synced":
+        return {"state": "current", "reason": "synced", "local_only": False}
+    if state in {"no-remote", "manual", "nested"}:
+        return {"state": "skipped", "reason": state, "local_only": True}
+    return {
+        "state": "degraded",
+        "reason": state if state in {"offline", "paused", "error"} else "refresh-unavailable",
+        "local_only": True,
+    }
 
 
 def _handle_memory_sync(context: CommandContext) -> int:
@@ -914,6 +1095,18 @@ def _handle_memory(context: CommandContext) -> int:
     as_json = bool(getattr(context.args, "memory_json", False))
     try:
         return _dispatch_memory(context)
+    except OSError as error:
+        if context.args.memory_command not in {"capture", "capture-queue"}:
+            raise
+        result = {
+            "state": "unavailable",
+            "detail": f"capture storage unavailable (io-{error.errno}); retry the same event",
+        }
+        if as_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_memory_result(result, title=context.args.memory_command)
+        return 1
     except memory.MemoryVaultError as error:
         if _vault_usable(context):
             # A sound vault refused this one request (not a registered project,
@@ -949,8 +1142,15 @@ def _vault_usable(context: CommandContext) -> bool:
 def _dispatch_memory(context: CommandContext) -> int:
     from . import memory
 
-    if context.args.memory_command == "setup":
-        return _handle_memory_setup(context)
+    handlers = {
+        "setup": _handle_memory_setup,
+        "session": _handle_memory_session,
+        "capture": _handle_memory_capture,
+        "capture-queue": _handle_memory_capture_queue,
+        "serve": _handle_memory_serve,
+    }
+    if handler := handlers.get(context.args.memory_command):
+        return handler(context)
     if context.args.memory_command in {"sync", "conflict"}:
         return _handle_memory_sync(context)
     if context.args.memory_command in {"propose", "review", "approve", "reject"}:
@@ -961,8 +1161,9 @@ def _dispatch_memory(context: CommandContext) -> int:
                 as_json=bool(getattr(context.args, "memory_json", False)),
             )
         return _handle_memory_proposals(context, root)
+    refresh = None
     if context.args.memory_command in READ_COMMANDS:
-        _refresh_before_read(context)
+        refresh = _refresh_before_read(context)
     if context.args.memory_command == "project":
         return _handle_memory_project(context)
     if context.args.memory_command == "hook":
@@ -970,7 +1171,7 @@ def _dispatch_memory(context: CommandContext) -> int:
     if context.args.memory_command == "due":
         return _handle_memory_due(context)
     if context.args.memory_command in {"search", "show", "brief"}:
-        return _handle_memory_retrieve(context)
+        return _handle_memory_retrieve(context, refresh=refresh)
     if context.args.memory_command in {"backup", "restore"}:
         return _handle_memory_backup(context)
     as_json = bool(getattr(context.args, "memory_json", False))
@@ -1164,15 +1365,21 @@ def _handle_atlassian_token(context: CommandContext) -> int:
             return 0
         if command == "remove":
             removed = store.remove(config_home)
-            print("  Saved Atlassian settings removed." if removed else "  No saved Atlassian settings.")
+            print(
+                "  Saved Atlassian settings removed."
+                if removed
+                else "  No saved Atlassian settings."
+            )
             return 0
         settings = store.read(config_home)
         if not settings:
             print("  not configured")
             return 1
         if command == "status":
-            print(f"  Jira {store.fingerprint(settings['JIRA_MCP_READ_TOKEN'])}; "
-                  f"Confluence {store.fingerprint(settings['CONFLUENCE_MCP_READ_TOKEN'])}")
+            print(
+                f"  Jira {store.fingerprint(settings['JIRA_MCP_READ_TOKEN'])}; "
+                f"Confluence {store.fingerprint(settings['CONFLUENCE_MCP_READ_TOKEN'])}"
+            )
             return 0
         client = AtlassianReadClient(*(settings[key] for key in store.KEYS))
         client.jira_projects(limit=1)
@@ -1656,6 +1863,12 @@ def _add_memory_project_parser(memory_sub: argparse._SubParsersAction) -> None:
     add.add_argument("--title", required=True)
     add.add_argument("--tag", action="append", metavar="TAG")
     add.add_argument("--supersedes", metavar="ID", help="A record in this project it replaces")
+    add.add_argument(
+        "--review-after", metavar="YYYY-MM-DD", help="Date this record becomes due for review"
+    )
+    add.add_argument(
+        "--valid-until", metavar="YYYY-MM-DD", help="Last UTC date this fact remains valid"
+    )
     with_body(add, required=True)
     edit = actions.add_parser("edit", help="Change a record's body, title, or tags")
     edit.add_argument("path", metavar="PATH")
@@ -1701,11 +1914,75 @@ def _add_memory_project_parser(memory_sub: argparse._SubParsersAction) -> None:
         parser.add_argument("--json", action="store_true", dest="memory_json")
 
 
+def _add_memory_capture_parser(memory_sub: argparse._SubParsersAction) -> None:
+    from .memory_capture import CLIENTS
+
+    serve = memory_sub.add_parser("serve", help="Run local memory MCP tools bound to one checkout")
+    serve.add_argument("--project-root", required=True, metavar="PATH")
+    serve.add_argument("--client", required=True, choices=CLIENTS)
+    capture = memory_sub.add_parser("capture", help="Save an extracted fact with a retry receipt")
+    capture.add_argument("--event-id", required=True, metavar="UUID")
+    capture.add_argument("--client", required=True, choices=CLIENTS)
+    capture.add_argument("--target", required=True, choices=("project", "proposal"))
+    capture.add_argument(
+        "--kind", required=True, choices=("decision", "lesson", "note", "preference", "profile")
+    )
+    capture.add_argument("--title", required=True)
+    capture.add_argument(
+        "--defer", action="store_true", help="Queue privately without claiming a vault save"
+    )
+    capture.add_argument("--supersedes", metavar="ID")
+    capture.add_argument("--tag", action="append", metavar="TAG")
+    capture.add_argument("--review-after", metavar="YYYY-MM-DD")
+    capture.add_argument("--valid-until", metavar="YYYY-MM-DD")
+    source = capture.add_mutually_exclusive_group(required=True)
+    source.add_argument("--from-file", dest="from_file", metavar="PATH")
+    source.add_argument("--stdin", action="store_true")
+    capture.add_argument("--json", action="store_true", dest="memory_json")
+    queue = memory_sub.add_parser("capture-queue", help="Inspect or retry private queued captures")
+    actions = queue.add_subparsers(dest="queue_action", required=True)
+    status = actions.add_parser("status", help="Show pending capture counts without fact text")
+    drain = actions.add_parser("drain", help="Retry a bounded batch for this checkout")
+    drain.add_argument("--limit", type=int, default=1, metavar="N")
+    discard = actions.add_parser(
+        "discard", help="Preview removal of one pending capture; --yes confirms"
+    )
+    discard.add_argument("queue_id", metavar="QUEUE_ID")
+    discard.add_argument("--yes", action="store_true", dest="confirm")
+    for parser in (status, drain, discard):
+        parser.add_argument("--json", action="store_true", dest="memory_json")
+
+
+def _add_memory_session_parser(memory_sub: argparse._SubParsersAction) -> None:
+    from .memory_capture import CLIENTS
+
+    session = memory_sub.add_parser("session", help="Prepare local recall or capture reminders")
+    actions = session.add_subparsers(dest="session_action", required=True)
+    for name in ("recall", "checkpoint"):
+        parser = actions.add_parser(name)
+        parser.add_argument("--client", choices=CLIENTS, required=True)
+        parser.add_argument("--session-id", required=True)
+        parser.add_argument("--event-id", required=name == "checkpoint")
+        parser.add_argument("--json", action="store_true", dest="memory_json")
+    hook = actions.add_parser("hook", help="Consume one native hook payload; no automatic registration")
+    hook.add_argument("--client", choices=CLIENTS, required=True)
+    hook.add_argument("--event", required=True)
+    hook.add_argument("--project-root", required=True)
+    configure = actions.add_parser("configure", help="Preview one project-local hook or MCP file")
+    configure.add_argument("--client", choices=CLIENTS, required=True)
+    configure.add_argument("--project-root", required=True)
+    configure.add_argument("--surface", choices=("hooks", "mcp"), required=True)
+    configure.add_argument("--yes", action="store_true", dest="confirm")
+    configure.add_argument("--json", action="store_true", dest="memory_json")
+
+
 def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     memory = subparsers.add_parser("memory", help="Inspect and validate the private memory vault")
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     _add_memory_setup_parser(memory_sub)
     _add_memory_project_parser(memory_sub)
+    _add_memory_capture_parser(memory_sub)
+    _add_memory_session_parser(memory_sub)
     sync = memory_sub.add_parser("sync", help="Sync the vault now, or show or set sync settings")
     sync.add_argument("--mode", choices=("auto", "manual"))
     sync.add_argument(
@@ -1759,6 +2036,12 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     propose.add_argument("--scope", required=True, choices=("global", "shared", "project"))
     propose.add_argument("--project", action="append", metavar="SLUG")
     propose.add_argument("--tag", action="append", metavar="TAG")
+    propose.add_argument(
+        "--review-after", metavar="YYYY-MM-DD", help="Date this proposal becomes due for review"
+    )
+    propose.add_argument(
+        "--valid-until", metavar="YYYY-MM-DD", help="Last UTC date this fact remains valid"
+    )
     source = propose.add_mutually_exclusive_group(required=True)
     source.add_argument("--from-file", dest="from_file", metavar="PATH")
     source.add_argument("--stdin", action="store_true", help="Read the body from standard input")
