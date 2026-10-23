@@ -146,13 +146,23 @@ in your own terminal (inside WSL when using Windows).
    agentbot memory sync --status
    ```
 
-5. From each project repository, register it for project memory:
+5. From each project repository, configure its instructions and memory integration:
 
    ```bash
    cd ~/path/to/your-project
    agentbot boot
-   agentbot memory project
    ```
+
+   Boot discovers supported agent CLIs on the current `PATH`, lets you choose
+   clients, previews the memory hooks and MCP files, and asks before applying
+   them. Approve each client's normal workspace/tool trust prompt when you first
+   use it. Agentbot does not approve trust or sign in for you.
+
+   Run `agentbot boot` again in each new workspace. Use `dotfiles fu` for later
+   updates: its Agentbot update refreshes the integrations already enrolled in
+   registered workspaces. It does not add newly installed clients without your
+   selection; rerun boot to add one. No separate memory configuration command
+   is needed for this normal workflow.
 
    Agents can then save project decisions, lessons, and notes. Personal
    preferences and profile changes go through proposals that you approve
@@ -506,7 +516,42 @@ restricted test harness, even an empty SDK server's stdio handshake times out;
 the same probe and synthetic save/restart/recall tests pass outside that sandbox.
 Keep per-host acceptance separate from the storage and protocol checks.
 
-Session adapters are explicit and opt-in:
+`agentbot boot` is the normal project setup command. With a configured vault,
+interactive boot registers the repository's scope, renders its instructions and
+offers selected clients' hooks and MCP integration in the same command. Client
+availability comes from current executables, not a laptop name or a home/work
+profile; the Cursor editor alone is not detected as Cursor Agent. Each checkout
+uses the existing shared vault, not a new vault inside the repository.
+
+Boot previews the selected files before enrollment and saves their managed
+entries in the private `workspaces.json` registry. Repeated boot preserves the
+selection and unrelated settings. Saved clients remain managed when adding new
+ones; boot does not delete integrations or disable native trust. Generated files
+and backups are excluded through local Git `info/exclude`. A tracked config or
+an edited managed entry is a conflict requiring review; it is never silently
+rewritten or hidden with an ineffective ignore rule. All surfaces are prepared
+before writing; failed integration writes restore their configs, backups,
+exclusions and registry. Instructions/project registration may already have
+succeeded when an integration fails; boot reports a nonzero result in that case.
+
+For unattended setup, select clients explicitly; dry-run writes nothing:
+
+```bash
+agentbot boot --dry-run
+agentbot boot --memory-clients claude,codex --yes
+```
+
+Use `--no-memory` to skip project registration and integration. No configured
+vault is an optional skip, not permission to create one. Boot never launches a
+client or grants native trust. `dotfiles fu` reaches the existing Agentbot
+update/resync path, which refreshes only previously enrolled integrations and
+includes their files, backups and registry in its update rollback snapshot.
+Existing workspaces created before enrollment need boot once; updates do not
+automatically enroll every detected client. Saved client configuration remains
+maintained even if its executable is temporarily unavailable.
+
+The following session commands remain available for diagnostics or individual
+surface setup; they are not required by the normal boot/update workflow:
 
 ```bash
 agentbot memory session recall --client codex --session-id SESSION --json
@@ -552,11 +597,22 @@ workspace against the explicitly bound checkout and emits only the host's
 context envelope. It supports Claude/Codex `SessionStart`, Cursor `sessionStart`
 and Antigravity `SessionStart`. Checkpoint envelopes use Claude `PostToolUse`,
 Codex `PreToolUse`, Cursor `postToolUse` and Antigravity `PreInvocation`.
+Antigravity's per-invocation hook also reads a fresh local brief, bounded by
+the usual 800-token brief budget, before each model invocation.
+This refresh does not depend on a post-compaction event or an MCP tool call.
+It adds brief context and local read work on every invocation; it does not
+fetch remote changes, save facts or guarantee recall of records omitted by
+the brief budget. Repeated checkpoint reminders are suppressed; the brief is still refreshed
+when an invocation identifier repeats, including across context loss.
+Claude/Codex use their supported session-start compaction events. Cursor's
+`preCompact` is observational; explicit MCP recall remains the recovery path
+until automatic delivery is verified for the installed client.
 Unknown events, bad payloads and unavailable memory fail open with `{}` and a
 sanitized stderr notice. No transcript, prompt or tool-result text is stored.
 No hook grants permissions, blocks a turn, forces continuation or launches a
-model. Installing Agentbot does not register these hooks automatically;
-`session configure` is an explicit project-level opt-in. Obtain native trust
+model. Installing Agentbot alone does not register project hooks; interactive
+boot offers enrollment, and `session configure` remains an advanced per-surface
+option. Obtain native trust
 before testing delivery in each installed client.
 Context-loss delivery and tool readiness remain host-specific acceptance checks.
 Checkpoint cadence needs tuning before broad registration; every eligible new

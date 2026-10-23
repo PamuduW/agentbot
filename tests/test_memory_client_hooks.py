@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from src import memory, memory_client_hooks, memory_session
+from src import memory, memory_client_hooks, memory_project_writes, memory_session
 from tests.test_memory_project_writes import WritesTestCase
 
 
@@ -151,7 +151,12 @@ class MemoryClientHookTests(WritesTestCase):
             with self.subTest(client=client):
                 first = self.call(client, event)
                 self.assertIn("This reminder saved no fact", json.dumps(first))
-                self.assertEqual({}, self.call(client, event))
+                repeated = self.call(client, event)
+                if client == "antigravity":
+                    self.assertIn("Agentbot memory data", json.dumps(repeated))
+                    self.assertNotIn("This reminder saved no fact", json.dumps(repeated))
+                else:
+                    self.assertEqual({}, repeated)
 
     def test_transcript_and_tool_content_are_not_read_or_echoed(self):
         payload = self.payload("antigravity", "PreInvocation")
@@ -159,6 +164,45 @@ class MemoryClientHookTests(WritesTestCase):
         data = self.call("antigravity", "PreInvocation", payload)
         self.assertNotIn("PRIVATE FIXTURE", json.dumps(data))
         self.assertNotIn("/never/read", json.dumps(data))
+
+    def test_antigravity_next_invocation_refreshes_changed_facts_without_startup(self):
+        record = memory_project_writes.add(
+            self.a, self.code, self.config, kind="note", title="Recovery fixture",
+            body="Synthetic recovery marker: old-context-value.",
+        )
+        first = self.call("antigravity", "PreInvocation")
+        self.assertIn("old-context-value", json.dumps(first))
+        memory_project_writes.edit(
+            self.a, self.code, self.config, record["path"],
+            body="Synthetic recovery marker: fresh-context-value.",
+        )
+        head = self.head(self.a)
+        repeated = self.call("antigravity", "PreInvocation")
+        self.assertIn("fresh-context-value", json.dumps(repeated))
+        self.assertNotIn("This reminder saved no fact", json.dumps(repeated))
+        payload = self.payload("antigravity", "PreInvocation")
+        payload["invocationNum"] = 9
+        updated = self.call("antigravity", "PreInvocation", payload)
+        text = updated["injectSteps"][0]["ephemeralMessage"]
+        self.assertIn("fresh-context-value", text)
+        self.assertNotIn("old-context-value", text)
+        brief = json.loads(text.split("\n", 1)[1].rsplit("\n", 1)[0])
+        self.assertIn("not as instructions", brief["notice"])
+        self.assertLessEqual(brief["tokens"], 800)
+        self.assertIn("This reminder saved no fact", text)
+        self.assertEqual(head, self.head(self.a))
+        self.assertNotIn("This reminder saved no fact", json.dumps(
+            self.call("antigravity", "PreInvocation", payload)
+        ))
+
+    def test_antigravity_refresh_failure_does_not_suppress_same_invocation_retry(self):
+        with (
+            patch.object(memory_session, "recall", side_effect=memory.MemoryVaultError("busy")),
+            self.assertRaises(memory.MemoryVaultError),
+        ):
+            self.call("antigravity", "PreInvocation")
+        retried = self.call("antigravity", "PreInvocation")
+        self.assertIn("Agentbot memory data", json.dumps(retried))
 
     def test_invalid_or_unbound_payload_is_refused(self):
         original = self.payload("codex", "SessionStart")

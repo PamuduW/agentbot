@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from .command_runner import CommandRunner
+from .memory import MemoryVaultError
 from .paths import AgentbotPaths
 from .workspace_profiles import (
     WorkspaceProfile,
@@ -220,7 +221,7 @@ class WorkspaceService:
             results.extend(self._orphaned_output_results(record))
             try:
                 results.append(self._resync_record(record, apply=apply))
-            except (OSError, ValueError) as error:
+            except (OSError, ValueError, MemoryVaultError) as error:
                 results.append(
                     WorkspaceResult(
                         Path(record.path),
@@ -302,6 +303,17 @@ class WorkspaceService:
         else:
             identity = WorkspaceIdentity(path=path, kind="directory", git_root=None)
 
+        memory_plan = None
+        if record.memory_bindings:
+            from . import memory, workspace_memory
+
+            vault, _ = memory.find_vault(self.paths.root)
+            if vault is None:
+                raise ValueError("registered memory integrations need the configured vault")
+            memory_plan = workspace_memory.prepare(
+                vault, path, self.paths, clients=(), previous=record.memory_bindings,
+            )
+
         if apply:
             result = self.apply(
                 path,
@@ -310,25 +322,21 @@ class WorkspaceService:
                 register=False,
             )
             if result.status == "applied":
+                if memory_plan is not None:
+                    workspace_memory.apply(memory_plan, self.store, record)
                 self.store.upsert(
-                    WorkspaceRecord(
-                        path=record.path,
-                        kind=record.kind,
-                        policy_mode=record.policy_mode,
-                        profile=record.profile,
-                        targets=record.targets,
-                        enabled=record.enabled,
+                    replace(
+                        record,
                         last_commit=current_commit(identity, runner=self._command_runner),
                         last_rendered_at=_utc_now(),
+                        memory_bindings=(memory_plan.bindings if memory_plan else record.memory_bindings),
                     )
                 )
-            return result
-
-        return self.preview(
-            path,
-            profile_name=record.profile,
-            targets=record.targets,
-        )
+        else:
+            result = self.preview(path, profile_name=record.profile, targets=record.targets)
+        if memory_plan is not None:
+            return replace(result, actions=(*result.actions, *workspace_memory.actions(memory_plan)))
+        return result
 
     def _build_plan(
         self,
@@ -424,6 +432,7 @@ class WorkspaceService:
         *,
         rendered_at: str,
     ) -> WorkspaceRecord:
+        previous = next((item for item in self.store.load() if item.path == str(identity.path)), None)
         return WorkspaceRecord(
             path=str(identity.path),
             kind=identity.kind,
@@ -437,6 +446,7 @@ class WorkspaceService:
             enabled=True,
             last_commit=current_commit(identity, runner=self._command_runner),
             last_rendered_at=rendered_at,
+            memory_bindings=previous.memory_bindings if previous else {},
         )
 
     def _preview_result(

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,6 +44,56 @@ class SessionConfigTests(WritesTestCase):
                     self.assertEqual(text, path.read_text())
         self.assertFalse(self.paths.codex_home.exists())
         self.assertFalse(self.paths.claude_home.exists())
+
+    def test_preparation_is_read_only_and_saved_entries_authorize_only_owned_refresh(self):
+        alternate = self.tmp / "relocated product"
+        (alternate / "bin").mkdir(parents=True)
+        (alternate / "bin/agentbot").touch()
+        updated = replace(self.paths, root=alternate)
+        for client in memory_session_config.CLIENT_FILES:
+            for surface in ("hooks", "mcp"):
+                with self.subTest(client=client, surface=surface):
+                    old = self.configure(client, surface, True)
+                    path = Path(old["path"])
+                    before = path.read_text()
+                    plan = memory_session_config.prepare(
+                        self.a, self.code, updated, client=client, surface=surface,
+                        previous=old["managed_entries"],
+                    )
+                    self.assertEqual(before, path.read_text())
+                    self.assertIn(str(alternate), plan.after)
+                    self.assertNotIn(str(self.paths.root), plan.after)
+                    memory_session_config.apply_prepared(plan)
+                    self.assertEqual(plan.after, path.read_text())
+                    self.assertEqual(before, path.with_name(path.name + ".agentbot-backup").read_text())
+
+    def test_saved_ownership_does_not_authorize_overwriting_an_edited_server(self):
+        old = self.configure("cursor", "mcp", True)
+        path = Path(old["path"])
+        data = json.loads(path.read_text())
+        data["mcpServers"]["agentbot_memory"]["command"] = "personal-server"
+        path.write_text(json.dumps(data))
+        before = path.read_bytes()
+        with self.assertRaises(memory.MemoryVaultError):
+            memory_session_config.prepare(
+                self.a, self.code, self.paths, client="cursor", surface="mcp",
+                previous=old["managed_entries"],
+            )
+        self.assertEqual(before, path.read_bytes())
+
+    def test_disabled_owned_hook_is_a_conflict_not_a_second_executable_handler(self):
+        old = self.configure("cursor", "hooks", True)
+        path = Path(old["path"])
+        data = json.loads(path.read_text())
+        data["hooks"]["sessionStart"][0]["command"] = "echo disabled"
+        path.write_text(json.dumps(data))
+        before = path.read_bytes()
+        with self.assertRaises(memory.MemoryVaultError):
+            memory_session_config.prepare(
+                self.a, self.code, self.paths, client="cursor", surface="hooks",
+                previous=old["managed_entries"],
+            )
+        self.assertEqual(before, path.read_bytes())
 
     def test_preserves_boost_hooks_and_unowned_settings(self):
         directory = self.code / ".claude"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +15,51 @@ from .atomic_io import write_text_atomic
 from .mcp_render import parse_mcp_config
 from .paths import AgentbotPaths
 
-CLIENT_FILES = {
-    "claude": {"hooks": ".claude/settings.local.json", "mcp": ".mcp.json"},
-    "codex": {"hooks": ".codex/hooks.json", "mcp": ".codex/config.toml"},
-    "cursor": {"hooks": ".cursor/hooks.json", "mcp": ".cursor/mcp.json"},
-    "antigravity": {"hooks": ".agents/hooks.json", "mcp": ".agents/mcp_config.json"},
+
+@dataclass(frozen=True)
+class ClientAdapter:
+    executables: tuple[str, ...]
+    files: dict[str, str]
+
+
+CLIENT_ADAPTERS = {
+    "claude": ClientAdapter(("claude",), {"hooks": ".claude/settings.local.json", "mcp": ".mcp.json"}),
+    "codex": ClientAdapter(("codex",), {"hooks": ".codex/hooks.json", "mcp": ".codex/config.toml"}),
+    # `cursor` can be an editor launcher rather than the agent CLI.
+    "cursor": ClientAdapter(("cursor-agent",), {"hooks": ".cursor/hooks.json", "mcp": ".cursor/mcp.json"}),
+    "antigravity": ClientAdapter(("agy",), {"hooks": ".agents/hooks.json", "mcp": ".agents/mcp_config.json"}),
 }
+CLIENT_FILES = {client: adapter.files for client, adapter in CLIENT_ADAPTERS.items()}
+
+
+@dataclass(frozen=True)
+class SessionConfigPlan:
+    checkout: Path
+    path: Path
+    client: str
+    surface: str
+    before: str
+    after: str
+    entries: dict[str, Any]
+    same: bool
+
+
+def _remove_owned_hooks(
+    document: dict[str, Any], client: str, previous: dict[str, Any],
+) -> None:
+    if client == "antigravity":
+        if document.get("agentbot-memory") != previous:
+            raise memory.MemoryVaultError("owned memory hooks were edited; review manually")
+        document.pop("agentbot-memory")
+        return
+    hooks = document.get("hooks", {})
+    if not isinstance(hooks, dict):
+        return
+    for event, groups in previous.items():
+        existing = hooks.get(event)
+        if not isinstance(existing, list) or any(group not in existing for group in groups):
+            raise memory.MemoryVaultError("owned memory hooks were edited; review manually")
+        hooks[event] = [item for item in existing if item not in groups]
 
 
 def _read(path: Path, checkout: Path) -> str:
@@ -53,10 +93,14 @@ def _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _merge_hooks(text: str, client: str, command: list[str]) -> tuple[str, dict[str, Any]]:
+def _merge_hooks(
+    text: str, client: str, command: list[str], previous: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
     document = json.loads(text, object_pairs_hook=_json_object) if text.strip() else {}
     if not isinstance(document, dict):
         raise memory.MemoryVaultError("memory hook configuration needs an object")
+    if previous and text.strip():
+        _remove_owned_hooks(document, client, previous)
     hooks = document.setdefault("hooks", {}) if client != "antigravity" else document
     if not isinstance(hooks, dict):
         raise memory.MemoryVaultError("memory hooks must be an object")
@@ -97,10 +141,10 @@ def _merge_hooks(text: str, client: str, command: list[str]) -> tuple[str, dict[
     return json.dumps(document, indent=2) + "\n", desired
 
 
-def configure(
+def prepare(
     vault: Path, checkout: Path, paths: AgentbotPaths, *, client: str,
-    surface: str, apply: bool = False,
-) -> dict[str, Any]:
+    surface: str, previous: dict[str, Any] | None = None,
+) -> SessionConfigPlan:
     if client not in CLIENT_FILES or surface not in {"hooks", "mcp"}:
         raise memory.MemoryVaultError("unsupported memory configuration surface")
     checkout = checkout.resolve()
@@ -126,13 +170,15 @@ def configure(
             command = ["env", *[f"{key}={value}" for key, value in environment.items()],
                        str(executable), "memory", "session", "hook", "--client", client,
                        "--project-root", str(checkout)]
-            after, entries = _merge_hooks(before, client, command)
+            after, entries = _merge_hooks(before, client, command, previous)
             same = bool(before.strip()) and json.loads(before) == json.loads(after)
         else:
             if client != "codex" and before.strip():
                 json.loads(before, object_pairs_hook=_json_object)
             document = parse_mcp_config(client, before)
             key = "mcp_servers" if client == "codex" else "mcpServers"
+            if previous and document.get(key, {}).get("agentbot_memory") == previous.get("agentbot_memory"):
+                document[key].pop("agentbot_memory", None)
             server = {"command": str(executable), "args": ["memory", "serve", "--project-root",
                       str(checkout), "--client", client], "env": environment}
             existing = document.get(key, {}).get("agentbot_memory")
@@ -141,19 +187,33 @@ def configure(
             document.setdefault(key, {})["agentbot_memory"] = server
             after = (tomlkit.dumps(document) if client == "codex"
                      else json.dumps(document, indent=2) + "\n")
-            same = existing == server
+            same = (parse_mcp_config(client, before).get(key, {}).get("agentbot_memory") == server)
             entries = {"agentbot_memory": server}
     except (ValueError, TypeError, AttributeError, RecursionError):
         raise memory.MemoryVaultError("memory configuration is invalid; inspect its format privately") from None
-    if apply and not same:
+    return SessionConfigPlan(checkout, path, client, surface, before, after, entries, same)
+
+
+def apply_prepared(plan: SessionConfigPlan) -> None:
+    if not plan.same:
         # A changed file requires a new preview; never overwrite a concurrent edit.
-        if _read(path, checkout) != before:
+        if _read(plan.path, plan.checkout) != plan.before:
             raise memory.MemoryVaultError("memory configuration changed during preparation")
-        write_text_atomic(path, after, backup=True)
+        _read(plan.path.with_name(plan.path.name + ".agentbot-backup"), plan.checkout)
+        write_text_atomic(plan.path, plan.after, backup=True)
+
+
+def configure(
+    vault: Path, checkout: Path, paths: AgentbotPaths, *, client: str,
+    surface: str, apply: bool = False,
+) -> dict[str, Any]:
+    plan = prepare(vault, checkout, paths, client=client, surface=surface)
+    if apply:
+        apply_prepared(plan)
     return {
-        "state": "unchanged" if same else ("applied" if apply else "preview"),
-        "client": client, "surface": surface, "path": str(path),
-        "managed_entries": entries,
+        "state": "unchanged" if plan.same else ("applied" if apply else "preview"),
+        "client": client, "surface": surface, "path": str(plan.path),
+        "managed_entries": plan.entries,
         "native_trust": "operator-required", "model_use_verified": False,
         "native_memory_control": "unchanged; use verified CLI settings separately",
     }
