@@ -6,7 +6,7 @@ import re
 import stat
 import tempfile
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,6 +29,7 @@ class WorkspaceRecord:
     enabled: bool
     last_commit: str | None
     last_rendered_at: str | None
+    memory_bindings: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.path, str) or not self.path:
@@ -70,9 +71,21 @@ class WorkspaceRecord:
 
         object.__setattr__(self, "path", str(resolved))
         object.__setattr__(self, "targets", targets)
+        if not isinstance(self.memory_bindings, dict):
+            raise ValueError("workspace memory bindings must be a mapping")
+        if self.memory_bindings:
+            from .memory_session_config import CLIENT_FILES
+
+            if any(
+                client not in CLIENT_FILES or not isinstance(surfaces, dict)
+                or set(surfaces) != {"hooks", "mcp"}
+                or any(not isinstance(entries, dict) for entries in surfaces.values())
+                for client, surfaces in self.memory_bindings.items()
+            ) or len(json.dumps(self.memory_bindings)) > 131_072:
+                raise ValueError("invalid workspace memory bindings")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "path": self.path,
             "kind": self.kind,
             "policy_mode": self.policy_mode,
@@ -82,6 +95,9 @@ class WorkspaceRecord:
             "last_commit": self.last_commit,
             "last_rendered_at": self.last_rendered_at,
         }
+        if self.memory_bindings:
+            result["memory_bindings"] = self.memory_bindings
+        return result
 
     @classmethod
     def from_dict(cls, raw: Any) -> WorkspaceRecord:
@@ -97,6 +113,7 @@ class WorkspaceRecord:
                 enabled=raw["enabled"],
                 last_commit=raw.get("last_commit"),
                 last_rendered_at=raw.get("last_rendered_at"),
+                memory_bindings=raw.get("memory_bindings", {}),
             )
         except (KeyError, TypeError) as error:
             raise ValueError(f"invalid workspace record: {error}") from error

@@ -577,6 +577,11 @@ class Lifecycle:
         ]
         for result in plan.workspace_report.results:
             affected.extend(result.path / action.relative_path for action in result.actions)
+        from .workspace_memory import managed_paths
+
+        for record in self.workspace_service.store.load():
+            if record.enabled and record.memory_bindings and Path(record.path).is_dir():
+                affected.extend(managed_paths(Path(record.path), tuple(record.memory_bindings)))
         return tuple(dict.fromkeys(affected))
 
     def _update_snapshot(self) -> UpdateSnapshot:

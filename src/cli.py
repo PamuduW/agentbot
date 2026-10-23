@@ -14,6 +14,7 @@ from typing import Any
 
 from .atomic_io import write_text_atomic
 from .boost import BoostIntegration
+from .boot_memory import add_arguments as add_boot_memory_arguments
 from .commands import CommandSpec, command_by_name
 from .diagnostics import Diagnostics
 from .graphify import GraphifyIntegration
@@ -1582,19 +1583,39 @@ def _handle_boot(context: CommandContext) -> int:
         if args.cursor:
             selected.append("cursor")
         targets = tuple(selected)
-    result = context.lifecycle.apply_workspace(
-        target,
-        profile=args.profile,
-        targets=targets,
-        register=True,
-    )
+    if args.dry_run:
+        result = context.lifecycle.preview_workspace(target, profile=args.profile, targets=targets)
+    else:
+        result = context.lifecycle.apply_workspace(
+            target, profile=args.profile, targets=targets, register=True,
+        )
     failed = result.status in {"conflict", "failed"}
-    rows = [] if failed or args.no_memory else [_boot_project_memory(context, target)]
+    rows = [] if failed or args.no_memory else [
+        _boot_project_memory(context, result.path, apply=not args.dry_run)
+    ]
+    memory_status = 0
+    if rows and rows[0][2] in {"warn", "conflict", "skipped"}:
+        from .boot_memory import enrolled
+
+        if enrolled(context.paths, result.path) or (
+            args.memory_clients is not None and rows[0][2] != "skipped"
+        ):
+            memory_status = 1
+    if rows and rows[0][2] in {"ok", "applied", "preview"}:
+        from .boot_memory import setup
+
+        row, memory_status = setup(
+            context.paths, result.path, clients=args.memory_clients,
+            confirmed=args.yes, dry_run=args.dry_run, interactive=_at_a_terminal(),
+        )
+        rows.append(row)
     print_workspace_report(result, extra_rows=rows)
-    return 1 if failed else 0
+    return 1 if failed else memory_status
 
 
-def _boot_project_memory(context: CommandContext, target: Path) -> tuple[str, str, str]:
+def _boot_project_memory(
+    context: CommandContext, target: Path, *, apply: bool = True,
+) -> tuple[str, str, str]:
     """Give the booted repository project memory, so one command sets it all up.
 
     Memory is optional: no vault, an older schema, or a directory that is not a
@@ -1611,12 +1632,15 @@ def _boot_project_memory(context: CommandContext, target: Path) -> tuple[str, st
         if root is None:
             return (label, "no memory vault configured", "skipped")
         memory.read_marker(root)
-        memory_autosync.before_read(root, config_home)
+        if apply:
+            memory_autosync.before_read(root, config_home)
         found = memory_projects.resolve(root, target, config_home)
         if found.state == "resolved" and found.entry is not None:
             return (label, f"{found.entry['folder']} (already registered)", "ok")
         if found.state == "collision":
             return (label, "; ".join(found.problems) or "registry collision", "conflict")
+        if not apply:
+            return (label, "would register this repository", "preview")
         entry = memory_projects.register(root, target, config_home)
         outcome = memory_autosync.after_write(root, config_home)
         return (label, f"{entry['folder']} registered; sync {outcome['state']}", "applied")
@@ -2265,6 +2289,7 @@ def build_parser() -> argparse.ArgumentParser:
     workspace.add_argument("path", help="Workspace directory")
 
     boot = subparsers.add_parser("boot", help="Render and register one workspace")
+    add_boot_memory_arguments(boot)
     boot.add_argument("--profile", help="Workspace profile name")
     boot.add_argument(
         "--agents",
