@@ -58,7 +58,7 @@ class CliConfigTests(unittest.TestCase):
             source = source_root / "cli" / self.clis[name].source_name
             self._declare(name, source.read_text(encoding="utf-8"))
         self._write_config("claude", '{"autoMemoryEnabled":true,"hooks":{"Stop":[]}}')
-        self._write_config("codex", '[features]\nmemories=true\napps=true\n')
+        self._write_config("codex", "[features]\nmemories=true\napps=true\n")
         keep = []
         for home in (self.paths.claude_home, self.paths.codex_home):
             for relative in ("memories/old.md", "sessions/old.jsonl"):
@@ -72,6 +72,144 @@ class CliConfigTests(unittest.TestCase):
         self.assertIs(self._read_config("codex")["features"]["memories"], False)
         self.assertIs(self._read_config("codex")["features"]["apps"], True)
         self.assertTrue(all(p.read_text() == "synthetic retained data" for p in keep))
+
+    def test_nested_json_leaves_preserve_personal_models_and_comments(self) -> None:
+        original = (
+            '{\n  "modelSettings": {\n    // personal model\n'
+            '    "personal.model": {"effortLevel": "low"},\n'
+            '    "managed.model": {"effortLevel": "high", "autoCompactWindow": 200000}\n'
+            '  }, "skillOverrides": {"personal.skill": "off"}\n}\n'
+        )
+        self._write_config("claude", original)
+        self._declare(
+            "claude",
+            '{"modelSettings":{"managed.model":{"effortLevel":"medium"}},'
+            '"skillOverrides":{"agent-memory":"on"}}',
+        )
+        plan = plan_cli(self.paths.root, self.clis["claude"])
+        self.assertEqual(
+            {"modelSettings.managed\\.model.effortLevel": ("high", "medium")}, plan.changes
+        )
+        report = apply(self.paths)
+        self.assertFalse(report.failures)
+        result = self._read_config("claude")
+        self.assertEqual({"effortLevel": "low"}, result["modelSettings"]["personal.model"])
+        self.assertEqual(
+            {"effortLevel": "medium", "autoCompactWindow": 200000},
+            result["modelSettings"]["managed.model"],
+        )
+        self.assertEqual("off", result["skillOverrides"]["personal.skill"])
+        self.assertIn("// personal model", self.clis["claude"].config_path.read_text())
+        self.assertTrue(plan_cli(self.paths.root, self.clis["claude"]).is_noop)
+        self.assertEqual(
+            original,
+            self.clis["claude"].config_path.with_name("settings.json.agentbot-backup").read_text(),
+        )
+
+    def test_nested_json_object_conflict_refuses_all_writes(self) -> None:
+        self._write_config("claude", '{"modelSettings":"personal-value"}')
+        self._declare("claude", '{"modelSettings":{"managed":{"effortLevel":"medium"}}}')
+        self._write_config("cursor", '{"hints":false}')
+        self._declare("cursor", '{"hints":true}')
+        report = apply(self.paths)
+        self.assertTrue(report.failures)
+        self.assertEqual("personal-value", self._read_config("claude")["modelSettings"])
+        self.assertFalse(self._read_config("cursor")["hints"])
+
+    def test_missing_json_object_ignores_empty_declaration_branches(self) -> None:
+        self._write_config("claude", "{}")
+        self._declare("claude", '{"outer":{"empty":{},"managed":true}}')
+        report = apply(self.paths)
+        self.assertFalse(report.failures)
+        self.assertEqual({"outer": {"managed": True}}, self._read_config("claude"))
+
+    def test_literal_dotted_json_key_and_nested_path_have_distinct_preview_entries(self) -> None:
+        self._write_config("claude", '{"a.b":0,"a":{"b":0}}')
+        self._declare("claude", '{"a.b":1,"a":{"b":2}}')
+        plan = plan_cli(self.paths.root, self.clis["claude"])
+        self.assertEqual(2, len(plan.changes))
+        self.assertFalse(apply(self.paths).failures)
+        self.assertEqual({"a.b": 1, "a": {"b": 2}}, self._read_config("claude"))
+
+    def test_empty_declared_json_object_does_not_erase_personal_entries(self) -> None:
+        self._write_config("claude", '{"modelSettings":{"personal":{"effortLevel":"low"}}}')
+        self._declare("claude", '{"modelSettings":{}}')
+        self.assertTrue(plan_cli(self.paths.root, self.clis["claude"]).is_noop)
+
+    def test_retired_defaults_are_previewed_removed_backed_up_and_idempotent(self) -> None:
+        cases = (
+            (
+                "antigravity",
+                '{/* before */ "enableTelemetry": false, '
+                '"permissions":{"allow":[]}, "verbosity":"low"}',
+                '{"verbosity":"low"}',
+                "enableTelemetry",
+            ),
+            (
+                "codex",
+                '# keep\npersonality = "friendly" # old style\nmodel="same"\n'
+                '[tui]\npersonality="local"\n',
+                'model="same"\n',
+                "personality",
+            ),
+        )
+        for name, original, desired, key in cases:
+            with self.subTest(cli=name):
+                self._write_config(name, original)
+                self._declare(name, desired)
+                plan = plan_cli(self.paths.root, self.clis[name])
+                self.assertFalse(plan.is_noop)
+                self.assertIn(key, plan.removals)
+                report = apply(self.paths)
+                self.assertFalse(report.failures)
+                self.assertNotIn(key, self._read_config(name))
+                self.assertTrue(plan_cli(self.paths.root, self.clis[name]).is_noop)
+                backup = self.clis[name].config_path.with_name(
+                    self.clis[name].config_path.name + ".agentbot-backup"
+                )
+                self.assertEqual(original, backup.read_text())
+                if name == "codex":
+                    self.assertEqual("local", self._read_config(name)["tui"]["personality"])
+                else:
+                    self.assertIn("/* before */", self.clis[name].config_path.read_text())
+
+    def test_retired_json_default_removal_handles_last_sole_and_escaped_keys(self) -> None:
+        self._declare("antigravity", '{"verbosity":"low"}')
+        for original in (
+            '{"verbosity":"low", /* keep */ "enableTelemetry":false}',
+            '{"enableTelemetry":false,}',
+            '{"enableTelem\\u0065try":false}',
+            '{"nested":{"enableTelemetry":false},"enableTelemetry":false}',
+        ):
+            with self.subTest(original=original):
+                self._write_config("antigravity", original)
+                self.assertFalse(apply(self.paths).failures)
+                result = self._read_config("antigravity")
+                self.assertNotIn("enableTelemetry", result)
+                self.assertEqual("low", result["verbosity"])
+                if "nested" in original:
+                    self.assertEqual({"enableTelemetry": False}, result["nested"])
+
+    def test_retirement_preserves_operator_values_and_rolls_back_on_later_failure(self) -> None:
+        self._declare("codex", 'model="same"\n')
+        self._write_config("codex", 'personality="none"\nmodel="same"\n')
+        apply(self.paths)
+        self.assertEqual("none", self._read_config("codex")["personality"])
+        self._write_config("codex", 'personality="friendly"\nmodel="same"\n')
+        original = self.clis["codex"].config_path.read_text()
+        self._declare("cursor", '{"hints":true}')
+        self._write_config("cursor", '{"hints":false}')
+        real = cli_config.write_text_atomic
+
+        def fail_later(path, text, **kwargs):
+            if path == self.clis["cursor"].config_path:
+                raise OSError("synthetic later failure")
+            real(path, text, **kwargs)
+
+        with patch.object(cli_config, "write_text_atomic", side_effect=fail_later):
+            report = apply(self.paths)
+        self.assertTrue(report.failures)
+        self.assertEqual(original, self.clis["codex"].config_path.read_text())
 
     def test_nothing_declared_is_a_skip(self) -> None:
         report = preview(self.paths)
@@ -411,13 +549,63 @@ class ShippedDesiredStateTests(unittest.TestCase):
 
     ROOT = Path(__file__).resolve().parents[1]
 
+    def test_shipped_preferences_preserve_personal_settings_and_set_visibility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = agentbot_paths(Path(directory))
+            from dataclasses import replace
+
+            paths = replace(paths, root=self.ROOT)
+            for cli in managed_clis(paths):
+                cli.config_path.parent.mkdir(parents=True, exist_ok=True)
+            (paths.claude_home / "settings.json").write_text(
+                json.dumps(
+                    {
+                        "skillOverrides": {"personal-skill": "off", "agent-memory": "off"},
+                        "modelSettings": {"personal-model": {"effortLevel": "low"}},
+                    }
+                )
+            )
+            (paths.cursor_home / "cli-config.json").write_text(
+                json.dumps(
+                    {
+                        "attribution": {"attributeCommitsToAgent": True, "operatorFlag": True},
+                    }
+                )
+            )
+            report = apply(paths)
+            self.assertFalse(report.failures)
+            claude = json.loads((paths.claude_home / "settings.json").read_text())
+            self.assertEqual("off", claude["skillOverrides"]["personal-skill"])
+            self.assertEqual("on", claude["skillOverrides"]["agent-memory"])
+            self.assertEqual("on", claude["skillOverrides"]["brainstorming"])
+            self.assertEqual("on", claude["skillOverrides"]["clean-user-facing-text"])
+            self.assertEqual("user-invocable-only", claude["skillOverrides"]["co-council"])
+            self.assertEqual("off", claude["skillOverrides"]["import-memory"])
+            self.assertEqual({"effortLevel": "low"}, claude["modelSettings"]["personal-model"])
+            cursor = json.loads((paths.cursor_home / "cli-config.json").read_text())
+            self.assertEqual(
+                {
+                    "attributeCommitsToAgent": False,
+                    "attributePRsToAgent": False,
+                    "operatorFlag": True,
+                },
+                cursor["attribution"],
+            )
+            self.assertNotIn(
+                "enableTelemetry",
+                json.loads((paths.antigravity_home / "antigravity-cli/settings.json").read_text()),
+            )
+            self.assertNotIn(
+                "personality", tomllib.loads((paths.codex_home / "config.toml").read_text())
+            )
+
     def test_claude_skill_overrides_use_only_documented_states(self) -> None:
         """A typo in a state would silently leave the skill listed (2026-09-27 skill review)."""
         desired = json.loads((self.ROOT / "cli" / "claude.settings.json").read_text())
         overrides = desired["skillOverrides"]
         states = {"on", "name-only", "user-invocable-only", "off"}
         self.assertEqual({}, {k: v for k, v in overrides.items() if v not in states})
-        self.assertNotIn("agent-memory", overrides)
+        self.assertEqual("on", overrides["agent-memory"])
         # Measured with /context on Claude Code 2.1.283: `plugin:skill` keys do
         # not reach plugins synced from claude.ai; only `anthropic-skills:` does.
         self.assertEqual(

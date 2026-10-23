@@ -10,8 +10,11 @@ It is also the `cli-config` install component, and one row of `agentbot status`.
 workspaces and before its final diagnostics. Its transaction covers the Claude,
 Codex, Cursor, and Antigravity config files if a later update stage fails.
 
-Agentbot owns only the keys you declare, merged key by key into each CLI's own
-config. Everything you have not declared is left exactly as it was.
+Agentbot owns declared JSON leaves, merged recursively into each CLI's config.
+Undeclared sibling settings survive, including personal model preferences and
+skill overrides. Arrays and scalar values are owned as complete values. Empty
+JSON objects declare no leaves. If a declared object would replace an existing
+non-object value, preview reports a conflict and the whole apply is refused.
 The Claude declaration includes the current model, effort, display, and
 notification preferences, plus its supported automatic-memory switch. Hooks,
 permission rules, plugins and client state remain outside this declaration.
@@ -29,8 +32,12 @@ archived research:
 | Cursor CLI | `~/.cursor/cli-config.json` | JSON (comments tolerated) |
 | Antigravity CLI | `~/.gemini/antigravity-cli/settings.json` | JSON |
 
-Agentbot resolves `CODEX_HOME` and `CLAUDE_CONFIG_DIR` when set; otherwise the
-defaults above apply. The resolved homes are shared by configuration, rendering,
+Agentbot resolves `CODEX_HOME` and `CLAUDE_CONFIG_DIR` when set. Cursor uses
+`CURSOR_CONFIG_DIR`, then `$XDG_CONFIG_HOME/cursor`, then `~/.cursor`; blank
+values are ignored. Cursor config, MCP, Boost integration, statusline and update
+rollback use that resolved directory. Cursor paths are used as supplied, matching
+its installed resolver; use an absolute directory. The statusline command points
+to its resolved script with shell quoting. Otherwise the defaults above apply. The resolved homes are shared by configuration, rendering,
 MCP and skill-link consumers. Empty overrides use the defaults. A custom Codex
 home does not move Cursor, Antigravity or the shared skills directory. Overrides
 select existing client homes; they do not copy authentication or history.
@@ -85,8 +92,14 @@ trusted. [Claude auto memory](https://code.claude.com/docs/en/memory).
 
 Claude's desired state also owns `skillOverrides`, which decides how each
 skill is listed to Claude (see [skills](skills.md#claude-listing-states)).
-Agentbot owns that whole object, so add personal overrides in
-`cli/claude.settings.json` rather than in `~/.claude/settings.json`.
+Only declared skill names are owned. Personal entries for other skills survive.
+`agent-memory`, the adapted `brainstorming`, and `clean-user-facing-text` are
+explicitly `on` so their descriptions and triggers remain discoverable.
+`co-council` is `user-invocable-only`: available on request, without advertising
+automatic delegation in hosts that cannot guarantee its model routing.
+Native `import-memory` stays `off`. Other existing listing choices are retained.
+Project/local settings and client precedence still apply; listing is not a
+permission grant. [Claude skill visibility](https://code.claude.com/docs/en/skills).
 
 Codex's desired state sets `approvals_reviewer = "auto_review"`, a decision
 recorded on 2026-10-13 after the setup review found it undocumented. When
@@ -101,13 +114,13 @@ auto-review page, `learn.chatgpt.com/docs/sandboxing/auto-review`.
 
 Antigravity's desired state holds `agentMode: accept-edits`,
 `artifactReviewPolicy: agent-decides`, verbosity, notifications, the
-feedback survey, `enableTelemetry: false` (on by default in `agy`), and
-`toolPermission: request-review` (keys from the official settings page,
+feedback survey, and `toolPermission: request-review` (keys from the official settings page,
 `antigravity.google/docs/settings?tab=cli`; `agy` writes only values that
-differ from its defaults). Edits and plans are reviewable after the fact, so
-those two are shared. `toolPermission` decides whether `agy` runs write, shell
-and web tools without asking; `request-review` asks first, as the other three
-clients do. It was per machine until the 2026-10-13 setup review found
+differ from its defaults). These are existing operator choices. Current vendor schema describes `agent-decides`
+as behaving like `asks-for-review`; it does not guarantee automatic artifact
+approval. `toolPermission` affects prompting for write, shell, web and MCP
+tools; existing allow rules and execution mode also matter. Request-review
+is retained; it is not equivalent to another client's permission system. It was per machine until the 2026-10-13 setup review found
 `always-proceed` on the home PC, and the operator chose to declare the asking
 value everywhere (declaring it grants nothing). `trustedWorkspaces` stays
 per machine too, because it lists local paths. The checked Antigravity CLI
@@ -128,8 +141,10 @@ the top-level `effortLevel` is the older form: Opus 5.5 and later models ignore
 it and start at their own default, so `model: opus` was not getting the
 declared `medium`. The desired state now also declares `modelSettings` with
 `medium` for `claude-opus-5-5`, `claude-sonnet-5` and `claude-sonnet-5-5` (keys are full model IDs, so each Sonnet release needs its own); the top-level key stays
-for older models. Agentbot owns `modelSettings` as a whole, so a level saved
-with `/effort` lasts until the next update; change it here instead. Two other
+for older models. Agentbot owns only the listed model effort leaves. Other models and other
+per-model options, such as a personal auto-compact window, survive. A level
+saved with `/effort` for a declared model is still restored on the next update;
+change its declaration to make a permanent managed change. Two other
 suggestions from the same review were not taken: Cursor's `version` is
 Cursor's own schema number (declaring it would write `1` back after Cursor
 moves on), and Codex's `[memories]` keys only matter when
@@ -196,7 +211,7 @@ we destroyed: nothing
 If an update leaves a config Agentbot cannot parse, it is reported and never
 written.
 
-**The risk worth knowing about is a renamed setting.** If a CLI renames a key
+**The risk worth knowing about is a renamed or ineffective setting.** If a CLI renames a key
 you declare — `model` becoming `defaultModel`, say — Agentbot keeps writing the
 old key. The CLI ignores it and falls back to its default, and `status` still
 reports "current", because the declared state does match the file. That failure
@@ -237,3 +252,36 @@ proposes; it does not write. See [Setup review](setup-review.md).
 Installing the CLIs (Dotfiles owns that), MCP server lists (`agentbot mcp`),
 VS Code settings (`docs/vscode.md`), and the Cursor statusline
 (`docs/cursor-statusline.md`), which has its own ownership contract.
+
+## Reviewed migrations, 2026-10-23
+
+`personality: friendly` is no longer declared for Codex: current OpenAI docs mark
+it as a deprecated style selector. Applying CLI config removes only a root
+`personality = "friendly"` matching Agentbot's former default. Operator alternatives
+such as `none`, and table-scoped keys, remain. Canonical instruction prose owns
+writing style. [Codex reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+Antigravity `enableTelemetry` is no longer declared. Current official schema
+says the preference is account-owned, ignored in settings JSON, and removed
+when Antigravity saves. Applying removes only the obsolete root `false` value
+matching Agentbot's former declaration; it does not change account telemetry.
+CLI status includes an informational account-verification notice. In `agy`,
+open `/config` or `/settings`, set Enable Telemetry off, and verify the account
+on each laptop you use. Never report telemetry off solely from a file or Doctor.
+The operator confirmed off on the home laptop; the work account remains unverified.
+[Official schema](https://antigravity.google/schemas/v1/settings.json).
+
+Both retirements appear in preview and count as work even if all other values
+already match. Original files are backed up and later failures restore them.
+Custom values are preserved rather than guessed to be Agentbot-owned. These are
+explicit migrations; deleting another declaration does not generally delete its
+old value from a user's config.
+
+Cursor commit and PR attribution flags are now false, matching this workflow's
+no-generated-attribution policy. Other attribution fields survive recursive
+merging. [Cursor configuration](https://cursor.com/docs/cli/reference/configuration).
+
+These changes are source changes until the updated release is installed and
+`agentbot cli-config apply` or the normal update applies them. They do not add
+native hook trust, log clients in, change model choices, or disable unverified
+native memory features. Jev remains TODO, waiting for the user's start instruction.

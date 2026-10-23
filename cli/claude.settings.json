@@ -28,14 +28,14 @@
     "archify": "name-only",
     "architecture-decision-records": "name-only",
     "best-practices-research": "name-only",
-    "brainstorming": "user-invocable-only",
+    "brainstorming": "on",
     "built-in-browser": "name-only",
     "canvas-design": "name-only",
     "chrome-browser": "name-only",
     "claude-api": "name-only",
     "claudex-loop": "name-only",
-    "clean-user-facing-text": "user-invocable-only",
-    "co-council": "off",
+    "clean-user-facing-text": "on",
+    "co-council": "user-invocable-only",
     "code-review": "name-only",
     "codebase-design": "name-only",
     "codex-review": "name-only",
@@ -92,6 +92,7 @@
     "writing-plans": "name-only",
     "writing-skills": "name-only",
     "xlsx": "name-only",
-    "yagni": "name-only"
+    "yagni": "name-only",
+    "agent-memory": "on"
   }
 }

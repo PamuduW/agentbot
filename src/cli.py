@@ -234,10 +234,22 @@ def _handle_cli_config(context: CommandContext) -> int:
             rows.append((name, "current", "ok"))
         elif report.applied:
             summary = f"{len(plan.additions)} added, {len(plan.changes)} changed"
+            if plan.removals:
+                summary += f", {len(plan.removals)} removed"
             rows.append((name, f"{summary} in {plan.path}", "applied"))
         else:
             summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
+            if plan.removals:
+                summary += f", {len(plan.removals)} to remove"
             rows.append((name, f"{summary} in {plan.path}", "check"))
+    if not report.plans["antigravity"].skipped:
+        rows.append(
+            (
+                "antigravity telemetry",
+                "Account preference; verify Enable Telemetry is off in agy /config",
+                "info",
+            )
+        )
     runner = CommandRunner()
     remote_detail, remote_result = (
         codex_remote_control.ensure(context.paths, runner)

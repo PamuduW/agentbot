@@ -25,7 +25,14 @@ from typing import Any
 
 from .atomic_io import write_text_atomic
 from .paths import AgentbotPaths
-from .vscode import merge_settings_text, read_settings, strip_jsonc
+from .vscode import (
+    _end_of_value,
+    _skip_whitespace_and_comments,
+    _top_level_value_span,
+    merge_settings_text,
+    read_settings,
+    strip_jsonc,
+)
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -33,6 +40,12 @@ else:  # pragma: no cover - exercised on older interpreters only
     import tomli as tomllib
 
 SOURCE_DIRECTORY = "cli"
+
+# Remove only values previously written by Agentbot, never operator alternatives.
+_RETIRED_DEFAULTS: dict[str, dict[str, object]] = {
+    "codex": {"personality": "friendly"},
+    "antigravity": {"enableTelemetry": False},
+}
 
 # Key names whose value is almost certainly a credential. The desired-state
 # files are committed to a repository, so a literal here would be a secret in
@@ -65,12 +78,13 @@ class CliConfigPlan:
     path: Path
     additions: dict[str, object] = field(default_factory=dict)
     changes: dict[str, tuple[object, object]] = field(default_factory=dict)
+    removals: dict[str, object] = field(default_factory=dict)
     skipped: str | None = None
     error: str | None = None
 
     @property
     def is_noop(self) -> bool:
-        return not self.additions and not self.changes
+        return not self.additions and not self.changes and not self.removals
 
 
 def managed_clis(paths: AgentbotPaths) -> tuple[ManagedCli, ...]:
@@ -180,13 +194,65 @@ def plan_cli(root: Path, cli: ManagedCli) -> CliConfigPlan:
     if error:
         plan.error = error
         return plan
-    for key, value in _owned(cli, desired):
-        present, existing = _lookup(current, key)
-        if not present:
-            plan.additions[key] = value
-        elif existing != value:
-            plan.changes[key] = (existing, value)
+    plan.removals = _retired_defaults(cli, current, desired)
+    try:
+        items = (
+            [
+                (
+                    ".".join(part.replace("\\", "\\\\").replace(".", "\\.") for part in path),
+                    value,
+                    _json_lookup(current, path),
+                )
+                for path, value in _json_leaves(desired)
+            ]
+            if cli.fmt == "json"
+            else [(key, value, _lookup(current, key)) for key, value in _owned(cli, desired)]
+        )
+        for key, value, (present, existing) in items:
+            if not present:
+                plan.additions[key] = value
+            elif existing != value:
+                plan.changes[key] = (existing, value)
+    except ValueError as error:
+        plan.error = str(error)
     return plan
+
+
+def _retired_defaults(
+    cli: ManagedCli, current: dict[str, Any], desired: dict[str, object]
+) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in _RETIRED_DEFAULTS.get(cli.name, {}).items()
+        if key not in desired
+        and key in current
+        and type(current[key]) is type(value)
+        and current[key] == value
+    }
+
+
+def _json_leaves(
+    desired: dict[str, object], prefix: tuple[str, ...] = ()
+) -> list[tuple[tuple[str, ...], object]]:
+    leaves = []
+    for key, value in desired.items():
+        path = (*prefix, key)
+        if isinstance(value, dict):
+            leaves.extend(_json_leaves(value, path))
+        else:
+            leaves.append((path, value))
+    return leaves
+
+
+def _json_lookup(current: dict[str, Any], path: tuple[str, ...]) -> tuple[bool, object]:
+    node = current
+    for key in path[:-1]:
+        if key not in node:
+            return False, None
+        if not isinstance(node[key], dict):
+            raise ValueError(f"{'.'.join(path)}: parent setting is not an object; preserved")
+        node = node[key]
+    return (True, node[path[-1]]) if path[-1] in node else (False, None)
 
 
 def _owned(cli: ManagedCli, desired: dict[str, object]) -> list[tuple[str, object]]:
@@ -418,9 +484,63 @@ def _trailing_comment(line: str) -> str:
     return ""
 
 
+def _merge_json_leaves(text: str, desired: dict[str, object]) -> str:
+    working = text or "{}"
+    for key, value in desired.items():
+        if isinstance(value, dict):
+            if not _json_leaves(value):
+                continue
+            span = _top_level_value_span(working, key)
+            if span is not None:
+                start, end = span
+                working = (
+                    working[:start] + _merge_json_leaves(working[start:end], value) + working[end:]
+                )
+                continue
+            value = json.loads(strip_jsonc(_merge_json_leaves("{}", value)))
+        working = merge_settings_text(working, {key: value})
+    return working
+
+
+def _remove_json_key(text: str, key: str) -> str:
+    position = _skip_whitespace_and_comments(text, 0) + 1
+    preceding_comma = None
+    while True:
+        start = _skip_whitespace_and_comments(text, position)
+        if text[start] == "}":
+            return text
+        name, key_end = json.JSONDecoder().raw_decode(text, start)
+        colon = _skip_whitespace_and_comments(text, key_end)
+        value_start = _skip_whitespace_and_comments(text, colon + 1)
+        end = _end_of_value(text, value_start)
+        following = _skip_whitespace_and_comments(text, end)
+        if name == key:
+            if text[following] == ",":
+                return text[:start] + text[end:following] + text[following + 1 :]
+            if preceding_comma is not None:
+                return text[:preceding_comma] + text[preceding_comma + 1 : start] + text[end:]
+            return text[:start] + text[end:]
+        if text[following] == "}":
+            return text
+        preceding_comma = following
+        position = following + 1
+
+
 def _merged_text(cli: ManagedCli, original: str, desired: dict[str, object]) -> str:
+    current = _parse(cli, original)
+    retired = _retired_defaults(cli, current, desired)
     if cli.fmt == "json":
-        return merge_settings_text(original or "{}", desired)
+        text = original or "{}"
+        for key in retired:
+            text = _remove_json_key(text, key)
+        return _merge_json_leaves(text, desired)
+    if retired:
+        import tomlkit
+
+        document = tomlkit.parse(original)
+        for key in retired:
+            del document[key]
+        original = tomlkit.dumps(document)
     return merge_toml_text(original, desired)
 
 
@@ -437,13 +557,31 @@ def _verify(cli: ManagedCli, text: str, desired: dict[str, object], original: st
     value that moved, is this code's fault, not the operator's file.
     """
     parsed = _parse(cli, text)
+    before = _parse(cli, original)
+    retired = _retired_defaults(cli, before, desired)
+    if any(key in parsed for key in retired):
+        raise ValueError(f"{cli.name}: retired default survived the merge")
+    if cli.fmt == "json":
+        expected = copy.deepcopy(before)
+        for key in retired:
+            expected.pop(key)
+        for path, value in _json_leaves(desired):
+            node = expected
+            for key in path[:-1]:
+                node = node.setdefault(key, {})
+            node[path[-1]] = value
+        if parsed != expected:
+            raise ValueError(f"{cli.name}: the merge would change unowned JSON settings")
+        return
+    for key in retired:
+        before.pop(key)
     owned = _owned(cli, desired)
     for key, value in owned:
         present, landed = _lookup(parsed, key)
         if not present or landed != value:
             raise ValueError(f"{cli.name}: {key} did not survive the merge")
     keys = [key for key, _ in owned]
-    if _without(parsed, keys) != _without(_parse(cli, original), keys):
+    if _without(parsed, keys) != _without(before, keys):
         raise ValueError(f"{cli.name}: the merge would change settings Agentbot does not own")
 
 
@@ -546,5 +684,7 @@ def doctor_cli_configs(paths: AgentbotPaths) -> list[tuple[str, str, str]]:
             rows.append((f"{name} config", "current", "ok"))
         else:
             summary = f"{len(plan.additions)} to add, {len(plan.changes)} to change"
+            if plan.removals:
+                summary += f", {len(plan.removals)} to remove"
             rows.append((f"{name} config", summary, "check"))
     return rows

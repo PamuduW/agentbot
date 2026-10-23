@@ -4,6 +4,5 @@
   "verbosity": "low",
   "notifications": true,
   "showFeedbackSurvey": false,
-  "enableTelemetry": false,
   "toolPermission": "request-review"
 }
