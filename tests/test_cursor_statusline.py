@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from src.cursor_statusline import (
@@ -79,10 +82,37 @@ class CursorStatuslineTests(unittest.TestCase):
         state = install_cursor_statusline(self.paths)
 
         self.assertEqual(state.state, "ready")
-        self.assertEqual(self._read_config()["statusLine"], DESIRED_BLOCK)
+        self.assertEqual(
+            self._read_config()["statusLine"],
+            {**DESIRED_BLOCK, "command": shlex.quote(str(statusline_destination(self.paths)))},
+        )
         destination = statusline_destination(self.paths)
         self.assertTrue(destination.is_file())
         self.assertTrue(destination.stat().st_mode & 0o111, "script must be executable")
+
+    def test_custom_config_home_statusline_executes_from_that_home(self) -> None:
+        self.paths = replace(self.paths, cursor_home=self.home / "custom cursor's config")
+        self.paths.cursor_home.mkdir()
+        state = install_cursor_statusline(self.paths)
+        self.assertEqual("ready", state.state)
+        command = self._read_config()["statusLine"]["command"]
+        result = subprocess.run(
+            ["bash", "-c", command],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "HOME": str(self.home)},
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("hi\n", result.stdout)
+        self.assertEqual("ready", inspect_cursor_statusline(self.paths).state)
+
+    def test_legacy_command_is_stale_in_custom_config_home_until_migrated(self) -> None:
+        self.paths = replace(self.paths, cursor_home=self.home / "custom config")
+        self.paths.cursor_home.mkdir()
+        install_cursor_statusline(self.paths)
+        self._write_config({"statusLine": DESIRED_BLOCK})
+        self.assertEqual("stale", inspect_cursor_statusline(self.paths).state)
+        self.assertEqual("ready", install_cursor_statusline(self.paths).state)
 
     def test_unrelated_cursor_settings_survive(self) -> None:
         """cli-config.json holds the operator's model, permissions and editor

@@ -85,7 +85,7 @@ def default_paths(root: Path | None = None) -> AgentbotPaths:
         root=product_root,
         codex_home=Path(os.environ.get("CODEX_HOME") or home / ".codex").expanduser(),
         claude_home=Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser(),
-        cursor_home=home / ".cursor",
+        cursor_home=_cursor_home(home),
         agents_home=home / ".agents",
         gemini_home=home / ".gemini",
     )
@@ -95,3 +95,11 @@ def _default_config_home() -> Path:
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg_config_home).expanduser() if xdg_config_home else Path.home() / ".config"
     return base / "agentbot"
+
+
+def _cursor_home(home: Path) -> Path:
+    override = os.environ.get("CURSOR_CONFIG_DIR", "")
+    if override.strip():
+        return Path(override)
+    xdg = os.environ.get("XDG_CONFIG_HOME", "")
+    return Path(xdg) / "cursor" if xdg.strip() else home / ".cursor"

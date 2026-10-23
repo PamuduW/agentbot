@@ -86,3 +86,11 @@ is tested against each:
 - `context_window.used_percentage` null before the first API call
 - an empty payload
 - a narrow `render_width_chars`, which truncates with an ellipsis
+
+## Custom Cursor config directory
+
+The global config and script follow `CURSOR_CONFIG_DIR`, then
+`$XDG_CONFIG_HOME/cursor`, then `~/.cursor`. Installation writes a shell-quoted
+absolute command to the script in that directory, including paths with spaces
+or apostrophes. The previous `~/.cursor/statusline-command.sh` form remains
+recognized for migration; unrelated statusline commands are preserved.

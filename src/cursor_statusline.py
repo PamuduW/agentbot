@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,6 +99,7 @@ def _is_managed_command(command: str, paths: AgentbotPaths) -> bool:
         STATUSLINE_COMMAND,
         os.path.expanduser(STATUSLINE_COMMAND),
         str(statusline_destination(paths)),
+        shlex.quote(str(statusline_destination(paths))),
     }
 
 
@@ -116,6 +118,13 @@ def inspect_cursor_statusline(paths: AgentbotPaths) -> CursorStatuslineState:
         # Somebody else's statusline. Reporting it is useful; replacing it is
         # not ours to do.
         return CursorStatuslineState("unowned", f"points at {command}")
+
+    if command in {STATUSLINE_COMMAND, os.path.expanduser(STATUSLINE_COMMAND)} and (
+        destination != Path(os.path.expanduser(STATUSLINE_COMMAND))
+    ):
+        return CursorStatuslineState(
+            "stale", "legacy command points outside Cursor config directory"
+        )
 
     if not destination.is_file():
         return CursorStatuslineState("stale", f"configured but {destination} is missing")
@@ -158,8 +167,9 @@ def install_cursor_statusline(paths: AgentbotPaths) -> CursorStatuslineState:
     write_text_atomic(destination, source.read_text(encoding="utf-8"), backup=destination.is_file())
     destination.chmod(0o755)
 
-    if block != DESIRED_BLOCK:
-        config["statusLine"] = dict(DESIRED_BLOCK)
+    desired = {**DESIRED_BLOCK, "command": shlex.quote(str(destination))}
+    if block != desired:
+        config["statusLine"] = desired
         write_text_atomic(
             config_file,
             json.dumps(config, indent=2) + "\n",

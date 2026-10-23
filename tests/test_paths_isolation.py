@@ -134,10 +134,15 @@ class PathIsolationTests(unittest.TestCase):
             home = Path(temporary)
             with (
                 patch("src.paths.Path.home", return_value=home),
-                patch.dict(os.environ, {
-                    "CODEX_HOME": str(home / "custom-codex"),
-                    "CLAUDE_CONFIG_DIR": str(home / "custom-claude"),
-                }),
+                patch.dict(
+                    os.environ,
+                    {
+                        "CODEX_HOME": str(home / "custom-codex"),
+                        "CLAUDE_CONFIG_DIR": str(home / "custom-claude"),
+                        "CURSOR_CONFIG_DIR": "",
+                        "XDG_CONFIG_HOME": "",
+                    },
+                ),
             ):
                 paths = default_paths(home / "product")
             self.assertEqual(home / "custom-codex", paths.codex_home)
@@ -156,6 +161,30 @@ class PathIsolationTests(unittest.TestCase):
                 paths = default_paths(home / "product")
             self.assertEqual(home / ".codex", paths.codex_home)
             self.assertEqual(home / ".claude", paths.claude_home)
+
+    def test_cursor_override_precedence_and_consumers(self):
+        from src.cli_config import managed_clis
+        from src.cursor_statusline import config_path
+        from src.mcp_reconcile import _destination
+
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            for override, xdg, expected in (
+                (str(home / "custom cursor"), str(home / "xdg"), home / "custom cursor"),
+                ("", str(home / "xdg"), home / "xdg/cursor"),
+                ("   ", "  ", home / ".cursor"),
+            ):
+                with (
+                    self.subTest(override=override, xdg=xdg),
+                    patch("src.paths.Path.home", return_value=home),
+                    patch.dict(os.environ, {"CURSOR_CONFIG_DIR": override, "XDG_CONFIG_HOME": xdg}),
+                ):
+                    paths = default_paths(home / "product")
+                    self.assertEqual(expected, paths.cursor_home)
+                    cli = next(c for c in managed_clis(paths) if c.name == "cursor")
+                    self.assertEqual(expected / "cli-config.json", cli.config_path)
+                    self.assertEqual(expected / "cli-config.json", config_path(paths))
+                    self.assertEqual(expected / "mcp.json", _destination(paths, "cursor"))
 
     def test_default_paths_still_resolves_the_real_home(self):
         # The production default must keep pointing at the user's home; only

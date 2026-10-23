@@ -130,8 +130,10 @@ source.
 
 Every listed skill's description is sent in every Claude session. The
 `skillOverrides` key in `cli/claude.settings.json` (merged by
-`cli-config apply`, `install` and `update`) sets each skill to `name-only`,
-`user-invocable-only` or `off` without editing the skill. Building blocks that
+`cli-config apply`, `install` and `update`) sets each declared skill to `on`, `name-only`,
+`user-invocable-only` or `off` without editing the skill. Undeclared personal
+overrides survive. Agent-memory, adapted brainstorming and text cleaning are
+explicitly on; co-council is user-invocable-only; native import-memory stays off. Building blocks that
 other skills call are `name-only`, so they stay callable. The overrides also
 cover Claude Code's built-in skills and the skills synced from the claude.ai
 account (measured with `/context` on Claude Code 2.1.283). They do not reach
