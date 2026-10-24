@@ -597,13 +597,19 @@ def _handle_memory_setup(context: CommandContext) -> int:
 
     args = context.args
     config_home = context.paths.config_home
+    if args.setup_ssh_key and not args.setup_clone:
+        raise ValueError("--ssh-key requires --clone")
     if args.setup_path:
         result = setup.setup_path(caller_path(args.setup_path), config_home, apply=args.confirm)
     elif args.setup_clone:
         if not args.dest:
             raise ValueError("--clone needs --dest PATH for the new checkout")
         result = setup.setup_clone(
-            args.setup_clone, caller_path(args.dest), config_home, apply=args.confirm
+            args.setup_clone,
+            caller_path(args.dest),
+            config_home,
+            apply=args.confirm,
+            ssh_identity=caller_path(args.setup_ssh_key) if args.setup_ssh_key else None,
         )
     elif args.setup_new:
         result = setup.setup_new(
@@ -1876,6 +1882,12 @@ def _add_memory_setup_parser(memory_sub: argparse._SubParsersAction) -> None:
         "--remove", dest="setup_remove", action="store_true", help="Forget the configured vault"
     )
     setup.add_argument("--dest", metavar="PATH", help="Destination for --clone")
+    setup.add_argument(
+        "--ssh-key",
+        dest="setup_ssh_key",
+        metavar="PATH",
+        help="Use and save this SSH identity in the cloned vault's local Git configuration",
+    )
     setup.add_argument("--remote", metavar="URL", help="Origin to record for --new")
     setup.add_argument("--yes", action="store_true", dest="confirm")
     setup.add_argument("--json", action="store_true", dest="memory_json")
