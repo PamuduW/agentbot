@@ -169,6 +169,119 @@ class CloneAndNewTests(SetupTestCase):
         self.assertFalse(dest.exists())
         self.assertFalse(setup.config_path(self.config).exists())
 
+    def test_clone_initializes_an_empty_remote_without_pushing(self) -> None:
+        bare = self.tmp / "empty.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "master", str(bare)], check=True)
+        dest = self.tmp / "new-clone"
+        preview = setup.setup_clone(str(bare), dest, self.config)
+        self.assertEqual("preview", preview.state)
+        self.assertFalse(dest.exists())
+        self.assertFalse(setup.config_path(self.config).exists())
+
+        result = setup.setup_clone(str(bare), dest, self.config, apply=True)
+
+        self.assertEqual("configured", result.state)
+        self.assertEqual(3, memory.read_marker(dest))
+        self.assertEqual([], memory.validate(dest).findings)
+        self.assertEqual(dest.resolve(), self.resolve())
+        self.assertEqual(str(bare), result.vault["remote"])
+        self.assertEqual("main", result.vault["branch"])
+        self.assertEqual(0o700, stat.S_IMODE(dest.stat().st_mode))
+        head = subprocess.run(
+            ["git", "-C", str(dest), "rev-parse", "--verify", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertTrue(head.stdout.strip())
+        refs = subprocess.run(
+            ["git", "-C", str(bare), "show-ref"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(1, refs.returncode)
+        self.assertTrue(any("push" in note.lower() for note in result.notes))
+
+    def test_clone_rejects_a_repository_with_an_empty_commit(self) -> None:
+        plain = self.tmp / "empty-tree"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
+        setup._initial_commit(plain)
+        subprocess.run(
+            ["git", "-C", str(plain), "rev-parse", "--verify", "HEAD"],
+            check=True,
+            capture_output=True,
+        )
+        dest = self.tmp / "dest"
+        with self.assertRaises(memory.MemoryVaultError):
+            setup.setup_clone(str(plain), dest, self.config, apply=True)
+        self.assertFalse(dest.exists())
+        self.assertFalse(setup.config_path(self.config).exists())
+
+    def test_clone_rejects_a_remote_with_only_custom_refs(self) -> None:
+        bare = self.tmp / "custom.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        subprocess.run(
+            ["git", "-C", str(bare), "fetch", "-q", str(self.vault.root), "HEAD:refs/notes/keep"],
+            check=True,
+        )
+        dest = self.tmp / "custom-clone"
+        with self.assertRaises(memory.MemoryVaultError):
+            setup.setup_clone(str(bare), dest, self.config, apply=True)
+        self.assertFalse(dest.exists())
+        self.assertFalse(setup.config_path(self.config).exists())
+
+    def test_failed_empty_clone_initialization_removes_only_the_new_checkout(self) -> None:
+        bare = self.tmp / "empty.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        dest = self.tmp / "failed-clone"
+        with (
+            patch.object(setup, "_initial_commit", side_effect=OSError("fixture: full disk")),
+            self.assertRaises(OSError),
+        ):
+            setup.setup_clone(str(bare), dest, self.config, apply=True)
+        self.assertFalse(dest.exists())
+        self.assertFalse(setup.config_path(self.config).exists())
+
+    def test_selected_ssh_identity_is_persisted_and_parsed_by_openssh(self) -> None:
+        bare = self.bare_from_vault()
+        key = self.tmp / "key ' with $dollar"
+        key.write_text("fixture: path only; ssh -G does not authenticate\n")
+        dest = self.tmp / "selected-key-clone"
+        preview = setup.setup_clone(str(bare), dest, self.config, ssh_identity=key)
+        self.assertEqual("preview", preview.state)
+        self.assertFalse(dest.exists())
+        result = setup.setup_clone(str(bare), dest, self.config, ssh_identity=key, apply=True)
+        self.assertEqual("configured", result.state)
+        command = subprocess.run(
+            ["git", "-C", str(dest), "config", "--local", "--get", "core.sshCommand"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        parsed = subprocess.run(
+            ["/bin/sh", "-c", command + " -G -F /dev/null git@github.com"],
+            env={**os.environ, "SSH_AUTH_SOCK": str(self.tmp / "agent socket")},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertIn("identityfile " + str(key), parsed)
+        self.assertIn("identitiesonly yes", parsed)
+        self.assertIn("stricthostkeychecking true", parsed)
+        self.assertIn("identityagent SSH_AUTH_SOCK", parsed)
+
+    def test_an_invalid_ssh_identity_is_rejected_before_cloning(self) -> None:
+        dest = self.tmp / "invalid-key-clone"
+        with self.assertRaises(memory.MemoryVaultError):
+            setup.setup_clone(
+                str(self.bare_from_vault()),
+                dest,
+                self.config,
+                ssh_identity=self.tmp / "missing-key",
+                apply=True,
+            )
+        self.assertFalse(dest.exists())
+
     def test_destinations_are_checked(self) -> None:
         occupied = self.tmp / "occupied"
         occupied.mkdir()
@@ -237,6 +350,36 @@ class SetupCliTests(SetupTestCase):
         with patch.dict(os.environ, env, clear=True):
             rc, stdout, _ = run_cli_main(["agentbot", "--root", str(self.tmp / "agentbot"), *argv])
         return rc, stdout
+
+    def test_cli_clone_records_the_selected_ssh_key(self) -> None:
+        bare = self.tmp / "cli-remote.git"
+        subprocess.run(
+            ["git", "clone", "-q", "--bare", str(self.vault.root), str(bare)],
+            check=True,
+        )
+        key = self.tmp / "cli-key"
+        key.write_text("fixture: no network authentication\n")
+        dest = self.tmp / "cli-clone"
+        rc, stdout = self._cli(
+            "memory",
+            "setup",
+            "--clone",
+            str(bare),
+            "--dest",
+            str(dest),
+            "--ssh-key",
+            str(key),
+            "--yes",
+        )
+        self.assertEqual(0, rc, stdout)
+        command = subprocess.run(
+            ["git", "-C", str(dest), "config", "--local", "--get", "core.sshCommand"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertIn(str(key), command)
+        self.assertTrue((dest / ".git/hooks/pre-push").is_file())
 
     def test_cli_setup_then_status(self) -> None:
         rc, stdout = self._cli("memory", "status")

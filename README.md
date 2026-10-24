@@ -204,8 +204,18 @@ that later holds a different repository, or no vault, fails closed.
 `--clone` and `--new` refuse a destination that is not empty, is inside
 another repository, crosses a symlink, or sits on a Windows drive or in a
 temporary directory; `--new` creates an empty schema 3 vault (a marker with a
-new `vault_id`, an empty project registry, and the tier READMEs) and never
-pushes.
+new `vault_id`, an empty project registry, and the tier READMEs).
+`--clone` also initializes that structure when the cloned repository has no
+Git refs and no working files. It checks advertised remote refs too, including
+custom refs that a normal clone does not fetch. Existing vaults are preserved; other repositories
+are rejected, including repositories containing only an empty commit or a README.
+Neither mode pushes. For a newly initialized vault, publish its first commit
+with `git -C /home/me/agent-memory push -u origin main` when ready.
+For a selected SSH identity, add `--ssh-key /home/me/.ssh/id_ed25519` to
+`--clone`. Setup uses that key for cloning and records a safely quoted
+`core.sshCommand` in the new vault's local Git configuration for future syncs.
+The current `SSH_AUTH_SOCK` selects the agent at runtime. The key remains on
+this machine; no global SSH configuration or remote repository is changed.
 `AGENTBOT_MEMORY_ROOT` and `AGENTBOT_MEMORY_DIR` still override the setting
 (the vault hooks use them). No vault configured is a clean state: memory
 commands say so and exit `2`, and nothing else in Agentbot depends on memory.

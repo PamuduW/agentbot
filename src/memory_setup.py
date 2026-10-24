@@ -3,7 +3,7 @@
 Agentbot no longer searches for a vault. The operator names one per machine:
 
 - ``--path``   an existing local checkout;
-- ``--clone``  a Git URL, cloned to a new destination;
+- ``--clone``  a Git URL, cloned to a new destination, initialized if empty;
 - ``--new``    a new, empty vault, optionally with a remote to push to later.
 
 The choice is stored in private configuration,
@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import urllib.parse
@@ -51,8 +52,12 @@ def config_path(config_home: Path) -> Path:
     return config_home / CONFIG_NAME
 
 
-def _git(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _git(
+    *args: str, cwd: Path | None = None, ssh_command: str | None = None
+) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    if ssh_command:
+        env.update(GIT_SSH_COMMAND=ssh_command, GIT_SSH_VARIANT="ssh")
     try:
         return subprocess.run(
             ["git", *args],
@@ -322,28 +327,93 @@ def setup_path(path: Path, config_home: Path, *, apply: bool = False) -> SetupRe
 
 
 def setup_clone(
-    url: str, destination: Path, config_home: Path, *, apply: bool = False
+    url: str,
+    destination: Path,
+    config_home: Path,
+    *,
+    apply: bool = False,
+    ssh_identity: Path | None = None,
 ) -> SetupResult:
     source = sanitize_url(url)
     target = check_destination(destination)
+    ssh_command = None
+    clone_options = []
+    if ssh_identity is not None:
+        if (
+            not ssh_identity.is_absolute()
+            or not ssh_identity.is_file()
+            or ssh_identity.is_symlink()
+            or ssh_identity.stat().st_uid != os.geteuid()
+        ):
+            raise MemoryVaultError("the SSH key must be an absolute, owned, regular file")
+        ssh_command = shlex.join(
+            [
+                "ssh",
+                "-i",
+                str(ssh_identity),
+                "-o",
+                "IdentitiesOnly=yes",
+                "-o",
+                "StrictHostKeyChecking=yes",
+                "-o",
+                "IdentityAgent=SSH_AUTH_SOCK",
+            ]
+        )
+        clone_options = ["--config", "core.sshCommand=" + ssh_command]
     result = SetupResult(
         state="preview", mode="clone", vault={"path": str(target), "remote": source}
     )
+    if ssh_identity is not None:
+        result.notes.append(f"Vault-local Git SSH identity: {ssh_identity}")
     if not apply:
-        result.notes.append(f"Will clone {source} into {target}; nothing is pushed.")
+        result.notes.append(
+            f"Will clone {source} into {target} and initialize a vault if the repository "
+            "has no refs or working files; nothing is pushed."
+        )
         return result
     created = not target.exists()
-    clone = _git("clone", "--quiet", "--no-recurse-submodules", source, str(target))
     try:
+        clone = _git(
+            "clone",
+            "--quiet",
+            "--no-recurse-submodules",
+            *clone_options,
+            source,
+            str(target),
+            ssh_command=ssh_command,
+        )
         if clone.returncode != 0:
             raise MemoryVaultError(f"git clone failed: {clone.stderr.strip()[:200]}")
         os.chmod(target, 0o700)
+        refs = _git("-C", str(target), "for-each-ref", "--format=%(refname)")
+        if refs.returncode != 0:
+            raise MemoryVaultError("could not inspect the cloned repository's refs")
+        head = _git("-C", str(target), "rev-parse", "--verify", "HEAD")
+        if (
+            not refs.stdout.strip()
+            and head.returncode != 0
+            and not any(p.name != ".git" for p in target.iterdir())
+        ):
+            remote_refs = _git("-C", str(target), "ls-remote", "origin", ssh_command=ssh_command)
+            if remote_refs.returncode != 0:
+                raise MemoryVaultError("could not verify that the remote repository is empty")
+            if not remote_refs.stdout.strip():
+                if (
+                    _git("-C", str(target), "symbolic-ref", "HEAD", "refs/heads/main").returncode
+                    != 0
+                ):
+                    raise MemoryVaultError("could not set the new vault's branch")
+                _initialize_vault(target)
+                result.notes.append("Initialized the empty repository as a new memory vault.")
+                result.notes.append(
+                    "Push the first commit when ready: git -C VAULT push -u origin main"
+                )
         try:
             read_marker(target)
         except MemoryVaultError as error:
             raise MemoryVaultError(f"{source} is not an Agentbot memory vault: {error}") from error
         result.vault = _describe(target)
-    except MemoryVaultError:
+    except BaseException:
         if created:
             shutil.rmtree(target, ignore_errors=True)
         raise
@@ -371,14 +441,7 @@ def setup_new(
         os.chmod(target, 0o700)
         if _git("init", "--quiet", "--initial-branch=main", str(target)).returncode != 0:
             raise MemoryVaultError("git init failed")
-        marker = {"agentbot_memory_schema": SUPPORTED_SCHEMA, "vault_id": str(uuid.uuid4())}
-        for relative, text in NEW_VAULT_READMES.items():
-            (target / relative).parent.mkdir(exist_ok=True)
-            write_text_atomic(target / relative, text)
-        write_text_atomic(target / MARKER, json.dumps(marker, indent=2) + "\n")
-        write_text_atomic(target / REGISTRY, '{ "projects": [] }\n')
-        write_text_atomic(target / ".gitignore", NEW_VAULT_GITIGNORE)
-        _initial_commit(target)
+        _initialize_vault(target)
         if origin:
             _git("-C", str(target), "remote", "add", "origin", origin)
         result.vault = _describe(target)
@@ -392,6 +455,17 @@ def setup_new(
         result.notes.append("Push the first commit when ready: git -C VAULT push -u origin main")
     result.notes.extend(NEXT_STEPS)
     return result
+
+
+def _initialize_vault(target: Path) -> None:
+    marker = {"agentbot_memory_schema": SUPPORTED_SCHEMA, "vault_id": str(uuid.uuid4())}
+    for relative, text in NEW_VAULT_READMES.items():
+        (target / relative).parent.mkdir(exist_ok=True)
+        write_text_atomic(target / relative, text)
+    write_text_atomic(target / MARKER, json.dumps(marker, indent=2) + "\n")
+    write_text_atomic(target / REGISTRY, '{ "projects": [] }\n')
+    write_text_atomic(target / ".gitignore", NEW_VAULT_GITIGNORE)
+    _initial_commit(target)
 
 
 def _initial_commit(vault: Path) -> None:
