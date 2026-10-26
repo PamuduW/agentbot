@@ -32,8 +32,15 @@ and apt carries neither `mcp` nor a tomlkit new enough for `requirements.txt`.
 Read-only commands never create the environment; they report what is missing
 and name `./install.sh install` as the remedy.
 
-To use an interpreter you manage yourself, set `AGENTBOT_PYTHON` to it.
-Agentbot then resolves through it and provisions nothing.
+For read-only commands, `AGENTBOT_PYTHON` can select an interpreter you manage.
+Before an install or update, unset `AGENTBOT_PYTHON` and
+`AGENTBOT_PYTHON_EXPLICIT`. Provisioning requires Agentbot's managed environment
+so an external interpreter cannot bypass the approved dependency hashes.
+
+Managed skill installation also requires the selected Node/npm runtime installed
+by Dotfiles. Agentbot checks its ownership receipts, catalog identity and physical
+versions, then uses those executable paths for npm and the Skills CLI. An unrelated
+Node or npm on `PATH` cannot replace that runtime.
 
 ## Quick start
 

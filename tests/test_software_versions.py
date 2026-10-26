@@ -128,7 +128,17 @@ class ApprovedNpmInstallTests(unittest.TestCase):
             runner = Mock()
 
             def npm_ci(argv, *, cwd, **_kwargs):
-                self.assertEqual(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], argv)
+                self.assertEqual(
+                    [
+                        "/selected/node",
+                        "/selected/npm-cli.js",
+                        "ci",
+                        "--ignore-scripts",
+                        "--no-audit",
+                        "--no-fund",
+                    ],
+                    argv,
+                )
                 self.assertEqual(
                     {"skills": "1.2.3"},
                     json.loads((cwd / "package.json").read_text())["dependencies"],
@@ -148,15 +158,126 @@ class ApprovedNpmInstallTests(unittest.TestCase):
             with (
                 patch.object(software_versions, "operation_snapshot", return_value=snapshot),
                 patch.object(software_versions, "resolve_entry", return_value=artifact),
+                patch.object(
+                    software_versions,
+                    "_approved_npm_runtime",
+                    return_value=(Path("/selected/node"), Path("/selected/npm-cli.js")),
+                ),
             ):
                 installed = software_versions.approved_npm_executable(root, "skills_cli", runner)
                 self.assertTrue(installed.is_file())
+                self.assertIn("/selected/node", installed.read_text())
+                self.assertIn("unset NODE_OPTIONS NODE_PATH", installed.read_text())
                 self.assertEqual(
                     installed, software_versions.approved_npm_executable(root, "skills_cli", runner)
                 )
                 self.assertEqual(1, runner.run.call_count)
-                package_manifest = installed.resolve().parent / "package.json"
+                package_manifest = installed.parent.parent / "node_modules/skills/package.json"
                 package_manifest.write_text(json.dumps({"version": "9.9.9"}))
                 with self.assertRaisesRegex(ValueError, "differs"):
                     software_versions.approved_npm_executable(root, "skills_cli", runner)
                 self.assertEqual(1, runner.run.call_count)
+
+
+class SelectedNpmRuntimeTests(unittest.TestCase):
+    def test_launcher_uses_selected_node_even_when_path_and_options_are_poisoned(self):
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="catalog runtime ") as temporary:
+            directory = Path(temporary)
+            node = directory / "selected node"
+            node.write_text(
+                '#!/bin/sh\n[ -z "${NODE_OPTIONS+x}" ] && [ -z "${NODE_PATH+x}" ] || exit 91\nprintf "%s\\n" "$@"\n'
+            )
+            node.chmod(0o700)
+            package = directory / "skills entrypoint.js"
+            package.write_text("fixture package\n")
+            launcher = directory / "skills"
+            launcher.write_text(software_versions._npm_launcher(node, package))
+            launcher.chmod(0o700)
+            result = subprocess.run(
+                [str(launcher), "argument with spaces"],
+                env={
+                    "PATH": "/unapproved",
+                    "NODE_OPTIONS": "--invalid",
+                    "NODE_PATH": "/unapproved",
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual([str(package), "argument with spaces"], result.stdout.splitlines())
+
+    def test_runtime_requires_catalog_receipts_paths_and_physical_versions(self) -> None:
+        import hashlib
+        import os
+        import tempfile
+        from types import SimpleNamespace
+
+        from src.command_runner import CommandRunner
+
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            prefix = home / ".nvm/versions/node/v24.1.0"
+            node = prefix / "bin/node"
+            npm = prefix / "lib/node_modules/npm/bin/npm-cli.js"
+            node.parent.mkdir(parents=True)
+            npm.parent.mkdir(parents=True)
+            npm.write_text("fixture npm entrypoint\n")
+            node.write_text(
+                '#!/bin/sh\n[ -z "${NODE_OPTIONS+x}" ] && [ -z "${NODE_PATH+x}" ] || exit 91\n'
+                'if [ "$#" = 1 ]; then echo v24.1.0; else echo 11.1.0; fi\n'
+            )
+            node.chmod(0o700)
+            (prefix / "bin/npm").symlink_to("../lib/node_modules/npm/bin/npm-cli.js")
+            links = home / ".local/bin"
+            links.mkdir(parents=True)
+            for name in ("node", "npm"):
+                (links / name).symlink_to(prefix / "bin" / name)
+            table = b"nodejs\tversion\tlinux-amd64\t24.1.0\n"
+            (home / "software.tsv").write_bytes(table)
+            identity = hashlib.sha256(table).hexdigest()
+            receipts = home / ".local/share/dotfiles-catalog"
+            receipts.mkdir(parents=True)
+            for key, version in (("nodejs", "24.1.0"), ("npm", "11.1.0")):
+                (receipts / (key + ".native")).write_text(
+                    f"native-runtime-v1\nnvm\n{version}\n{'a' * 64}\n{'b' * 40}\n{prefix}\n{identity}\n"
+                )
+            snapshot = SimpleNamespace(directory=home)
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "HOME": str(home),
+                        "NVM_DIR": str(home / ".nvm"),
+                        "NODE_VERSION": "24.1.0",
+                        "NPM_VERSION": "11.1.0",
+                        "NODE_OPTIONS": "--invalid",
+                        "NODE_PATH": "/unapproved",
+                    },
+                ),
+                patch.object(
+                    software_versions,
+                    "resolve_entry",
+                    side_effect=lambda _, key, _target: {
+                        "version": {"nodejs": "24.1.0", "npm": "11.1.0"}[key]
+                    },
+                ),
+            ):
+                self.assertEqual(
+                    (node, npm), software_versions._approved_npm_runtime(snapshot, CommandRunner())
+                )
+                receipt = receipts / "npm.native"
+                original = receipt.read_text()
+                receipt.write_text(original.replace(identity, "f" * 64))
+                with self.assertRaisesRegex(ValueError, "ownership"):
+                    software_versions._approved_npm_runtime(snapshot, CommandRunner())
+                receipt.write_text(original)
+                node.write_text("#!/bin/sh\necho v99.0.0\n")
+                with self.assertRaisesRegex(ValueError, "physical"):
+                    software_versions._approved_npm_runtime(snapshot, CommandRunner())
+                receipt.unlink()
+                with self.assertRaisesRegex(ValueError, "Dotfiles"):
+                    software_versions._approved_npm_runtime(snapshot, CommandRunner())

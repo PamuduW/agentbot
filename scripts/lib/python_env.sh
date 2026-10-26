@@ -205,10 +205,10 @@ _agentbot_python_install() (
 
 agentbot_python_ensure() {
 	local digest lock_digest
-	# Explicit interpreters remain operator-owned; provisioning never mutates them.
-	if [[ -n "${AGENTBOT_PYTHON_EXPLICIT}" && -x "${AGENTBOT_PYTHON_EXPLICIT}" ]]; then
-		agentbot_python_resolve
-		return 0
+	# An external environment cannot prove installation from the frozen wheel hashes.
+	if [[ -n "${AGENTBOT_PYTHON_EXPLICIT}" ]]; then
+		printf 'Unset AGENTBOT_PYTHON and AGENTBOT_PYTHON_EXPLICIT to provision the approved Python environment. External interpreters remain available for read-only commands.\n' >&2
+		return 2
 	fi
 	agentbot_python_catalog_lock || return 1
 	digest="$(agentbot_python_requirements_digest)" || return 1

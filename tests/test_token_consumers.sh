@@ -74,7 +74,13 @@ FAKE
 }
 
 run_install_script() {
-	bash "$ROOT/install.sh" "$@"
+	# Token scoping uses a fake Python child; catalog provisioning has its own
+	# suites and must not install dependencies into this authentication fixture.
+	bash -c '
+        AGENTBOT_SOURCE_ONLY=1 source "$1"
+        agentbot_python_ensure() { return 0; }
+        main "${@:2}"
+    ' bash "$ROOT/install.sh" "$@"
 }
 
 test_sources_local_helper_only() {

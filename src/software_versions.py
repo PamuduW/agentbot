@@ -101,6 +101,94 @@ def _npm_manifest(lock: dict, package: str, version: str) -> dict:
     return validate_npm_lock(json.dumps(lock).encode(), package, version)
 
 
+def _approved_npm_runtime(snapshot: CatalogSnapshot, runner) -> tuple[Path, Path]:
+    import hashlib
+    import re
+
+    from software_catalog import _read
+
+    target = operation_target()
+    versions = {key: resolve_entry(snapshot, key, target)["version"] for key in ("nodejs", "npm")}
+    rows = _read(snapshot.directory / "software.tsv", 16_777_216).splitlines(keepends=True)
+    identity = hashlib.sha256(
+        b"".join(
+            sorted(row for row in rows if row.split(b"\t", 1)[0] in {b"nodejs", b"npm", b"nvm"})
+        )
+    ).hexdigest()
+    prefix = (
+        Path(os.environ.get("NVM_DIR", str(Path.home() / ".nvm")))
+        / "versions/node"
+        / ("v" + versions["nodejs"])
+    )
+    node, npm = prefix / "bin/node", prefix / "lib/node_modules/npm/bin/npm-cli.js"
+    try:
+        for key, binary in (("nodejs", "node"), ("npm", "npm")):
+            receipt = Path.home() / ".local/share/dotfiles-catalog" / (key + ".native")
+            if not receipt.exists():
+                raise OSError("missing runtime receipt")
+            proof = _read(receipt, 4096).decode().splitlines()
+            link = Path.home() / ".local/bin" / binary
+            if (
+                receipt.is_symlink()
+                or receipt.stat().st_uid != os.geteuid()
+                or len(proof) != 7
+                or proof[:3] != ["native-runtime-v1", "nvm", versions[key]]
+                or re.fullmatch(r"[0-9a-f]{64}", proof[3]) is None
+                or re.fullmatch(r"[0-9a-f]{40}", proof[4]) is None
+                or proof[5:] != [str(prefix), identity]
+                or prefix.resolve() != prefix
+                or not link.is_symlink()
+                or os.readlink(link) != str(prefix / "bin" / binary)
+                or link.resolve() != (node if key == "nodejs" else npm)
+            ):
+                raise CatalogError("Node/npm ownership differs from the selected catalog")
+        if node.is_symlink() or not os.access(node, os.X_OK) or not npm.is_file():
+            raise CatalogError("selected Node/npm runtime is missing")
+        environment = _npm_environment()
+        for argv, expected in (
+            ([str(node), "--version"], "v" + versions["nodejs"]),
+            ([str(node), str(npm), "--version"], versions["npm"]),
+        ):
+            result = runner.run(argv, timeout_seconds=30, env=environment)
+            if not result.ok or result.stdout.strip() != expected:
+                raise CatalogError("physical Node/npm versions differ from the selected catalog")
+    except (OSError, UnicodeError) as error:
+        raise CatalogError("Install the selected Node/npm runtime with Dotfiles first") from error
+    return node, npm
+
+
+def _npm_environment() -> dict[str, str]:
+    environment = {"HOME": str(Path.home()), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+    for key in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "NODE_EXTRA_CA_CERTS",
+    ):
+        if key in os.environ:
+            environment[key] = os.environ[key]
+    return environment
+
+
+def _npm_launcher(node: Path, executable: Path) -> str:
+    import shlex
+
+    return (
+        "#!/bin/sh\nunset NODE_OPTIONS NODE_PATH\nexec "
+        + shlex.quote(str(node))
+        + " "
+        + shlex.quote(str(executable))
+        + ' "$@"\n'
+    )
+
+
 def approved_npm_executable(root: Path, identity: str, runner, *, install: bool = True) -> Path:
     """Install a hash-bound closure in a private cache; never ask npm for latest."""
     import json
@@ -122,33 +210,47 @@ def approved_npm_executable(root: Path, identity: str, runner, *, install: bool 
         raise CatalogError("approved npm CLI needs package, binary and frozen lock")
     lock = snapshot.directory / artifact["lock"]
     manifest = _npm_manifest(json.loads(lock.read_text()), package, version)
+    node, npm = _approved_npm_runtime(snapshot, runner)
     cache = snapshot.directory.parent / "npm"
     cache.mkdir(mode=0o700, exist_ok=True)
     if cache.is_symlink() or cache.stat().st_uid != os.geteuid() or cache.stat().st_mode & 0o077:
         raise CatalogError("npm catalog cache must be private and owned")
     destination = cache / f"{identity}-{snapshot.digest}"
-    executable = destination / "node_modules/.bin" / binary
+    executable = destination / "bin" / binary
+    launcher = _npm_launcher(node, destination / "node_modules/.bin" / binary)
     if not install:
         return executable
     if destination.exists() or destination.is_symlink():
         _verify_npm_install(destination, package, version, binary, lock)
+        if (
+            executable.is_symlink()
+            or executable.read_text() != launcher
+            or not os.access(executable, os.X_OK)
+        ):
+            raise CatalogError("npm launcher differs from the selected runtime")
         return executable
     staging = Path(tempfile.mkdtemp(prefix=".install-", dir=cache))
     try:
         (staging / "package-lock.json").write_bytes(lock.read_bytes())
         write_text_atomic(staging / "package.json", json.dumps(manifest) + "\n")
         result = runner.run(
-            ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+            [str(node), str(npm), "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
             cwd=staging,
             timeout_seconds=300,
+            env=_npm_environment(),
         )
         if not result.ok:
             raise CatalogError("cannot install approved npm dependency closure")
         _verify_npm_install(staging, package, version, binary, lock)
+        (staging / "bin").mkdir()
+        write_text_atomic(staging / "bin" / binary, launcher)
+        (staging / "bin" / binary).chmod(0o700)
         try:
             staging.rename(destination)
         except FileExistsError:
             _verify_npm_install(destination, package, version, binary, lock)
+            if executable.is_symlink() or executable.read_text() != launcher:
+                raise CatalogError("npm launcher differs from the selected runtime") from None
         return executable
     finally:
         if staging.exists():
