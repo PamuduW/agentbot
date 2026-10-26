@@ -223,6 +223,20 @@ test_resolution_prefers_a_new_venv_over_an_exported_fallback() {
 	[[ "$resolved" == "$home/.venv/bin/python" ]]
 }
 
+test_unapproved_catalog_cannot_create_an_environment() {
+	local home
+	home="$(make_home unapproved)"
+	(
+		AGENTBOT_HOME="$home"
+		export AGENTBOT_HOME
+		unset AGENTBOT_PYTHON AGENTBOT_PYTHON_EXPLICIT
+		source "$ROOT/scripts/lib/python_env.sh"
+		agentbot_python_ensure
+	) >/dev/null 2>&1 && return 1
+	[[ ! -e "$home/.venv" ]]
+}
+check 'unapproved catalog stops before creating a venv' test_unapproved_catalog_cannot_create_an_environment
+
 check 'an inherited fallback is not treated as an override' test_inherited_fallback_is_not_an_override
 check 'resolution prefers a newly created venv over an exported fallback' test_resolution_prefers_a_new_venv_over_an_exported_fallback
 check 'resolution falls back to python3 on PATH' test_falls_back_to_path_python3

@@ -13,10 +13,18 @@ Use `./install.sh` from a checkout or `agentbot` after installation. Run
 - Node.js, npm, and `npx` for managed skill sources
 - optional `graphify` and `boost` CLIs installed by Dotfiles
 
-Agentbot provisions its own Python packages. `./install.sh install` creates
-`.venv` in the checkout, fills it from `requirements.txt`, and every Agentbot
-command runs through that interpreter. The step is skipped when `requirements.txt`
-has not changed since the last fill, so a normal install does no network work.
+Agentbot provisions its Python packages from an approved, hash-pinned catalog
+lock. An install prepares a release under `.venv-releases`, checks its
+dependencies, then switches `.venv` to that release. An unchanged requirements
+file and lock reuse the existing release. Read-only commands do not provision
+packages. Until the first catalog has passed qualification, provisioning stops
+before creating an environment.
+
+An existing environment with Agentbot's requirements stamp can migrate. The old
+environment remains under `.venv-releases/previous-*`; packages added manually
+remain there and are absent from the new managed environment. Failed preparation
+or publication restores the previous environment. Environments without a valid
+Agentbot stamp are preserved and require operator action before provisioning.
 
 This is why the packages are not listed as prerequisites: a distribution
 interpreter marked `EXTERNALLY-MANAGED` refuses `pip install` under PEP 668,

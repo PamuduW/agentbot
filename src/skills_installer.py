@@ -208,26 +208,13 @@ def _clone_remote_source(
     *,
     runner: CommandRunner | None = None,
 ) -> None:
-    clone_url = source_clone_url(repo)
-    if clone_url is None:
-        raise ValueError(f"not a supported owner/repository source: {repo!r}")
-    if shutil.which("git") is None:
-        raise SkillsInstallError("git is required to install remote skill sources")
+    from .software_versions import approved_source_revision
 
-    timeout_seconds = _github_clone_timeout_seconds()
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-    completed = (runner or CommandRunner()).run(
-        ["git", "clone", "--depth=1", clone_url, str(destination)],
-        timeout_seconds=timeout_seconds,
-        env=env,
-    )
-    if completed.timed_out:
-        raise SkillsInstallError(
-            f"clone for source {repo!r} timed out after {timeout_seconds} seconds"
-        )
-    if completed.returncode != 0:
-        detail = completed.detail(MAX_COMMAND_ERROR_DETAIL_LENGTH)
-        raise SkillsInstallError(f"failed to clone skill source {repo!r}: {detail}")
+    if source_clone_url(repo) is None:
+        raise ValueError(f"not a supported skill source: {repo!r}")
+    root = Path(os.environ.get("AGENTBOT_HOME", str(Path(__file__).resolve().parents[1])))
+    revision = approved_source_revision(root, repo)
+    _clone_pinned_source(repo, revision, destination, runner=runner)
 
 
 def _clone_pinned_source(
@@ -530,6 +517,14 @@ def run_install_command(
     timeout_seconds: int | None = None,
     runner: CommandRunner | None = None,
 ) -> InstallResult:
+    if argv[1:3] == ["--yes", "skills"]:
+        from .software_versions import approved_npm_executable
+
+        if len(argv) < 4 or argv[3] == "update":
+            raise SkillsInstallError("use the approved skill update plan instead of an upstream updater")
+        root = Path(os.environ.get("AGENTBOT_HOME", str(Path(__file__).resolve().parents[1])))
+        executable = approved_npm_executable(root, "skills_cli", runner or CommandRunner(), install=not dry_run)
+        argv = [str(executable), *argv[3:]]
     if dry_run:
         return InstallResult(
             source_id=source_id,
@@ -642,7 +637,7 @@ def _install_checkout(
             )
         return InstallResult(
             source_id=result.source_id,
-            command=build_add_argv(source, agents=agents, global_scope=global_scope, npx=npx),
+            command=result.command,
             returncode=result.returncode, stdout=result.stdout, stderr=result.stderr,
             skipped=result.skipped,
         )
@@ -775,6 +770,10 @@ def install_skills(
     from .skill_prune import enforce_exclusions
 
     config = load_skills_sources(paths.skills_sources_file)
+    if config.active_sources():
+        from .software_versions import preflight_skill_sources
+
+        preflight_skill_sources(paths.root, config)
     # Each source is a network clone, so a dozen of them is minutes of silence
     # if nothing is emitted. Progress was gated on AGENTBOT_TUI, which the
     # install.sh path does not set, so exactly the long unattended run reported
@@ -964,6 +963,11 @@ def restore_skills(
 
     if not apply:
         return tuple(snapshots)
+    from .software_versions import approved_source_revision
+
+    for snapshot in snapshots:
+        if approved_source_revision(paths.root, snapshot.repo) != snapshot.revision:
+            raise SkillsInstallError("restore requires the approved catalog generation for its source revisions")
     with tempfile.TemporaryDirectory(prefix="agentbot-skill-restore-") as temp_dir:
         checkouts: dict[str, Path] = {}
         for snapshot in snapshots:
@@ -1019,8 +1023,11 @@ def update_skills(
     dry_run: bool = False,
     runner: CommandRunner | None = None,
 ) -> InstallResult:
-    config = load_skills_sources(paths.skills_sources_file)
-    return update_all(config, dry_run=dry_run, cwd=paths.root, runner=runner)
+    plan = plan_skill_update(paths, runner=runner)
+    if dry_run:
+        return InstallResult("update", [], 0, "approved skill update preview", "")
+    results = apply_skill_update(paths, plan, runner=runner)
+    return InstallResult("update", [], 0, "\n".join(result.stdout for result in results), "")
 
 
 def list_installed_skills(paths: AgentbotPaths) -> list[str]:

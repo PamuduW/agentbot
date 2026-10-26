@@ -88,6 +88,11 @@ agentbot_usage() {
 }
 
 agentbot_main() {
+	if [[ "${1:-}" == --qualification-context ]]; then
+		[[ $# -ge 3 ]] || agentbot_die '--qualification-context requires a manifest and command'
+		agentbot_run_backend "$@"
+		return $?
+	fi
 	local command="${1:-}"
 	[[ $# -eq 0 ]] || shift
 	case "$command" in

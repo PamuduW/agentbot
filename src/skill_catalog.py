@@ -6,11 +6,12 @@ import tempfile
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from contextvars import copy_context
 from dataclasses import dataclass
 from pathlib import Path
 
 from .command_runner import CommandRunner
-from .skills_sources import SkillsSourcesConfig, source_clone_url
+from .skills_sources import SkillsSourcesConfig
 
 
 @dataclass(frozen=True)
@@ -86,7 +87,7 @@ def _clone_catalogs(
         return tuple(inspect(source) for source in sources)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(inspect, source): source for source in sources}
+        futures = {pool.submit(copy_context().run, inspect, source): source for source in sources}
         found = {futures[future].id: future.result() for future in as_completed(futures)}
     return tuple(found[source.id] for source in sources)
 
@@ -139,17 +140,9 @@ def verified_source_checkouts(
 
 
 def _clone_source(repo: str, destination: Path, *, runner: CommandRunner | None = None) -> None:
-    clone_url = source_clone_url(repo)
-    if clone_url is None:
-        raise ValueError(f"not a supported owner/repository source: {repo!r}")
-    timeout = int(os.environ.get("AGENTBOT_GITHUB_CLONE_TIMEOUT_SECONDS", "300"))
-    completed = (runner or CommandRunner()).run(
-        ["git", "clone", "--depth=1", clone_url, str(destination)],
-        timeout_seconds=timeout,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
-    if completed.returncode != 0:
-        raise RuntimeError(f"failed to inspect skill source {repo!r}: {completed.detail()}")
+    from .skills_installer import _clone_remote_source
+
+    _clone_remote_source(repo, destination, runner=runner)
 
 
 def _revision(checkout: Path, *, runner: CommandRunner | None = None) -> str:

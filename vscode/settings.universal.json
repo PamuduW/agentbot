@@ -1,4 +1,6 @@
 {
+  "extensions.autoUpdate": "off",
+  "extensions.autoCheckUpdates": false,
   "[css]": {
     "editor.defaultFormatter": "vscode.css-language-features"
   },
@@ -128,7 +130,7 @@
     "scminput": false
   },
   "github.copilot.nextEditSuggestions.enabled": true,
-  "go.toolsManagement.autoUpdate": true,
+  "go.toolsManagement.autoUpdate": false,
   "inlineChat.enableV2": true,
   "inlineChat.notebookAgent": true,
   "makefile.configureOnOpen": false,

@@ -70,9 +70,10 @@ sources:
 
         self.assertIn("--full-depth", command)
 
+    @patch("src.software_versions.preflight_skill_sources")
     @patch("src.skills_installer._clone_remote_source")
     @patch("src.skills_installer.run_install_command")
-    def test_install_skills_runs_npx_for_active_sources(self, mock_run, mock_clone) -> None:
+    def test_install_skills_runs_npx_for_active_sources(self, mock_run, mock_clone, _preflight) -> None:
         from src.skills_installer import build_add_argv, install_skills
         from src.skills_sources import SkillSourceEntry
 
@@ -111,40 +112,24 @@ sources:
         self.assertEqual("superpowers", results[0].source_id)
         mock_clone.assert_called_once()
 
-    def test_install_source_clones_github_sources_before_invoking_npx(self) -> None:
+    def test_install_source_clones_catalog_source_before_invoking_approved_cli(self) -> None:
         from src.command_runner import CommandResult
-        from src.skills_installer import InstallResult, install_source
+        from src.skills_installer import install_source
         from src.skills_sources import SkillSourceEntry
 
-        source = SkillSourceEntry(
-            id="superpowers",
-            repo="obra/superpowers",
-            skills=["brainstorming"],
-        )
+        source = SkillSourceEntry("superpowers", "obra/superpowers", ["brainstorming"])
         runner = MagicMock()
-        runner.run.side_effect = [
-            CommandResult(0),
-            CommandResult(0, stdout="ok"),
-        ]
-        lock_file = self.root / "home" / ".agents" / ".skill-lock.json"
-
-        result = install_source(
-            source,
-            agents=["codex"],
-            global_lock_file=lock_file,
-            runner=runner,
-        )
-
-        self.assertIsInstance(result, InstallResult)
-        self.assertEqual(2, runner.run.call_count)
-        clone_command = runner.run.call_args_list[0].args[0]
-        install_command = runner.run.call_args_list[1].args[0]
-        self.assertEqual(
-            ["git", "clone", "--depth=1", "https://github.com/obra/superpowers.git"],
-            clone_command[:4],
-        )
-        self.assertEqual("npx", install_command[0])
-        self.assertNotEqual("obra/superpowers", install_command[4])
+        runner.run.return_value = CommandResult(0, stdout="ok")
+        lock_file = self.root / "home/.agents/.skill-lock.json"
+        with (
+            patch("src.software_versions.approved_source_revision", return_value="a" * 40),
+            patch("src.software_versions.approved_npm_executable", return_value=Path("/approved/skills")),
+            patch("src.skills_installer._clone_pinned_source") as clone,
+        ):
+            install_source(source, agents=["codex"], global_lock_file=lock_file, runner=runner)
+        self.assertEqual("a" * 40, clone.call_args.args[1])
+        self.assertEqual("/approved/skills", runner.run.call_args.args[0][0])
+        self.assertIn("--full-depth", runner.run.call_args.args[0])
 
     @patch("src.skills_installer._clone_remote_source")
     @patch("src.skills_installer.run_install_command")
@@ -437,6 +422,7 @@ sources:
         with (
             patch.object(type(paths), "global_skill_lock", new_callable=lambda: property(lambda _: lock_file)),
             patch("src.skills_installer.source_clone_url", return_value=str(remote)),
+            patch("src.software_versions.approved_source_revision", return_value=reviewed),
         ):
             snapshots = restore_skills(paths, apply=False)
             self.assertEqual(reviewed, snapshots[0].revision)
@@ -499,7 +485,12 @@ sources:
         subprocess.run(commit, check=True, capture_output=True)
         paths = self._paths()
 
-        with patch("src.skill_catalog.source_clone_url", return_value=str(remote)):
+        with (
+            patch("src.skills_installer.source_clone_url", return_value=str(remote)),
+            patch("src.software_versions.approved_source_revision", side_effect=lambda *_: subprocess.check_output(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"], text=True
+            ).strip()),
+        ):
             plan = plan_skill_update(paths)
             skill.write_text("second\n", encoding="utf-8")
             subprocess.run(["git", "-C", str(remote), "add", "skills"], check=True)
@@ -848,18 +839,14 @@ sources:
         self.assertNotIn("alpha", lock["skills"])
         self.assertNotIn("stale", lock["skills"])
 
-    @patch("src.skills_installer.run_install_command")
-    def test_update_skills_runs_npx_update(self, mock_run) -> None:
-        from src.skills_installer import build_update_argv, update_skills
+    def test_update_skills_applies_the_reviewed_catalog_plan(self) -> None:
+        from src.skills_installer import update_skills
 
-        expected_argv = build_update_argv()
-        mock_run.return_value = self._success_result("update", expected_argv)
-
-        result = update_skills(self._paths())
-
-        self.assertEqual(1, mock_run.call_count)
-        command = mock_run.call_args.args[0]
-        self.assertEqual(["npx", "--yes", "skills", "update", "-g", "-y"], command)
+        with patch("src.skills_installer.plan_skill_update") as plan, patch(
+            "src.skills_installer.apply_skill_update", return_value=[]
+        ) as apply:
+            result = update_skills(self._paths())
+        apply.assert_called_once_with(self._paths(), plan.return_value, runner=None)
         self.assertEqual("update", result.source_id)
 
     def test_parse_update_output_reports_updated_and_deleted_skills(self) -> None:
@@ -1134,7 +1121,11 @@ sources:
 
         runner = MagicMock()
         runner.run.return_value = CommandResult(0)
-        with patch.dict(os.environ, {"AGENTBOT_GITHUB_CLONE_TIMEOUT_SECONDS": "600"}):
+        with (
+            patch.dict(os.environ, {"AGENTBOT_GITHUB_CLONE_TIMEOUT_SECONDS": "600"}),
+            patch("src.software_versions.approved_source_revision", return_value="a" * 40),
+            patch("src.skills_installer._checkout_revision", return_value="a" * 40),
+        ):
             _clone_remote_source("owner/repo", self.root / "checkout", runner=runner)
 
         self.assertEqual(600, runner.run.call_args.kwargs["timeout_seconds"])

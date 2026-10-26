@@ -89,7 +89,11 @@ class CloneCommandTests(unittest.TestCase):
 
         runner = MagicMock()
         runner.run.return_value = CommandResult(0)
-        with tempfile.TemporaryDirectory() as temporary:
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch("src.software_versions.approved_source_revision", return_value="a" * 40),
+            patch("src.skills_installer._checkout_revision", return_value="a" * 40),
+        ):
             _clone_remote_source(
                 "gitlab.com/gitlab-org/ci-cd/gitlab-ci-skill",
                 Path(temporary) / "checkout",
@@ -98,7 +102,7 @@ class CloneCommandTests(unittest.TestCase):
 
         self.assertIn(
             "https://gitlab.com/gitlab-org/ci-cd/gitlab-ci-skill.git",
-            runner.run.call_args.args[0],
+            runner.run.call_args_list[0].args[0],
         )
 
     @patch("src.skills_installer.shutil.which", return_value="/usr/bin/git")
@@ -108,10 +112,14 @@ class CloneCommandTests(unittest.TestCase):
 
         runner = MagicMock()
         runner.run.return_value = CommandResult(0)
-        with tempfile.TemporaryDirectory() as temporary:
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch("src.software_versions.approved_source_revision", return_value="a" * 40),
+            patch("src.skills_installer._checkout_revision", return_value="a" * 40),
+        ):
             _clone_remote_source("obra/superpowers", Path(temporary) / "checkout", runner=runner)
 
-        self.assertIn("https://github.com/obra/superpowers.git", runner.run.call_args.args[0])
+        self.assertIn("https://github.com/obra/superpowers.git", runner.run.call_args_list[0].args[0])
 
     def test_installer_rejects_unsupported_source(self) -> None:
         from src.skills_installer import _clone_remote_source
@@ -126,7 +134,11 @@ class CloneCommandTests(unittest.TestCase):
 
         runner = MagicMock()
         runner.run.return_value = CommandResult(0)
-        with tempfile.TemporaryDirectory() as temporary:
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch("src.software_versions.approved_source_revision", return_value="a" * 40),
+            patch("src.skills_installer._checkout_revision", return_value="a" * 40),
+        ):
             _clone_source(
                 "gitlab.com/gitlab-org/ci-cd/gitlab-ci-skill",
                 Path(temporary) / "checkout",
@@ -135,7 +147,7 @@ class CloneCommandTests(unittest.TestCase):
 
         self.assertIn(
             "https://gitlab.com/gitlab-org/ci-cd/gitlab-ci-skill.git",
-            runner.run.call_args.args[0],
+            runner.run.call_args_list[0].args[0],
         )
 
 

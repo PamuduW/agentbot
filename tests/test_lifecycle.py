@@ -66,7 +66,12 @@ class LifecycleTests(unittest.TestCase):
                 workspace_preview=lambda: WorkspaceReport(()),
             )
 
-            lifecycle.update_skills()
+            with mock.patch("src.skills_installer.plan_skill_update") as skill_plan, mock.patch(
+                "src.skills_installer.apply_skill_update", return_value=[]
+            ) as skill_apply:
+                lifecycle.update_skills()
+                self.assertIs(runner, skill_plan.call_args.kwargs["runner"])
+                self.assertIs(runner, skill_apply.call_args.kwargs["runner"])
             lifecycle.workspace_service.preview(
                 workspace,
                 profile_name=None,
@@ -75,9 +80,6 @@ class LifecycleTests(unittest.TestCase):
             plan = lifecycle.plan_update()
 
             commands = [call.args[0] for call in runner.run.call_args_list]
-            self.assertTrue(
-                any(command[:4] == ["npx", "--yes", "skills", "update"] for command in commands)
-            )
             self.assertTrue(
                 any(command[:3] == ["git", "-C", str(workspace)] for command in commands)
             )

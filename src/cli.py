@@ -144,6 +144,19 @@ def _run() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.qualification_context is not None:
+        from .software_versions import qualification_manifest_operation
+
+        try:
+            with qualification_manifest_operation(args.qualification_context, Path(args.root)):
+                return _run_command(args)
+        except (SkillsInstallError, ValueError, OSError) as error:
+            return print_skills_error(error)
+    return _run_command(args)
+
+
+def _run_command(args: argparse.Namespace) -> int:
+
     command = args.command or "install"
     if command == "help":
         help_topic = " ".join(getattr(args, "help_topic", ())) or None
@@ -770,19 +783,31 @@ def _handle_memory_session(context: CommandContext) -> int:
             return 2
         if args.session_action == "configure":
             result = memory_session_config.configure(
-                root, caller_path(args.project_root), context.paths,
-                client=args.client, surface=args.surface, apply=args.confirm,
+                root,
+                caller_path(args.project_root),
+                context.paths,
+                client=args.client,
+                surface=args.surface,
+                apply=args.confirm,
             )
         elif hook:
             raw = sys.stdin.buffer.read(65_537)
             if len(raw) > 65_536:
                 raise memory.MemoryVaultError("memory hook payload exceeds limit")
             result = memory_client_hooks.adapt(
-                root, caller_path(args.project_root), context.paths.config_home,
-                client=args.client, event=args.event, payload=json.loads(raw),
+                root,
+                caller_path(args.project_root),
+                context.paths.config_home,
+                client=args.client,
+                event=args.event,
+                payload=json.loads(raw),
             )
         else:
-            operation = memory_session.recall if args.session_action == "recall" else memory_session.checkpoint
+            operation = (
+                memory_session.recall
+                if args.session_action == "recall"
+                else memory_session.checkpoint
+            )
             kwargs = {"client": args.client, "session_id": args.session_id}
             if args.event_id is not None:
                 kwargs["event_id"] = args.event_id
@@ -790,10 +815,16 @@ def _handle_memory_session(context: CommandContext) -> int:
     except (OSError, ValueError, TypeError, RecursionError, memory.MemoryVaultError):
         if hook:
             print(json.dumps({}))
-            print("  Agentbot memory hook unavailable; use manual recall or checkpoint.", file=sys.stderr)
+            print(
+                "  Agentbot memory hook unavailable; use manual recall or checkpoint.",
+                file=sys.stderr,
+            )
             return 0
-        result = {"state": "unavailable", "saved": False,
-                  "detail": "memory session unavailable; check vault, project and private state"}
+        result = {
+            "state": "unavailable",
+            "saved": False,
+            "detail": "memory session unavailable; check vault, project and private state",
+        }
         print(json.dumps(result))
         return 1
     if hook or args.memory_json:
@@ -1593,12 +1624,17 @@ def _handle_boot(context: CommandContext) -> int:
         result = context.lifecycle.preview_workspace(target, profile=args.profile, targets=targets)
     else:
         result = context.lifecycle.apply_workspace(
-            target, profile=args.profile, targets=targets, register=True,
+            target,
+            profile=args.profile,
+            targets=targets,
+            register=True,
         )
     failed = result.status in {"conflict", "failed"}
-    rows = [] if failed or args.no_memory else [
-        _boot_project_memory(context, result.path, apply=not args.dry_run)
-    ]
+    rows = (
+        []
+        if failed or args.no_memory
+        else [_boot_project_memory(context, result.path, apply=not args.dry_run)]
+    )
     memory_status = 0
     if rows and rows[0][2] in {"warn", "conflict", "skipped"}:
         from .boot_memory import enrolled
@@ -1611,8 +1647,12 @@ def _handle_boot(context: CommandContext) -> int:
         from .boot_memory import setup
 
         row, memory_status = setup(
-            context.paths, result.path, clients=args.memory_clients,
-            confirmed=args.yes, dry_run=args.dry_run, interactive=_at_a_terminal(),
+            context.paths,
+            result.path,
+            clients=args.memory_clients,
+            confirmed=args.yes,
+            dry_run=args.dry_run,
+            interactive=_at_a_terminal(),
         )
         rows.append(row)
     print_workspace_report(result, extra_rows=rows)
@@ -1620,7 +1660,10 @@ def _handle_boot(context: CommandContext) -> int:
 
 
 def _boot_project_memory(
-    context: CommandContext, target: Path, *, apply: bool = True,
+    context: CommandContext,
+    target: Path,
+    *,
+    apply: bool = True,
 ) -> tuple[str, str, str]:
     """Give the booted repository project memory, so one command sets it all up.
 
@@ -2012,7 +2055,9 @@ def _add_memory_session_parser(memory_sub: argparse._SubParsersAction) -> None:
         parser.add_argument("--session-id", required=True)
         parser.add_argument("--event-id", required=name == "checkpoint")
         parser.add_argument("--json", action="store_true", dest="memory_json")
-    hook = actions.add_parser("hook", help="Consume one native hook payload; no automatic registration")
+    hook = actions.add_parser(
+        "hook", help="Consume one native hook payload; no automatic registration"
+    )
     hook.add_argument("--client", choices=CLIENTS, required=True)
     hook.add_argument("--event", required=True)
     hook.add_argument("--project-root", required=True)
@@ -2159,13 +2204,22 @@ def _add_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     hook.add_argument("--json", action="store_true", dest="memory_json")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agentbot")
+def _add_global_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--qualification-context",
+        type=Path,
+        help="explicit candidate manifest for isolated installation qualification",
+    )
     parser.add_argument(
         "--root",
         dest="root",
         default=os.environ.get("AGENTBOT_HOME", str(Path(__file__).resolve().parents[1])),
     )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="agentbot")
+    _add_global_arguments(parser)
     subparsers = parser.add_subparsers(dest="command")
 
     help_parser = subparsers.add_parser("help", help="Show the command reference")

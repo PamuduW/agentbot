@@ -206,6 +206,13 @@ agentbot_repo_update_run() {
 	local outcome reason rc=0
 
 	_AGENTBOT_REPO_RESULT=()
+	if [[ -n "${_SOFTWARE_CATALOG_QUALIFICATION_CONTEXT:-}" ]]; then
+		repo_gate_frozen "$repo" "$repository" _AGENTBOT_REPO_RESULT 'agentbot repo' || rc=$?
+		_agentbot_repo_update_export
+		printf -v "$outcome_name" '%s' "${_AGENTBOT_REPO_RESULT[outcome]}"
+		printf -v "$reason_name" '%s' "${_AGENTBOT_REPO_RESULT[reason]}"
+		return "$rc"
+	fi
 	repo_update_preflight "$repo" 'agentbot repo' _AGENTBOT_REPO_RESULT "$slug"
 	_agentbot_repo_update_export
 

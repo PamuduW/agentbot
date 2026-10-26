@@ -5,7 +5,8 @@ temp/
 log/
 state/
 __pycache__/
-.venv/
+.venv
+.venv-releases/
 .coverage
 htmlcov/
 

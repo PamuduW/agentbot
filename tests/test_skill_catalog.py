@@ -261,13 +261,17 @@ class SkillCatalogTests(unittest.TestCase):
 
         runner = mock.Mock()
         runner.run.return_value = CommandResult(0)
-        with tempfile.TemporaryDirectory() as temporary:
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch("src.software_versions.approved_source_revision", return_value="a" * 40),
+            mock.patch("src.skills_installer._checkout_revision", return_value="a" * 40),
+        ):
             _clone_source("owner/repo", Path(temporary) / "checkout", runner=runner)
 
         self.assertEqual(300, runner.run.call_args.kwargs["timeout_seconds"])
         self.assertEqual(
-            ["git", "clone", "--depth=1", "https://github.com/owner/repo.git"],
-            runner.run.call_args.args[0][:4],
+            ["git", "clone", "--depth=1", "--no-checkout", "https://github.com/owner/repo.git"],
+            runner.run.call_args_list[0].args[0][:5],
         )
 
 
