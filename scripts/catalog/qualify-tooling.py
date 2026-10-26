@@ -30,7 +30,7 @@ def smoke(manifest: Path) -> dict:
         resolve_entry,
     )
 
-    snapshot, sources, _ = load_qualification_context(manifest)
+    _snapshot, sources, _ = load_qualification_context(manifest)
     if sources["agentbot"] != ROOT:
         raise CatalogError("tooling smoke requires its frozen Agentbot checkout")
     operating_system = platform.freedesktop_os_release()
@@ -66,7 +66,7 @@ def smoke(manifest: Path) -> dict:
     repeated = runner.run(command, timeout_seconds=300)
     if not repeated.ok or (ROOT / ".venv").resolve() != release:
         raise CatalogError("repeat provisioning did not retain the Python release")
-    with qualification_manifest_operation(manifest, ROOT):
+    with qualification_manifest_operation(manifest, ROOT) as snapshot:
         lock = snapshot.directory / resolve_entry(snapshot, "python.pip", "linux-amd64")["lock"]
         expected = validate_python_lock(lock.read_bytes())
         observed = runner.run(
