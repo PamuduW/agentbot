@@ -233,11 +233,20 @@ def approved_npm_executable(root: Path, identity: str, runner, *, install: bool 
     try:
         (staging / "package-lock.json").write_bytes(lock.read_bytes())
         write_text_atomic(staging / "package.json", json.dumps(manifest) + "\n")
+        global_config = staging / "global.npmrc"
+        write_text_atomic(global_config, "")
+        environment = _npm_environment()
+        environment.update(
+            {
+                "NPM_CONFIG_USERCONFIG": "/dev/null",
+                "NPM_CONFIG_GLOBALCONFIG": str(global_config),
+            }
+        )
         result = runner.run(
             [str(node), str(npm), "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
             cwd=staging,
             timeout_seconds=300,
-            env=_npm_environment(),
+            env=environment,
         )
         if not result.ok:
             raise CatalogError("cannot install approved npm dependency closure")

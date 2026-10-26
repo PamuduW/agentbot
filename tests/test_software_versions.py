@@ -127,7 +127,11 @@ class ApprovedNpmInstallTests(unittest.TestCase):
             }
             runner = Mock()
 
-            def npm_ci(argv, *, cwd, **_kwargs):
+            def npm_ci(argv, *, cwd, **kwargs):
+                self.assertEqual("/dev/null", kwargs["env"].get("NPM_CONFIG_USERCONFIG"))
+                global_config = Path(kwargs["env"]["NPM_CONFIG_GLOBALCONFIG"])
+                self.assertEqual(cwd, global_config.parent)
+                self.assertEqual("", global_config.read_text())
                 self.assertEqual(
                     [
                         "/selected/node",
