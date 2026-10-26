@@ -162,7 +162,7 @@ _agentbot_python_install() (
 	temporary_link="$releases/current-$BASHPID"
 	backup="$releases/previous-$BASHPID"
 	[[ ! -e "$temporary_link" && ! -L "$temporary_link" && ! -e "$backup" && ! -L "$backup" ]] || return 2
-	# shellcheck disable=SC2329  # Invoked by this transaction's EXIT trap.
+	# shellcheck disable=SC2317,SC2329  # Invoked by this transaction's EXIT trap.
 	_agentbot_python_cleanup() {
 		local status=$? recovery_failed=0
 		if [[ "$committed" == 0 ]]; then
