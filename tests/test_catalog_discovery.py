@@ -130,6 +130,20 @@ class ClosureReplacementTests(unittest.TestCase):
 
 
 class MetadataTransportTests(unittest.TestCase):
+    def test_metadata_credential_rejects_header_injection_before_transport(self):
+        import os
+        from unittest.mock import patch
+
+        import catalog_discovery
+
+        for value in ("fixture\r\nInjected: value", "fixture value", "a" * 8193):
+            with patch.dict(os.environ, {"CATALOG_GITHUB_TOKEN": value}), patch.object(
+                catalog_discovery.urllib.request, "build_opener"
+            ) as opener:
+                with self.assertRaisesRegex(DiscoveryError, "credential format"):
+                    catalog_discovery.fetch_metadata("https://api.github.com/repos/fixture/tool")
+                opener.assert_not_called()
+
     def test_explicit_read_token_stays_on_github_and_cannot_follow_cross_publisher_redirects(self):
         import io
         import os
@@ -147,7 +161,7 @@ class MetadataTransportTests(unittest.TestCase):
             return response
 
         with (
-            patch.dict(os.environ, {"CATALOG_GITHUB_TOKEN": "fixture_only"}),
+            patch.dict(os.environ, {"CATALOG_GITHUB_TOKEN": "fixture.header.payload-signature"}),
             patch.object(
                 catalog_discovery.urllib.request,
                 "build_opener",
