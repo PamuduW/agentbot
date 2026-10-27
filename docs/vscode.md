@@ -158,3 +158,11 @@ disabled for the static font build. Dotfiles installs the fonts for WSL and,
 when interop is available, the current Windows user. Windows desktop VS Code
 needs the Windows installation even when editing files through Remote–WSL.
 Apply the declared settings with `agentbot vscode apply`.
+
+On native Linux, Agentbot also detects a portable desktop installation at
+`~/.local/share/code/bin/code` when no remote server CLI is available. It uses
+`~/.vscode/extensions` and `~/.config/Code/User/settings.json`, with the existing
+`wsl` manifest selection for Linux extensions. This fallback is disabled on WSL.
+Catalog qualification uses the full Linux client because the standalone server
+omits client-side built-in language extensions. This does not certify WSL or
+Windows integration.

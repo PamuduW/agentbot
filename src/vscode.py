@@ -12,6 +12,7 @@ host and wrong for the WSL one.
 from __future__ import annotations
 
 import json
+import platform
 import re
 from contextlib import ExitStack
 from dataclasses import dataclass, field
@@ -88,11 +89,27 @@ class ExtensionPlan:
 def wsl_host(home: Path) -> VSCodeHost:
     """The WSL extension host, served from ~/.vscode-server."""
     server = home / ".vscode-server"
+    remote_cli = _newest_server_cli(server)
+    desktop = home / ".local/share/code/bin/code"
+    if (
+        remote_cli is None
+        and platform.system() == "Linux"
+        and "microsoft" not in platform.release().lower()
+        and desktop.is_file()
+        and (desktop.parent.parent / "resources/app/package.json").is_file()
+    ):
+        return VSCodeHost(
+            name="wsl",
+            settings_path=home / ".config/Code/User/settings.json",
+            extensions_dir=home / ".vscode/extensions",
+            cli=desktop,
+            detail="native Linux desktop",
+        )
     return VSCodeHost(
         name="wsl",
         settings_path=server / "data" / "Machine" / "settings.json",
         extensions_dir=server / "extensions",
-        cli=_newest_server_cli(server),
+        cli=remote_cli,
         detail=str(server),
     )
 
@@ -722,9 +739,9 @@ def settings_source(root: Path, scope: str) -> Path:
 def _editor_version(host: VSCodeHost) -> tuple[int, int] | None:
     if host.cli is None:
         return None
-    package = host.cli.parent.parent / (
-        "resources/app/package.json" if host.name == "windows" else "package.json"
-    )
+    root = host.cli.resolve().parent.parent
+    desktop = root / "resources/app/package.json"
+    package = desktop if desktop.is_file() else root / "package.json"
     if not package.is_file() or package.is_symlink() or package.stat().st_size > 1_048_576:
         return None
     try:

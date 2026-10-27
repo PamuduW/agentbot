@@ -77,8 +77,9 @@ def editor_metadata(data: dict) -> dict:
         or not re.fullmatch(r"[0-9a-f]{64}", digest)
     ):
         raise CatalogError("unsupported Microsoft editor version/checksum metadata")
-    url = f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/{commit}/vscode-server-linux-x64.tar.gz"
-    if data.get("url") != url:
+    url = data.get("url", "")
+    pattern = rf"https://vscode\.download\.prss\.microsoft\.com/dbazure/download/stable/{commit}/code-stable-x64-[0-9]{{1,20}}\.tar\.gz"
+    if not isinstance(url, str) or not re.fullmatch(pattern, url):
         raise CatalogError("editor archive differs from its canonical publisher/commit")
     return {"commit": commit, "version": version, "sha256": digest, "url": url}
 
@@ -100,7 +101,7 @@ class MicrosoftRedirect(urllib.request.HTTPRedirectHandler):
 
 def prepare_editor(home: Path, work: Path, sources: dict, runner: CommandRunner) -> dict:
     opener = urllib.request.build_opener(MicrosoftRedirect())
-    endpoint = "https://update.code.visualstudio.com/api/update/server-linux-x64/stable/latest"
+    endpoint = "https://update.code.visualstudio.com/api/update/linux-x64/stable/latest"
     with opener.open(endpoint, timeout=30) as response:
         raw = response.read(65_537)
     if len(raw) > 65_536:
@@ -135,14 +136,15 @@ def prepare_editor(home: Path, work: Path, sources: dict, runner: CommandRunner)
     roots = [path for path in extracted.iterdir() if path.is_dir() and not path.is_symlink()]
     if (
         len(roots) != 1
-        or json.loads((roots[0] / "package.json").read_text()).get("version") != editor["version"]
+        or json.loads((roots[0] / "resources/app/package.json").read_text()).get("version")
+        != editor["version"]
     ):
         raise CatalogError("editor archive lacks its real matching package metadata")
-    destination = home / ".vscode-server/bin" / editor["commit"]
+    destination = home / ".local/share/code"
     destination.parent.mkdir(parents=True)
     roots[0].rename(destination)
-    (home / ".vscode-server/extensions").mkdir()
-    cli = destination / "bin/code-server"
+    (home / ".vscode/extensions").mkdir(parents=True)
+    cli = destination / "bin/code"
     version = runner.run([str(cli), "--version"], timeout_seconds=30)
     if not version.ok or not {editor["version"], editor["commit"]} <= set(
         version.stdout.splitlines()
@@ -242,7 +244,7 @@ def extensions_smoke(home, snapshot, runner):
         "ownership": first["ownership"],
         "settings_verified": True,
         "repeat_no_downloads_or_installs": True,
-        "scope": "native-linux-remote-extension-selection",
+        "scope": "native-linux-desktop-extension-selection",
         "wsl_certified": False,
     }
 

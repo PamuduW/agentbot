@@ -54,7 +54,7 @@ class IntegrationSmokeTests(unittest.TestCase):
             "productVersion": "1.143.1",
             "name": "1.143.1",
             "sha256hash": "b" * 64,
-            "url": f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/{commit}/vscode-server-linux-x64.tar.gz",
+            "url": f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/{commit}/code-stable-x64-1792691793.tar.gz",
         }
         parsed = module.editor_metadata(value)
         self.assertEqual(commit, parsed["commit"])
@@ -81,9 +81,9 @@ class IntegrationSmokeTests(unittest.TestCase):
         commit = "a" * 40
         archive = io.BytesIO()
         files = {
-            "server/package.json": json.dumps({"version": "1.143.1"}).encode(),
-            "server/bin/code-server": (
-                '#!/bin/sh\nmkdir -p "$HOME/.vscode-server/extensions"\n'
+            "server/resources/app/package.json": json.dumps({"version": "1.143.1"}).encode(),
+            "server/bin/code": (
+                '#!/bin/sh\nmkdir -p "$HOME/.vscode/extensions"\n'
                 f"printf '%s\\n' 1.143.1 {commit} x64\n"
             ).encode(),
         }
@@ -91,7 +91,7 @@ class IntegrationSmokeTests(unittest.TestCase):
             for name, raw in files.items():
                 info = tarfile.TarInfo(name)
                 info.size = len(raw)
-                info.mode = 0o755 if name.endswith("code-server") else 0o644
+                info.mode = 0o755 if name.endswith("bin/code") else 0o644
                 tar.addfile(info, io.BytesIO(raw))
         raw = archive.getvalue()
         metadata = {
@@ -99,7 +99,7 @@ class IntegrationSmokeTests(unittest.TestCase):
             "name": "1.143.1",
             "productVersion": "1.143.1",
             "sha256hash": hashlib.sha256(raw).hexdigest(),
-            "url": f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/{commit}/vscode-server-linux-x64.tar.gz",
+            "url": f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/{commit}/code-stable-x64-1792691793.tar.gz",
         }
         home = self.directory / "home"
         work = self.directory / "work"
@@ -118,7 +118,7 @@ class IntegrationSmokeTests(unittest.TestCase):
                 home, work, {"dotfiles": SCRIPT.parents[3] / "dotfiles"}, module.RecordingRunner()
             )
         self.assertEqual(commit, result["commit"])
-        self.assertTrue((home / ".vscode-server/extensions").is_dir())
+        self.assertTrue((home / ".vscode/extensions").is_dir())
 
     def test_private_context_copies_only_verified_data_without_forging_approval(self):
         module = driver()

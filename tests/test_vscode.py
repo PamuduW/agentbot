@@ -86,6 +86,29 @@ class VSCodeHostTests(unittest.TestCase):
 
         self.assertIsNone(wsl_host(self.root).cli)
 
+    def test_native_linux_detects_a_user_local_desktop_without_using_windows_interop(self):
+        from unittest import mock
+
+        cli = self.root / ".local/share/code/bin/code"
+        cli.parent.mkdir(parents=True)
+        cli.write_text("#!/bin/sh\n")
+        package = cli.parent.parent / "resources/app/package.json"
+        package.parent.mkdir(parents=True)
+        package.write_text('{"version":"1.143.1"}')
+        with (
+            mock.patch("src.vscode.platform.system", return_value="Linux"),
+            mock.patch("src.vscode.platform.release", return_value="6.8.0-generic"),
+        ):
+            host = wsl_host(self.root)
+            self.assertEqual(cli, host.cli)
+            self.assertEqual(self.root / ".vscode/extensions", host.extensions_dir)
+            self.assertEqual(self.root / ".config/Code/User/settings.json", host.settings_path)
+            from src.vscode import _editor_version
+
+            self.assertEqual((1, 143), _editor_version(host))
+        with mock.patch("src.vscode.platform.release", return_value="6.6-microsoft-standard-WSL2"):
+            self.assertIsNone(wsl_host(self.root).cli)
+
     def test_a_missing_wsl_server_is_unavailable_not_an_error(self) -> None:
         host = wsl_host(self.root)
 

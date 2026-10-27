@@ -80,10 +80,16 @@ def development_smoke(snapshot, home):
         observations.append(actual)
     if observations[0] != observations[1]:
         raise CatalogError("repeat development install changed packages")
+    modules = sorted(
+        ".".join(path.relative_to(ROOT).with_suffix("").parts)
+        for path in (ROOT / "tests").rglob("test_*.py")
+    )
+    if not modules:
+        raise CatalogError("candidate Python test suite is empty")
     for command in (
         [str(environment / "bin/ruff"), "check", "src", "tests"],
         [str(environment / "bin/mypy")],
-        [str(python), "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-q"],
+        [str(python), "-m", "unittest", "-q", *modules],
     ):
         subprocess.run(command, cwd=ROOT, check=True, timeout=900)
     return {
