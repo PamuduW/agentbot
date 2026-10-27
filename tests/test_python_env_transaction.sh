@@ -44,12 +44,14 @@ setup_case() {
 	cat >"$AGENTBOT_HOME/sdk-python" <<'SDK'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$1" == -I && "$2" == -B && "$3" == -m && "$4" == venv ]] || exit 97
-mkdir -p "$5/bin"
-cp "$TEST_ROOT/python-template" "$5/bin/python"
-chmod +x "$5/bin/python"
-printf 'new\n' >"$5/marker"
+if [[ "$1" == -I && "$2" == -B && "$3" == -m && "$4" == venv ]]; then
+    mkdir -p "$5/bin"
+    ln -s "$0" "$5/bin/python"
+    printf 'new\n' >"$5/marker"
+    exit 0
+fi
 SDK
+	cat "$TEST_ROOT/python-template" >>"$AGENTBOT_HOME/sdk-python"
 	chmod +x "$AGENTBOT_HOME/sdk-python"
 	export TEST_ROOT
 	agentbot_python_closure_valid() { return 0; }
@@ -158,3 +160,17 @@ printf 'PASS: private SDK changes rebuild the environment while preserving the o
 	[[ "$(realpath "$AGENTBOT_HOME/.venv")" != "$first" && -x "$first/bin/python" ]]
 )
 printf 'PASS: a changed installed closure cannot reuse an unchanged stamp\n'
+(
+	setup_case base-drift
+	agentbot_python_ensure
+	first="$(realpath "$AGENTBOT_HOME/.venv")"
+	rogue="$AGENTBOT_HOME/other-python"
+	printf '%s\n' '#!/usr/bin/env bash' 'touch "$AGENTBOT_HOME/unverified-base-executed"' 'exit 0' >"$rogue"
+	chmod +x "$rogue"
+	rm "$first/bin/python"
+	ln -s "$rogue" "$first/bin/python"
+	agentbot_python_closure_valid() { "$1" -I -B -c 'fixture metadata probe' >/dev/null; }
+	agentbot_python_ensure
+	[[ ! -e "$AGENTBOT_HOME/unverified-base-executed" && "$(realpath "$AGENTBOT_HOME/.venv")" != "$first" ]]
+)
+printf 'PASS: a different base interpreter is rejected before executing the old environment\n'

@@ -19,7 +19,9 @@ file and lock reuse the existing release. Read-only commands do not provision
 packages. Until the first catalog has passed qualification, provisioning stops
 before creating an environment.
 
-The private interpreter lives beside the frozen catalog under `python-runtime/`.
+The private interpreter lives under `~/.local/share/software-catalog/python-runtime`
+(or the selected `XDG_DATA_HOME`). Download-cache cleanup does not remove the
+interpreter referenced by installed environments.
 Its archive, runtime version and payload must match the selected catalog and
 ownership receipt. A runtime change rebuilds the package environment even when
 the package lock is unchanged. Reuse also checks the complete installed package

@@ -17,6 +17,9 @@ class PrivatePythonSDKTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        environment = patch.dict("os.environ", {"XDG_DATA_HOME": str(self.root / "data")})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.catalog = self.root / "catalog"
         self.catalog.mkdir()
         self.artifact = {
@@ -52,6 +55,23 @@ class PrivatePythonSDKTests(unittest.TestCase):
         ]:
             with self.subTest(field=field), self.assertRaises(ValueError):
                 self.module.runtime_identity({**self.artifact, field: value})
+
+    def test_runtime_location_is_persistent_across_qualification_snapshot_namespaces(self):
+        first = self.provision(install=False)
+        alternate = self.root / "other/snapshot"
+        alternate.mkdir(parents=True)
+        self.snapshot = SimpleNamespace(directory=alternate, digest="b" * 64, approved=True)
+        self.assertEqual(first, self.provision(install=False))
+        self.assertTrue(first.is_relative_to(self.root / "data/software-catalog/python-runtime"))
+        self.assertFalse((self.root / "data").exists())
+
+    def test_relative_application_data_cannot_redirect_runtime_installation(self):
+        with (
+            patch.dict("os.environ", {"XDG_DATA_HOME": "relative-data"}),
+            self.assertRaises(ValueError),
+        ):
+            self.provision(install=False)
+        self.assertFalse((self.root / "data").exists())
 
     def test_payload_fingerprint_ignores_generated_bytecode_but_detects_changes_and_escapes(self):
         payload = self.root / "payload"

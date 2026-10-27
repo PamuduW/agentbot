@@ -123,6 +123,13 @@ def _probe(binary: Path, version: str, runner: CommandRunner) -> None:
         raise CatalogError("private CPython executable differs from the selected runtime")
 
 
+def runtime_directory(artifact: Mapping[str, str]) -> Path:
+    data = Path(os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share"))
+    if not data.is_absolute():
+        raise CatalogError("private Python application-data path must be absolute")
+    return data / "software-catalog/python-runtime" / runtime_identity(artifact)
+
+
 def private_python_runtime(
     snapshot: CatalogSnapshot,
     authority: Path,
@@ -145,8 +152,8 @@ def private_python_runtime(
         != snapshot.digest
     ):
         raise CatalogError("private Python catalog snapshot changed")
-    cache = snapshot.directory.parent / "python-runtime"
-    destination = cache / identity
+    destination = runtime_directory(artifact)
+    cache = destination.parent
     payload = destination / "payload"
     binary = payload / artifact["binary"]
     receipt = destination / "receipt.json"

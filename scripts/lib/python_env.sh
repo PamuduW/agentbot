@@ -155,6 +155,13 @@ _agentbot_python_owned() {
 	_agentbot_python_stamp_valid "$directory/.agentbot-requirements"
 }
 
+_agentbot_python_uses_runtime() {
+	local actual expected
+	actual="$(realpath -e -- "$1/bin/python")" || return 1
+	expected="$(realpath -e -- "$2")" || return 1
+	[[ "$actual" == "$expected" && -f "$actual" && -x "$actual" ]]
+}
+
 _agentbot_python_install() (
 	local digest="$1" lock_file="$2" runtime="$3" runtime_identity="$4" directory releases lock_fd release='' backup='' temporary_link=''
 	local committed=0 published=0 moved_previous=0 keep_release=0 rc=0 actual
@@ -177,7 +184,7 @@ _agentbot_python_install() (
 			printf 'Preserving an unowned or unverified Python environment at %s.\n' "$directory" >&2
 			return 2
 		fi
-		if [[ -x "$directory/bin/python" && "$(cat -- "$directory/.agentbot-requirements")" == "$digest" ]] && agentbot_python_closure_valid "$directory/bin/python"; then return 0; fi
+		if [[ -x "$directory/bin/python" && "$(cat -- "$directory/.agentbot-requirements")" == "$digest" ]] && _agentbot_python_uses_runtime "$directory" "$runtime" && agentbot_python_closure_valid "$directory/bin/python"; then return 0; fi
 	fi
 	release="$(mktemp -d "$releases/env-XXXXXXXX")" || return 1
 	temporary_link="$releases/current-$BASHPID"
@@ -201,7 +208,7 @@ _agentbot_python_install() (
 	}
 	trap '_agentbot_python_cleanup' EXIT
 	"$runtime" -I -B -m venv "$release" || return $?
-	[[ -x "$release/bin/python" ]] || return 1
+	_agentbot_python_uses_runtime "$release" "$runtime" || return 2
 	"$release/bin/python" -I -B -m pip install --quiet --require-hashes --no-deps --only-binary=:all: -r "$lock_file" || rc=$?
 	if ((rc != 0)); then
 		printf 'Failed to prepare the approved Python closure; preserving the working environment.\n' >&2
