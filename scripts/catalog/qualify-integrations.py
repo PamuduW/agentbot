@@ -141,7 +141,7 @@ def prepare_editor(home: Path, work: Path, sources: dict, runner: CommandRunner)
     ):
         raise CatalogError("editor archive lacks its real matching package metadata")
     destination = home / ".local/share/code"
-    destination.parent.mkdir(parents=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
     roots[0].rename(destination)
     (home / ".vscode/extensions").mkdir(parents=True)
     cli = destination / "bin/code"

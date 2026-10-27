@@ -104,6 +104,7 @@ class IntegrationSmokeTests(unittest.TestCase):
         home = self.directory / "home"
         work = self.directory / "work"
         home.mkdir()
+        (home / ".local/share").mkdir(parents=True)
         work.mkdir()
 
         def response(url, **kwargs):
