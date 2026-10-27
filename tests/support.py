@@ -38,7 +38,7 @@ def isolated_launcher_env(temporary_root: Path) -> dict[str, str]:
     root = Path(__file__).resolve().parents[1]
     fixture_bin = temporary_root / "path-bin"
     fixture_bin.mkdir(exist_ok=True)
-    for command in ("bash", "dirname", "env", "python3"):
+    for command in ("bash", "dirname", "env", "python3", "realpath"):
         executable = shutil.which(command)
         if executable is None:
             raise RuntimeError(f"required base command is unavailable: {command}")

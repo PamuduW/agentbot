@@ -218,6 +218,35 @@ class CliTests(unittest.TestCase):
                 names0=False,
             )
 
+    def test_isolated_launcher_path_supports_a_managed_python_symlink(self):
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env = isolated_launcher_env(root)
+            checkout = root / "checkout"
+            checkout.mkdir()
+            (checkout / ".venv").symlink_to(Path(sys.prefix).resolve(), target_is_directory=True)
+            env["AGENTBOT_HOME"] = str(checkout)
+            library = Path(__file__).resolve().parents[1] / "scripts/lib/python_env.sh"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; agentbot_python_resolve; printf "%s" "$AGENTBOT_PYTHON"',
+                    "bash",
+                    str(library),
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("", result.stderr)
+            self.assertEqual(str(Path(sys.prefix).resolve() / "bin/python"), result.stdout)
+
     def test_real_launcher_read_only_process_matrix_uses_an_isolated_home(self) -> None:
         """Break caught: read-only public commands depend on host state or mutate the isolated home."""
         with tempfile.TemporaryDirectory() as temporary_directory:
