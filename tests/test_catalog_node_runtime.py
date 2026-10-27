@@ -152,7 +152,7 @@ dotfiles_catalog_begin() { :; }
             ["git", "-C", str(root), *args], text=True, stderr=subprocess.DEVNULL
         ).strip()
 
-    def runtime(self, *, install=True, runner=None):
+    def runtime(self, *, install=True, runner=None, qualification_sources=None):
         from src.catalog_node_runtime import private_npm_runtime
 
         # The fixture runner only adds fixture controls to the sanitized child.
@@ -172,6 +172,7 @@ dotfiles_catalog_begin() { :; }
             self.sources["dotfiles-shared"],
             runner or FixtureRunner(),
             install=install,
+            qualification_sources=qualification_sources,
         )
 
     def test_agentbot_only_uses_qualified_helper_in_private_home_and_reuses_runtime(self):
@@ -194,6 +195,62 @@ dotfiles_catalog_begin() { :; }
             self.runtime(install=False)
         self.assertFalse((self.snapshot_dir.parent / "node-runtime").exists())
         self.assertFalse((self.snapshot_dir.parent / "sources").exists())
+
+    def test_qualification_context_starts_after_the_owner_loads_shared_code(self):
+        import json
+        import shutil
+
+        from software_catalog import load_snapshot
+
+        from tests.test_software_catalog import SoftwareCatalogTests
+
+        canonical = Path(__file__).resolve().parents[2] / "dotfiles-shared/scripts/lib/shared"
+        shared = self.sources["dotfiles-shared"] / "scripts/lib/shared"
+        shutil.copyfile(canonical / "software_catalog.sh", shared / "software_catalog.sh")
+        shutil.copytree(
+            canonical / "python", shared / "python", ignore=shutil.ignore_patterns("__pycache__")
+        )
+        (self.sources["dotfiles-shared"] / ".gitignore").write_text("__pycache__/\n")
+        helper = self.sources["dotfiles"] / "scripts/lib/catalog_runtimes.sh"
+        body = helper.read_text().replace(
+            "dotfiles_catalog_node_install() {",
+            'dotfiles_catalog_node_install() {\n    software_catalog_begin "$DOTFILES_SHARED_ROOT" || return $?',
+        )
+        helper.write_text(
+            'source "$DOTFILES_SHARED_ROOT/scripts/lib/shared/software_catalog.sh"\n' + body
+        )
+        agentbot = self.root / "agentbot"
+        agentbot.mkdir()
+        self.sources["agentbot"] = agentbot
+        self.git(agentbot, "init", "-q", "-b", "main")
+        self.git(agentbot, "remote", "add", "origin", "https://github.com/PamuduW/agentbot.git")
+        (agentbot / "marker").write_text("agentbot")
+        data = json.loads((self.snapshot_dir / "software.json").read_text())
+        for name, root in self.sources.items():
+            self.git(root, "add", ".")
+            self.git(
+                root,
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "freeze qualification sources",
+            )
+            data["sources"][name] = self.git(root, "rev-parse", "HEAD")
+        SoftwareCatalogTests.write(
+            SimpleNamespace(directory=self.snapshot_dir, data=data), approve=False
+        )
+        self.snapshot = load_snapshot(self.snapshot_dir, require_approved=False)
+        with software_versions.qualification_operation(
+            self.snapshot_dir, self.snapshot.digest, self.sources
+        ) as snapshot:
+            self.snapshot = snapshot
+            node, npm = self.runtime(qualification_sources=self.sources)
+            self.assertTrue(node.is_file() and npm.is_file())
+        self.assertFalse((self.snapshot_dir / "approval").exists())
 
     def test_wrong_source_revision_or_origin_cannot_run_helper(self):
         from dataclasses import replace

@@ -312,7 +312,7 @@ def private_npm_runtime(
                     "SOFTWARE_CATALOG_DIGEST": snapshot.digest,
                 }
             )
-            script = 'set -euo pipefail; umask 077; source "$DOTFILES_SHARED_ROOT/scripts/lib/shared/software_catalog.sh"; '
+            script = 'set -euo pipefail; umask 077; source "$DOTFILES_SHARED_ROOT/scripts/lib/shared/software_catalog.sh"; source "$DOTFILES_DIR/scripts/lib/catalog_runtimes.sh"; '
             if qualification_sources is not None:
                 from catalog_context import qualification_snapshot
 
@@ -334,10 +334,7 @@ def private_npm_runtime(
                 script += 'software_catalog_qualification_begin "$1"; '
             else:
                 script += 'software_catalog_begin "$DOTFILES_SHARED_ROOT"; '
-            script += (
-                '[[ "$SOFTWARE_CATALOG_DIGEST" == "$2" ]]; '
-                'source "$DOTFILES_DIR/scripts/lib/catalog_runtimes.sh"; dotfiles_catalog_node_install'
-            )
+            script += '[[ "$SOFTWARE_CATALOG_DIGEST" == "$2" ]]; dotfiles_catalog_node_install'
             private_directory(home)
             try:
                 outcome = runner.run(
