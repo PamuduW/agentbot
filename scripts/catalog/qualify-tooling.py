@@ -21,13 +21,86 @@ from catalog_context import load_qualification_context  # noqa: E402 - Shared so
 from catalog_dependencies import validate_python_lock  # noqa: E402 - Shared source path.
 from software_catalog import CatalogError  # noqa: E402 - Shared source path.
 
+from src.software_versions import resolve_entry  # noqa: E402 - Bootstrap source path.
+
+
+def development_profile(snapshot):
+    lock = snapshot.directory / resolve_entry(snapshot, "python.ruff", "linux-amd64")["lock"]
+    packages = validate_python_lock(lock.read_bytes())
+    for key, entry in snapshot.data["components"].items():
+        if entry["owner"] != "agentbot" or entry["kind"] != "python-package":
+            continue
+        artifact = resolve_entry(snapshot, key, "linux-amd64")
+        selected = validate_python_lock((snapshot.directory / artifact["lock"]).read_bytes())
+        if any(packages.get(name) != value for name, value in selected.items()):
+            raise CatalogError("development lock does not cover the selected Python closures")
+    return lock, packages
+
+
+def development_smoke(snapshot, home):
+    import tempfile
+
+    lock, expected = development_profile(snapshot)
+    environment = Path(tempfile.mkdtemp(prefix="catalog-development-", dir=home)) / "venv"
+    subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True, timeout=120)
+    python = environment / "bin/python"
+    command = [
+        str(python),
+        "-I",
+        "-m",
+        "pip",
+        "install",
+        "--require-hashes",
+        "--no-deps",
+        "--only-binary=:all:",
+        "--disable-pip-version-check",
+        "-r",
+        str(lock),
+    ]
+    observations = []
+    for _phase in ("fresh", "repeat"):
+        subprocess.run(command, check=True, timeout=300)
+        subprocess.run([str(python), "-I", "-m", "pip", "check"], check=True, timeout=60)
+        raw = subprocess.check_output(
+            [
+                str(python),
+                "-I",
+                "-c",
+                'import importlib.metadata as m,json,re; print(json.dumps({re.sub(r"[-_.]+","-",d.metadata["Name"]).lower():d.version for d in m.distributions()}))',
+            ],
+            text=True,
+            timeout=30,
+        )
+        actual = json.loads(raw)
+        wanted = {name: value["version"] for name, value in expected.items()}
+        if actual != wanted:
+            raise CatalogError(
+                "installed development distributions differ from the selected closure"
+            )
+        observations.append(actual)
+    if observations[0] != observations[1]:
+        raise CatalogError("repeat development install changed packages")
+    for command in (
+        [str(environment / "bin/ruff"), "check", "src", "tests"],
+        [str(environment / "bin/mypy")],
+        [str(python), "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-q"],
+    ):
+        subprocess.run(command, cwd=ROOT, check=True, timeout=900)
+    return {
+        "packages": observations[0],
+        "fresh": "success",
+        "repeat": "success",
+        "ruff": "success",
+        "mypy": "success",
+        "python_suite": "success",
+    }
+
 
 def smoke(manifest: Path) -> dict:
     from src.command_runner import CommandRunner
     from src.software_versions import (
         approved_npm_executable,
         qualification_manifest_operation,
-        resolve_entry,
     )
 
     _snapshot, sources, _ = load_qualification_context(manifest)
@@ -91,6 +164,7 @@ def smoke(manifest: Path) -> dict:
         version = resolve_entry(snapshot, "skills_cli", "linux-amd64")["version"]
         if not result.ok or result.stdout.strip().removeprefix("v") != version:
             raise CatalogError("Skills CLI version probe differs from the candidate")
+        development = development_smoke(snapshot, home)
     load_qualification_context(manifest)
     return {
         "schema_version": 1,
@@ -99,6 +173,7 @@ def smoke(manifest: Path) -> dict:
         "sources": dict(snapshot.data["sources"]),
         "python_packages": {key: packages[key] for key in expected},
         "skills_cli_version": version,
+        "development": development,
         "fresh": "success",
         "repeat": "success",
         "approved": False,
