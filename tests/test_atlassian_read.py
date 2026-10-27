@@ -74,11 +74,16 @@ class AtlassianReadTests(unittest.IsolatedAsyncioTestCase):
 
     def test_reads_use_system_trust_without_shell_exports(self) -> None:
         environment = {
-            key: value for key, value in os.environ.items()
+            key: value
+            for key, value in os.environ.items()
             if key not in {"SSL_CERT_FILE", "SSL_CERT_DIR"}
         }
         with patch.dict(os.environ, environment, clear=True):
-            system_roots = set(ssl.create_default_context().get_ca_certs(binary_form=True))
+            reference = ssl.create_default_context()
+            bundle = Path("/etc/ssl/certs/ca-certificates.crt")
+            if bundle.is_file():
+                reference.load_verify_locations(cafile=str(bundle))
+            system_roots = set(reference.get_ca_certs(binary_form=True))
             with patch("src.atlassian_read_client.httpx.Client", wraps=httpx.Client) as factory:
                 self.client.jira_projects(limit=1)
         context = factory.call_args.kwargs.get("verify")
@@ -86,13 +91,63 @@ class AtlassianReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ssl.CERT_REQUIRED, context.verify_mode)
         self.assertTrue(context.check_hostname)
         self.assertTrue(system_roots)
-        self.assertLessEqual(system_roots, set(context.get_ca_certs(binary_form=True)))
+        self.assertTrue(
+            system_roots <= set(context.get_ca_certs(binary_form=True)),
+            "system trust roots were not loaded",
+        )
+
+    def test_standalone_python_loads_the_distro_bundle_when_its_defaults_are_empty(self) -> None:
+        bundle = Path("/etc/ssl/certs/ca-certificates.crt")
+        self.assertTrue(bundle.is_file())
+        expected = set(
+            ssl.create_default_context(cafile=str(bundle)).get_ca_certs(binary_form=True)
+        )
+        self.assertTrue(expected)
+        empty = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        self.assertFalse(empty.get_ca_certs())
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"SSL_CERT_FILE", "SSL_CERT_DIR"}
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch("src.atlassian_read_client.ssl.create_default_context", return_value=empty),
+            patch("src.atlassian_read_client.httpx.Client", wraps=httpx.Client) as factory,
+        ):
+            self.client.jira_projects(limit=1)
+        context = factory.call_args.kwargs["verify"]
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(ssl.CERT_REQUIRED, context.verify_mode)
+        self.assertTrue(
+            expected <= set(context.get_ca_certs(binary_form=True)),
+            "distro trust roots were not loaded",
+        )
+
+    def test_explicit_certificate_bundle_does_not_add_the_distro_roots(self) -> None:
+        bundle = Path("/etc/ssl/certs/ca-certificates.crt")
+        roots = ssl.create_default_context(cafile=str(bundle)).get_ca_certs(binary_form=True)
+        self.assertGreater(len(roots), 1)
+        with tempfile.TemporaryDirectory() as temporary:
+            custom = Path(temporary) / "custom.pem"
+            custom.write_text(ssl.DER_cert_to_PEM_cert(roots[0]))
+            with (
+                patch.dict(os.environ, {"SSL_CERT_FILE": str(custom), "SSL_CERT_DIR": ""}),
+                patch("src.atlassian_read_client.httpx.Client", wraps=httpx.Client) as factory,
+            ):
+                self.client.jira_projects(limit=1)
+        context = factory.call_args.kwargs["verify"]
+        self.assertEqual(1, len(context.get_ca_certs()))
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(ssl.CERT_REQUIRED, context.verify_mode)
 
     def test_invalid_certificate_override_returns_safe_error_before_request(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             missing = str(Path(temporary) / "missing-private-ca.pem")
             with patch.dict(os.environ, {"SSL_CERT_FILE": missing}):
-                with self.assertRaisesRegex(AtlassianReadError, "^Atlassian TLS configuration failed$"):
+                with self.assertRaisesRegex(
+                    AtlassianReadError, "^Atlassian TLS configuration failed$"
+                ):
                     self.client.jira_projects(limit=1)
         self.assertEqual([], self.requests)
 

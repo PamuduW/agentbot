@@ -5,6 +5,7 @@ import json
 import os
 import re
 import ssl
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -28,6 +29,16 @@ _SECRET_FIELDS = frozenset(
         "api_key",
     }
 )
+
+
+def _tls_context() -> ssl.SSLContext:
+    cafile = os.environ.get("SSL_CERT_FILE") or None
+    capath = os.environ.get("SSL_CERT_DIR") or None
+    context = ssl.create_default_context(cafile=cafile, capath=capath)
+    system_bundle = Path("/etc/ssl/certs/ca-certificates.crt")
+    if cafile is None and capath is None and system_bundle.is_file():
+        context.load_verify_locations(cafile=str(system_bundle))
+    return context
 
 
 class AtlassianReadError(ValueError):
@@ -163,10 +174,7 @@ class AtlassianReadClient:
         size = 0
         try:
             with httpx.Client(
-                verify=ssl.create_default_context(
-                    cafile=os.environ.get("SSL_CERT_FILE") or None,
-                    capath=os.environ.get("SSL_CERT_DIR") or None,
-                ),
+                verify=_tls_context(),
                 transport=self._transport,
                 follow_redirects=False,
                 timeout=REQUEST_TIMEOUT_SECONDS,

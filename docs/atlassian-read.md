@@ -133,7 +133,9 @@ The Atlassian client uses Python's system CA trust store for both the token
 check and MCP tools. On WSL, a company CA already installed in the Linux trust
 store is available automatically, including in new terminals and agent-launched
 MCP servers. No shell export is needed. Certificate and hostname verification
-remain enabled.
+remain enabled. On Ubuntu, Agentbot explicitly loads the distro CA bundle,
+including when its private Python build has different OpenSSL default paths.
+The bundle remains distro-managed; catalog updates do not freeze or copy it.
 
 Optional `SSL_CERT_FILE` and `SSL_CERT_DIR` settings select a custom trust store.
 Codex registration forwards these variables when present; rerun MCP setup after
