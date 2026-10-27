@@ -70,6 +70,56 @@ class IntegrationSmokeTests(unittest.TestCase):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 module.editor_metadata({**value, **changed})
 
+    def test_editor_version_probe_can_create_its_extension_store(self):
+        import hashlib
+        import io
+        import os
+        import tarfile
+        from unittest.mock import patch
+
+        module = driver()
+        commit = "a" * 40
+        archive = io.BytesIO()
+        files = {
+            "server/package.json": json.dumps({"version": "1.143.1"}).encode(),
+            "server/bin/code-server": (
+                '#!/bin/sh\nmkdir -p "$HOME/.vscode-server/extensions"\n'
+                f"printf '%s\\n' 1.143.1 {commit} x64\n"
+            ).encode(),
+        }
+        with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+            for name, raw in files.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(raw)
+                info.mode = 0o755 if name.endswith("code-server") else 0o644
+                tar.addfile(info, io.BytesIO(raw))
+        raw = archive.getvalue()
+        metadata = {
+            "version": commit,
+            "name": "1.143.1",
+            "productVersion": "1.143.1",
+            "sha256hash": hashlib.sha256(raw).hexdigest(),
+            "url": f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/{commit}/vscode-server-linux-x64.tar.gz",
+        }
+        home = self.directory / "home"
+        work = self.directory / "work"
+        home.mkdir()
+        work.mkdir()
+
+        def response(url, **kwargs):
+            return io.BytesIO(raw if url == metadata["url"] else json.dumps(metadata).encode())
+
+        with (
+            patch.object(module.urllib.request, "build_opener") as opener,
+            patch.dict(os.environ, {"HOME": str(home)}),
+        ):
+            opener.return_value.open.side_effect = response
+            result = module.prepare_editor(
+                home, work, {"dotfiles": SCRIPT.parents[3] / "dotfiles"}, module.RecordingRunner()
+            )
+        self.assertEqual(commit, result["commit"])
+        self.assertTrue((home / ".vscode-server/extensions").is_dir())
+
     def test_private_context_copies_only_verified_data_without_forging_approval(self):
         module = driver()
         roots = self.sources()

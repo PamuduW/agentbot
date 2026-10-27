@@ -141,13 +141,13 @@ def prepare_editor(home: Path, work: Path, sources: dict, runner: CommandRunner)
     destination = home / ".vscode-server/bin" / editor["commit"]
     destination.parent.mkdir(parents=True)
     roots[0].rename(destination)
+    (home / ".vscode-server/extensions").mkdir()
     cli = destination / "bin/code-server"
     version = runner.run([str(cli), "--version"], timeout_seconds=30)
     if not version.ok or not {editor["version"], editor["commit"]} <= set(
         version.stdout.splitlines()
     ):
         raise CatalogError("real editor CLI did not verify its version and commit")
-    (home / ".vscode-server/extensions").mkdir()
     return {**editor, "bytes": size, "external_test_prerequisite": True}
 
 
