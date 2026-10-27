@@ -220,6 +220,7 @@ class SmokeAuditTests(unittest.TestCase):
             "git-source",
             {"revision": revision},
             source="fixture/skills",
+            discovery={"provider": "github-source", "locator": "fixture/skills"},
         )
         add("font", "dotfiles", "software", {"archive": "zip", "binary": "fonts"})
         for key in ("powershell", "obsidian", "docker.engine"):
@@ -287,6 +288,36 @@ class SmokeAuditTests(unittest.TestCase):
         )
         return snapshot, receipts
 
+    def test_gitlab_skill_provenance_uses_the_declared_host(self):
+        _snapshot, receipts = self.full_bundle()
+        component = self.data["components"]["skill-source.skills"]
+        component["source"] = "gitlab.com/fixture/group/skills"
+        component["discovery"] = {"provider": "gitlab-source", "locator": "fixture/group/skills"}
+        self.write(approve=False)
+        snapshot = load_snapshot(self.directory, require_approved=False)
+        for receipt in receipts.values():
+            receipt["catalog_digest"] = snapshot.digest
+        for phase in receipts["vendor-package-smoke-only"]["observations"].values():
+            for proof in phase.values():
+                proof["receipt_digest"] = snapshot.digest
+        skills = receipts["integration-smoke-only"]["skills"]
+        skills["sources"]["skills"]["repo"] = component["source"]
+        proof = skills["skills"]["fixture-skill"]
+        proof.update(
+            source=component["source"],
+            sourceType="gitlab",
+            sourceUrl="https://gitlab.com/fixture/group/skills.git",
+        )
+        self.audit(snapshot, receipts)
+        for field, wrong in (
+            ("sourceType", "github"),
+            ("sourceUrl", "https://github.com/fixture/group/skills.git"),
+        ):
+            broken = copy.deepcopy(receipts)
+            broken["integration-smoke-only"]["skills"]["skills"]["fixture-skill"][field] = wrong
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.audit(snapshot, broken)
+
     def test_all_managed_kinds_are_audited_and_tampered_evidence_holds(self):
         snapshot, receipts = self.full_bundle()
         result = self.audit(snapshot, receipts)
@@ -322,4 +353,59 @@ class SmokeAuditTests(unittest.TestCase):
                 destination = destination[key]
             destination[path[-1]] = value
             with self.subTest(scope=scope, path=path), self.assertRaises(ValueError):
+                self.audit(snapshot, broken)
+
+
+class PythonSDKSmokeAuditTests(unittest.TestCase):
+    setUp = fixtures.SoftwareCatalogTests.setUp
+    write = fixtures.SoftwareCatalogTests.write
+    bundle = SmokeAuditTests.bundle
+    audit = SmokeAuditTests.audit
+
+    def test_private_python_runtime_requires_its_pinned_owned_runtime_evidence(self):
+        from src.catalog_python_runtime import runtime_identity
+
+        _, receipts = self.bundle()
+        artifact = {
+            "version": "3.12.16+20261026",
+            "archive": "tar.gz",
+            "binary": "python/bin/python3.12",
+            "package": "cpython",
+            "digest": "sha256:" + "c" * 64,
+            "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        }
+        self.data["components"]["python_runtime"] = {
+            **copy.deepcopy(self.data["components"]["fixture"]),
+            "owner": "agentbot",
+            "source": "astral-sh/python-build-standalone",
+            "targets": {"linux-amd64": artifact},
+        }
+        self.write(approve=False)
+        snapshot = load_snapshot(self.directory, require_approved=False)
+        for receipt in receipts.values():
+            receipt["catalog_digest"] = snapshot.digest
+        runtime = {
+            "version": artifact["version"],
+            "artifact_digest": artifact["digest"],
+            "identity": runtime_identity(artifact),
+            "actual_version": "3.12.16",
+            "implementation": "cpython",
+            "owned": True,
+            "fresh": "success",
+            "repeat": "success",
+        }
+        receipts["tooling-smoke-only"]["python_runtime"] = runtime
+        self.audit(snapshot, receipts)
+        for key, changed in [
+            ("version", "3.14.1"),
+            ("artifact_digest", "sha256:" + "d" * 64),
+            ("identity", "0" * 64),
+            ("actual_version", "3.12.15"),
+            ("implementation", "pypy"),
+            ("owned", False),
+            ("repeat", "failure"),
+        ]:
+            broken = copy.deepcopy(receipts)
+            broken["tooling-smoke-only"]["python_runtime"][key] = changed
+            with self.subTest(key=key), self.assertRaises(ValueError):
                 self.audit(snapshot, broken)

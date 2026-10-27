@@ -12,6 +12,16 @@ records the repository, manifest, global lock, and remote revisions, then
 checks those inputs again before apply. A source failure makes the operation
 fail even if other sources installed successfully.
 
+The Skills CLI uses a private, catalog-pinned Node/npm dependency. Its runtime
+and npm package cache live beside the frozen catalog under `node-runtime/` and
+`npm/`. Agentbot leases the qualified Dotfiles and shared source commits to run
+the owner's installer in a private home. This requires no public Node, npm or
+`npx`, and preserves existing NVM installations and global packages. Reused
+runtime files must match their receipt and integrity record. Doctor checks the
+selected dependency without provisioning it; an absent runtime is repaired by
+the next managed skill installation. A dry run requires an already cached
+approved catalog and creates neither runtime nor npm environments.
+
 For a skills-only update, run `agentbot skills update` to preview source
 revisions and the review ID. Apply that exact preview with
 `agentbot skills update --yes --plan-sha256 <review-id>`. Apply runs the same

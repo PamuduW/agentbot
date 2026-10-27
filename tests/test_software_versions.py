@@ -85,6 +85,56 @@ class SoftwareVersionTests(unittest.TestCase):
 
 
 class ApprovedNpmInstallTests(unittest.TestCase):
+    def test_dry_run_does_not_require_public_runtime_or_create_npm_cache(self) -> None:
+        import base64
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "snapshot"
+            directory.mkdir()
+            (directory / "software.tsv").write_text("nodejs\tversion\tlinux-amd64\t24.1.0\n")
+            lock = directory / "package-lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "lockfileVersion": 3,
+                        "packages": {
+                            "": {"dependencies": {"skills": "1.2.3"}},
+                            "node_modules/skills": {
+                                "version": "1.2.3",
+                                "resolved": "https://registry.npmjs.org/skills/-/skills-1.2.3.tgz",
+                                "integrity": "sha512-" + base64.b64encode(bytes(64)).decode(),
+                            },
+                        },
+                    }
+                )
+            )
+            snapshot = SimpleNamespace(directory=directory, digest="a" * 64)
+            artifact = {
+                "package": "skills",
+                "version": "1.2.3",
+                "binary": "skills",
+                "lock": lock.name,
+            }
+            runner = Mock()
+            with (
+                patch.object(software_versions, "operation_snapshot", return_value=snapshot),
+                patch.object(software_versions, "resolve_entry", return_value=artifact),
+            ):
+                try:
+                    command = software_versions.approved_npm_executable(
+                        root, "skills_cli", runner, install=False
+                    )
+                except (ValueError, KeyError, OSError) as error:
+                    self.fail(f"dry-run required a public Node/npm installation: {error}")
+            self.assertEqual(root / "npm" / ("skills_cli-" + "a" * 64) / "bin/skills", command)
+            self.assertFalse((root / "npm").exists())
+            runner.run.assert_not_called()
+
     def test_install_uses_frozen_closure_and_reuses_only_verified_cache(self) -> None:
         import base64
         import hashlib
@@ -162,9 +212,9 @@ class ApprovedNpmInstallTests(unittest.TestCase):
             with (
                 patch.object(software_versions, "operation_snapshot", return_value=snapshot),
                 patch.object(software_versions, "resolve_entry", return_value=artifact),
-                patch.object(
-                    software_versions,
-                    "_approved_npm_runtime",
+                patch.object(software_versions, "shared_root", return_value=root),
+                patch(
+                    "src.catalog_node_runtime.private_npm_runtime",
                     return_value=(Path("/selected/node"), Path("/selected/npm-cli.js")),
                 ),
             ):

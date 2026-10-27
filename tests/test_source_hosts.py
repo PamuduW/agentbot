@@ -82,8 +82,7 @@ class SourceTypeTests(unittest.TestCase):
 
 
 class CloneCommandTests(unittest.TestCase):
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/git")
-    def test_installer_clones_gitlab_source_from_gitlab_host(self, _mock_which) -> None:
+    def test_installer_clones_gitlab_source_from_gitlab_host(self) -> None:
         from src.command_runner import CommandResult
         from src.skills_installer import _clone_remote_source
 
@@ -105,8 +104,7 @@ class CloneCommandTests(unittest.TestCase):
             runner.run.call_args_list[0].args[0],
         )
 
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/git")
-    def test_installer_still_clones_bare_source_from_github(self, _mock_which) -> None:
+    def test_installer_still_clones_bare_source_from_github(self) -> None:
         from src.command_runner import CommandResult
         from src.skills_installer import _clone_remote_source
 

@@ -88,12 +88,6 @@ check_skills_deps() {
 		die "failed to provision the Agentbot Python environment"
 	fi
 	check_python_deps
-	if ! command -v node >/dev/null 2>&1; then
-		die "node is required (install Node.js for npx skills)"
-	fi
-	if ! command -v npx >/dev/null 2>&1; then
-		die "npx is required (install Node.js/npm for npx skills)"
-	fi
 }
 
 run_cli() {

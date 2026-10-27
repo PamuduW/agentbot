@@ -74,6 +74,7 @@ def build_inventory(dotfiles: Path, agentbot: Path) -> dict[str, dict[str, Any]]
     }.items():
         add(key, "dotfiles", kind, source)
     add("skills_cli", "agentbot", "software", "skills")
+    add("python_runtime", "agentbot", "software", "astral-sh/python-build-standalone")
     add("python.pip", "agentbot", "python-package", "pip")
     for filename in ("requirements.txt", "requirements-dev.txt"):
         for line in (agentbot / filename).read_text().splitlines():
@@ -150,6 +151,13 @@ def build_discovery(
         "locator": "skills",
         "archive": "npm-lock",
         "binary": "skills",
+    }
+    result["python_runtime"] = {
+        "provider": "python-standalone",
+        "locator": "astral-sh/python-build-standalone",
+        "constraint": "3.12",
+        "archive": "tar.gz",
+        "binary": "python/bin/python3.12",
     }
     result["graphify_cli"] = {"provider": "pypi-tool", "locator": "graphifyy", "binary": "graphify"}
     result["claude_cli"] = {

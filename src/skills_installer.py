@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import sys
 import tempfile
 import time
@@ -773,7 +772,7 @@ def install_skills(
     if config.active_sources():
         from .software_versions import preflight_skill_sources
 
-        preflight_skill_sources(paths.root, config)
+        preflight_skill_sources(paths.root, config, read_only=dry_run)
     # Each source is a network clone, so a dozen of them is minutes of silence
     # if nothing is emitted. Progress was gated on AGENTBOT_TUI, which the
     # install.sh path does not set, so exactly the long unattended run reported
@@ -1059,12 +1058,19 @@ def doctor_skills(paths: AgentbotPaths) -> list[DoctorIssue]:
                 )
             )
 
-    if shutil.which("npx") is None:
+    try:
+        from .catalog_node_runtime import private_npm_runtime
+        from .shared_paths import SharedCheckoutError, shared_root
+        from .software_versions import operation_snapshot
+
+        snapshot = operation_snapshot(paths.root, read_only=True)
+        private_npm_runtime(snapshot, shared_root(paths.root), CommandRunner(), install=False)
+    except (ValueError, OSError, SharedCheckoutError) as error:
         issues.append(
             DoctorIssue(
                 level="error",
                 scope="skills",
-                message="npx is not available in PATH",
+                message=f"Selected private Node/npm runtime is unavailable: {error}",
             )
         )
 

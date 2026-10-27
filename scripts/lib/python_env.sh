@@ -116,6 +116,27 @@ agentbot_python_catalog_lock() {
 	[[ -f "$AGENTBOT_REQUIREMENTS_LOCK" && ! -L "$AGENTBOT_REQUIREMENTS_LOCK" ]] || return 1
 }
 
+agentbot_python_catalog_runtime() {
+	local result
+	local -a arguments=(--digest "$SOFTWARE_CATALOG_DIGEST")
+	[[ -z "${AGENTBOT_QUALIFICATION_CONTEXT:-}" ]] || arguments+=(--qualification-context "$AGENTBOT_QUALIFICATION_CONTEXT")
+	result="$(python3 -I -B "$AGENTBOT_HOME/scripts/catalog/python-runtime.py" "${arguments[@]}")" || return 1
+	IFS=$'\t' read -r AGENTBOT_RUNTIME_PYTHON AGENTBOT_RUNTIME_IDENTITY <<<"$result"
+	[[ "$AGENTBOT_RUNTIME_PYTHON" == /* && -x "$AGENTBOT_RUNTIME_PYTHON" && "$AGENTBOT_RUNTIME_IDENTITY" =~ ^[0-9a-f]{64}$ ]]
+}
+
+agentbot_python_closure_valid() {
+	local -a arguments=(--digest "$SOFTWARE_CATALOG_DIGEST" --verify-environment "$1")
+	[[ -z "${AGENTBOT_QUALIFICATION_CONTEXT:-}" ]] || arguments+=(--qualification-context "$AGENTBOT_QUALIFICATION_CONTEXT")
+	python3 -I -B "$AGENTBOT_HOME/scripts/catalog/python-runtime.py" "${arguments[@]}"
+}
+
+_agentbot_python_lock_identity() {
+	local checksum
+	checksum="$(sha256sum -- "$1")" || return 1
+	printf '%s:%s\n' "${checksum%% *}" "$2" | sha256sum | cut -d' ' -f1
+}
+
 _agentbot_python_stamp_valid() {
 	local path="$1"
 	local -a lines=()
@@ -135,7 +156,7 @@ _agentbot_python_owned() {
 }
 
 _agentbot_python_install() (
-	local digest="$1" lock_file="$2" directory releases lock_fd release='' backup='' temporary_link=''
+	local digest="$1" lock_file="$2" runtime="$3" runtime_identity="$4" directory releases lock_fd release='' backup='' temporary_link=''
 	local committed=0 published=0 moved_previous=0 keep_release=0 rc=0 actual
 	directory="$(agentbot_python_venv_dir)"
 	releases="$AGENTBOT_HOME/.venv-releases"
@@ -156,7 +177,7 @@ _agentbot_python_install() (
 			printf 'Preserving an unowned or unverified Python environment at %s.\n' "$directory" >&2
 			return 2
 		fi
-		if [[ -x "$directory/bin/python" && "$(cat -- "$directory/.agentbot-requirements")" == "$digest" ]]; then return 0; fi
+		if [[ -x "$directory/bin/python" && "$(cat -- "$directory/.agentbot-requirements")" == "$digest" ]] && agentbot_python_closure_valid "$directory/bin/python"; then return 0; fi
 	fi
 	release="$(mktemp -d "$releases/env-XXXXXXXX")" || return 1
 	temporary_link="$releases/current-$BASHPID"
@@ -179,16 +200,17 @@ _agentbot_python_install() (
 		return "$status"
 	}
 	trap '_agentbot_python_cleanup' EXIT
-	python3 -m venv "$release" || return $?
+	"$runtime" -I -B -m venv "$release" || return $?
 	[[ -x "$release/bin/python" ]] || return 1
-	"$release/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary=:all: -r "$lock_file" || rc=$?
+	"$release/bin/python" -I -B -m pip install --quiet --require-hashes --no-deps --only-binary=:all: -r "$lock_file" || rc=$?
 	if ((rc != 0)); then
 		printf 'Failed to prepare the approved Python closure; preserving the working environment.\n' >&2
 		return "$rc"
 	fi
-	"$release/bin/python" -m pip check || return $?
-	actual="$(sha256sum -- "$lock_file")" || return 1
-	[[ "${digest#*:}" == "${actual%% *}" && "${digest%%:*}" == "$(agentbot_python_requirements_digest)" ]] || return 2
+	"$release/bin/python" -I -B -m pip check || return $?
+	agentbot_python_closure_valid "$release/bin/python" || return $?
+	actual="$(_agentbot_python_lock_identity "$lock_file" "$runtime_identity")" || return 1
+	[[ "${digest#*:}" == "$actual" && "${digest%%:*}" == "$(agentbot_python_requirements_digest)" ]] || return 2
 	printf '%s\n' "$digest" >"$release/.agentbot-requirements" || return 1
 	ln -s -- "$release" "$temporary_link" || return 1
 	if [[ -L "$directory" ]]; then
@@ -211,9 +233,10 @@ agentbot_python_ensure() {
 		return 2
 	fi
 	agentbot_python_catalog_lock || return 1
+	agentbot_python_catalog_runtime || return 1
 	digest="$(agentbot_python_requirements_digest)" || return 1
-	lock_digest="$(sha256sum -- "$AGENTBOT_REQUIREMENTS_LOCK")" || return 1
+	lock_digest="$(_agentbot_python_lock_identity "$AGENTBOT_REQUIREMENTS_LOCK" "$AGENTBOT_RUNTIME_IDENTITY")" || return 1
 	digest="$digest:${lock_digest%% *}"
-	_agentbot_python_install "$digest" "$AGENTBOT_REQUIREMENTS_LOCK" || return $?
+	_agentbot_python_install "$digest" "$AGENTBOT_REQUIREMENTS_LOCK" "$AGENTBOT_RUNTIME_PYTHON" "$AGENTBOT_RUNTIME_IDENTITY" || return $?
 	agentbot_python_resolve
 }

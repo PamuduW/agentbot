@@ -7,6 +7,8 @@ cat >"$TEST_ROOT/python-template" <<'PYTHON'
 #!/usr/bin/env bash
 set -euo pipefail
 prefix="${0%/bin/python}"
+[[ "$1" == -I && "$2" == -B ]] || exit 95
+shift 2
 case "$*" in
 '-m pip install '*)
     [[ "$*" == *'--require-hashes'* && "$*" == *'--only-binary=:all:'* ]] || exit 96
@@ -35,13 +37,23 @@ setup_case() {
 		AGENTBOT_REQUIREMENTS_LOCK="$AGENTBOT_HOME/requirements.lock"
 		SOFTWARE_CATALOG_DIGEST="$(printf '%064d' 0)"
 	}
-	python3() {
-		[[ "$#" == 3 && "$1" == -m && "$2" == venv ]] || return 97
-		mkdir -p "$3/bin"
-		cp "$TEST_ROOT/python-template" "$3/bin/python"
-		chmod +x "$3/bin/python"
-		printf 'new\n' >"$3/marker"
+	agentbot_python_catalog_runtime() {
+		AGENTBOT_RUNTIME_PYTHON="$AGENTBOT_HOME/sdk-python"
+		AGENTBOT_RUNTIME_IDENTITY="$(printf '%064d' "${TEST_SDK_GENERATION:-1}")"
 	}
+	cat >"$AGENTBOT_HOME/sdk-python" <<'SDK'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == -I && "$2" == -B && "$3" == -m && "$4" == venv ]] || exit 97
+mkdir -p "$5/bin"
+cp "$TEST_ROOT/python-template" "$5/bin/python"
+chmod +x "$5/bin/python"
+printf 'new\n' >"$5/marker"
+SDK
+	chmod +x "$AGENTBOT_HOME/sdk-python"
+	export TEST_ROOT
+	agentbot_python_closure_valid() { return 0; }
+	python3() { return 98; }
 }
 seed_owned() {
 	mkdir -p "$AGENTBOT_HOME/.venv/bin"
@@ -127,3 +139,22 @@ done
 	exec {held_lock}>&-
 )
 printf 'PASS: managed Python environment publication preserves old releases through install/check/publication failure\n'
+(
+	setup_case runtime-change
+	agentbot_python_ensure
+	first="$(realpath "$AGENTBOT_HOME/.venv")"
+	TEST_SDK_GENERATION=2
+	agentbot_python_ensure
+	[[ "$(realpath "$AGENTBOT_HOME/.venv")" != "$first" && -x "$first/bin/python" ]]
+)
+printf 'PASS: private SDK changes rebuild the environment while preserving the old release\n'
+(
+	setup_case closure-drift
+	agentbot_python_closure_valid() { [[ "${TEST_CLOSURE_DRIFT:-0}" == 0 || "$1" != "$AGENTBOT_HOME/.venv/bin/python" ]]; }
+	agentbot_python_ensure
+	first="$(realpath "$AGENTBOT_HOME/.venv")"
+	TEST_CLOSURE_DRIFT=1
+	agentbot_python_ensure
+	[[ "$(realpath "$AGENTBOT_HOME/.venv")" != "$first" && -x "$first/bin/python" ]]
+)
+printf 'PASS: a changed installed closure cannot reuse an unchanged stamp\n'

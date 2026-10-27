@@ -37,12 +37,14 @@ def development_profile(snapshot):
     return lock, packages
 
 
-def development_smoke(snapshot, home):
+def development_smoke(snapshot, home, runtime):
     import tempfile
 
     lock, expected = development_profile(snapshot)
     environment = Path(tempfile.mkdtemp(prefix="catalog-development-", dir=home)) / "venv"
-    subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True, timeout=120)
+    subprocess.run(
+        [str(runtime), "-I", "-B", "-m", "venv", str(environment)], check=True, timeout=120
+    )
     python = environment / "bin/python"
     command = [
         str(python),
@@ -103,6 +105,7 @@ def development_smoke(snapshot, home):
 
 
 def smoke(manifest: Path) -> dict:
+    from src.catalog_python_runtime import private_python_runtime, runtime_identity
     from src.command_runner import CommandRunner
     from src.software_versions import (
         approved_npm_executable,
@@ -114,13 +117,12 @@ def smoke(manifest: Path) -> dict:
         raise CatalogError("tooling smoke requires its frozen Agentbot checkout")
     operating_system = platform.freedesktop_os_release()
     if (
-        sys.version_info[:2] != (3, 12)
-        or platform.machine() != "x86_64"
+        platform.machine() != "x86_64"
         or operating_system.get("ID") != "ubuntu"
         or operating_system.get("VERSION_ID") != "24.04"
         or "microsoft" in platform.release().lower()
     ):
-        raise CatalogError("tooling smoke requires native Ubuntu 24.04 AMD64 and Python 3.12")
+        raise CatalogError("tooling smoke requires native Ubuntu 24.04 AMD64")
     home = Path.home()
     if home.stat().st_uid != os.geteuid() or stat.S_IMODE(home.stat().st_mode) != 0o700:
         raise CatalogError("tooling smoke needs a private qualification home")
@@ -170,13 +172,35 @@ def smoke(manifest: Path) -> dict:
         version = resolve_entry(snapshot, "skills_cli", "linux-amd64")["version"]
         if not result.ok or result.stdout.strip().removeprefix("v") != version:
             raise CatalogError("Skills CLI version probe differs from the candidate")
-        development = development_smoke(snapshot, home)
+        selected_runtime = resolve_entry(snapshot, "python_runtime", "linux-amd64")
+        runtime = private_python_runtime(
+            snapshot, sources["dotfiles-shared"], runner, qualification_sources=sources
+        )
+        base = subprocess.check_output(
+            [str(interpreter), "-I", "-B", "-c", "import sys; print(sys._base_executable)"],
+            text=True,
+            timeout=30,
+        ).strip()
+        if Path(base).resolve() != runtime.resolve():
+            raise CatalogError("Python environment does not use the selected private SDK")
+        development = development_smoke(snapshot, home, runtime)
+        runtime_evidence = {
+            "version": selected_runtime["version"],
+            "artifact_digest": selected_runtime["digest"],
+            "identity": runtime_identity(selected_runtime),
+            "actual_version": selected_runtime["version"].split("+", 1)[0],
+            "implementation": "cpython",
+            "owned": True,
+            "fresh": "success",
+            "repeat": "success",
+        }
     load_qualification_context(manifest)
     return {
         "schema_version": 1,
         "scope": "tooling-smoke-only",
         "catalog_digest": snapshot.digest,
         "sources": dict(snapshot.data["sources"]),
+        "python_runtime": runtime_evidence,
         "python_packages": {key: packages[key] for key in expected},
         "skills_cli_version": version,
         "development": development,

@@ -9,16 +9,21 @@ Use `./install.sh` from a checkout or `agentbot` after installation. Run
 
 ## Requirements
 
-- Bash, Git, Python 3, and `python3-venv`
-- Node.js, npm, and `npx` for managed skill sources
+- Bash, Git, Python 3, curl, tar, and xz
 - optional `graphify` and `boost` CLIs installed by Dotfiles
 
-Agentbot provisions its Python packages from an approved, hash-pinned catalog
-lock. An install prepares a release under `.venv-releases`, checks its
+Agentbot provisions a private CPython 3.12 runtime and its Python packages from
+an approved, hash-pinned catalog lock. An install prepares a release under `.venv-releases`, checks its
 dependencies, then switches `.venv` to that release. An unchanged requirements
 file and lock reuse the existing release. Read-only commands do not provision
 packages. Until the first catalog has passed qualification, provisioning stops
 before creating an environment.
+
+The private interpreter lives beside the frozen catalog under `python-runtime/`.
+Its archive, runtime version and payload must match the selected catalog and
+ownership receipt. A runtime change rebuilds the package environment even when
+the package lock is unchanged. Reuse also checks the complete installed package
+set against the lock. The system Python and other Python environments are preserved.
 
 An existing environment with Agentbot's requirements stamp can migrate. The old
 environment remains under `.venv-releases/previous-*`; packages added manually
@@ -37,10 +42,14 @@ Before an install or update, unset `AGENTBOT_PYTHON` and
 `AGENTBOT_PYTHON_EXPLICIT`. Provisioning requires Agentbot's managed environment
 so an external interpreter cannot bypass the approved dependency hashes.
 
-Managed skill installation also requires the selected Node/npm runtime installed
-by Dotfiles. Agentbot checks its ownership receipts, catalog identity and physical
-versions, then uses those executable paths for npm and the Skills CLI. An unrelated
-Node or npm on `PATH` cannot replace that runtime.
+Managed skill installation provisions a private Node/npm dependency from the
+approved catalog. Agentbot runs the qualified Dotfiles installer from its exact
+catalog source commit, using a private home under the catalog cache. It verifies
+ownership receipts, physical versions and payload integrity before using that
+runtime for npm and the Skills CLI. Public Node/npm installations and NVM data
+are preserved; installing Dotfiles or having `npx` on `PATH` is unnecessary.
+Read-only commands and dry runs do not provision this dependency. Doctor reports
+a missing private runtime until the first managed skill installation.
 
 ## Quick start
 

@@ -886,8 +886,7 @@ sources:
 
         self.assertEqual(["alpha", "beta"], installed)
 
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/npx")
-    def test_doctor_skills_reports_missing_sources_file(self, _mock_which) -> None:
+    def test_doctor_skills_reports_missing_sources_file(self) -> None:
         from src.skills_installer import doctor_skills
 
         paths = self._paths()
@@ -898,17 +897,28 @@ sources:
 
         self.assertTrue(any("Missing skills sources file" in message for message in messages))
 
-    @patch("src.skills_installer.shutil.which", return_value=None)
-    def test_doctor_skills_reports_missing_npx(self, _mock_which) -> None:
+    def test_doctor_skills_reports_missing_private_runtime(self) -> None:
         from src.skills_installer import doctor_skills
 
         issues = doctor_skills(self._paths())
         messages = [issue.message for issue in issues]
 
-        self.assertTrue(any("npx is not available" in message for message in messages))
+        self.assertTrue(any("private Node/npm runtime" in message for message in messages))
 
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/npx")
-    def test_doctor_skills_warns_on_unreadable_lockfile(self, _mock_which) -> None:
+    @patch.dict(os.environ, {"PATH": "/absent-public-node"})
+    def test_doctor_accepts_private_runtime_without_public_npx(self) -> None:
+        from src import software_versions
+        from src.skills_installer import doctor_skills
+
+        with (
+            patch.object(software_versions, "operation_snapshot", return_value=object()),
+            patch("src.shared_paths.shared_root", return_value=self.root),
+            patch("src.catalog_node_runtime.private_npm_runtime", return_value=(self.root / "node", self.root / "npm")),
+        ):
+            messages = [issue.message for issue in doctor_skills(self._paths())]
+        self.assertFalse(any("npx" in message or "private Node/npm runtime" in message for message in messages))
+
+    def test_doctor_skills_warns_on_unreadable_lockfile(self) -> None:
         from src.skills_installer import doctor_skills
 
         lock_file = self.root / "skills-lock.json"
@@ -998,8 +1008,7 @@ sources:
             r"^\[OK\] Skill source installed: superpowers \((\d+s|\d+m \d{2}s)\)$",
         )
 
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/npx")
-    def test_doctor_reports_manifest_skills_missing_from_global_lock(self, _mock_which) -> None:
+    def test_doctor_reports_manifest_skills_missing_from_global_lock(self) -> None:
         from src.skills_installer import doctor_skills
 
         paths = self._paths()
@@ -1020,8 +1029,7 @@ sources:
             any("brainstorming" in message and "absent" in message for message in messages)
         )
 
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/npx")
-    def test_doctor_ignores_global_lock_skills_not_declared_by_manifest(self, _mock_which) -> None:
+    def test_doctor_ignores_global_lock_skills_not_declared_by_manifest(self) -> None:
         from src.skills_installer import doctor_skills
 
         paths = self._paths()
@@ -1044,8 +1052,7 @@ sources:
             any("personal" in message and "not declared" in message for message in messages)
         )
 
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/npx")
-    def test_doctor_treats_lock_entries_from_an_all_source_as_managed(self, _mock_which) -> None:
+    def test_doctor_treats_lock_entries_from_an_all_source_as_managed(self) -> None:
         from src.skills_installer import doctor_skills
 
         (self.root / "skills.sources.yaml").write_text(
@@ -1114,8 +1121,7 @@ sources:
 
         self.assertEqual(1200, runner.run.call_args.kwargs["timeout_seconds"])
 
-    @patch("src.skills_installer.shutil.which", return_value="/usr/bin/git")
-    def test_github_clone_timeout_can_be_overridden(self, _mock_which) -> None:
+    def test_github_clone_timeout_can_be_overridden(self) -> None:
         from src.command_runner import CommandResult
         from src.skills_installer import _clone_remote_source
 
