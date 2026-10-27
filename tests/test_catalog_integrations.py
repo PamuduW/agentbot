@@ -46,6 +46,30 @@ class IntegrationSmokeTests(unittest.TestCase):
         self.assertFalse(output.exists())
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_extension_failure_reports_the_actionable_error_and_missing_coverage(self):
+        from types import SimpleNamespace
+
+        module = driver()
+        self.assertTrue(
+            hasattr(module, "extension_apply_diagnostic"),
+            "extension failure hides the actual CLI error",
+        )
+        report = SimpleNamespace(
+            manifest_error=None,
+            failures=tuple(
+                ["wsl: a.skip (not attempted after an earlier extension failure)"] * 100
+                + ["wsl: z.failed (incompatible editor version)"]
+            ),
+            installed={"wsl": {"z.failed": "incompatible editor version"}},
+        )
+        diagnostic = module.extension_apply_diagnostic(report, {"a.skip", "z.failed"})
+        self.assertIn("incompatible editor version", diagnostic)
+        self.assertIn("a.skip", diagnostic)
+        self.assertLessEqual(len(diagnostic), 4096)
+        report.failures = ("x" * 10000,) * 100
+        report.manifest_error = "x" * 10000
+        self.assertLessEqual(len(module.extension_apply_diagnostic(report, set())), 4096)
+
     def test_editor_metadata_binds_official_url_commit_and_checksum(self):
         module = driver()
         commit = "a" * 40

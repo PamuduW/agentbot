@@ -194,6 +194,20 @@ def extension_state(host, entries, runner):
     return {"versions": actual, "ownership": owned, "settings": settings}
 
 
+def extension_apply_diagnostic(report, expected):
+    failures = [value for value in report.failures if "not attempted after" not in value]
+    installed = report.installed.get("wsl", {})
+    return json.dumps(
+        {
+            "manifest_error": (report.manifest_error or "")[:512],
+            "failures": [value[:512] for value in failures[:3]],
+            "missing": [key[:128] for key in sorted(set(expected) - set(installed))[:5]],
+            "observed": len(installed),
+        },
+        ensure_ascii=True,
+    )[:4096]
+
+
 def extensions_smoke(home, snapshot, runner):
     from src.catalog_extensions import validate_extension_lock
     from src.software_versions import resolve_entry
@@ -222,7 +236,10 @@ def extensions_smoke(home, snapshot, runner):
         or report.failures
         or set(report.installed.get("wsl", {})) != set(entries)
     ):
-        raise CatalogError("fresh real extension apply was incomplete")
+        raise CatalogError(
+            "fresh real extension apply was incomplete: "
+            + extension_apply_diagnostic(report, entries)
+        )
     if set(report.installed["wsl"].values()) != {"installed"}:
         raise CatalogError("a real extension install failed")
     host = wsl_host(home)
@@ -233,7 +250,10 @@ def extensions_smoke(home, snapshot, runner):
     before = len(runner.calls)
     repeat = apply(home, ROOT, runner, mount_root=mount)
     if repeat.manifest_error or repeat.failures or repeat.installed.get("wsl"):
-        raise CatalogError("repeat extension apply was incomplete or installed again")
+        raise CatalogError(
+            "repeat extension apply was incomplete or installed again: "
+            + extension_apply_diagnostic(repeat, set())
+        )
     if any("--install-extension" in call or call[0] == "curl" for call in runner.calls[before:]):
         raise CatalogError("repeat extensions downloaded or installed packages")
     if extension_state(host, entries, runner) != first:
