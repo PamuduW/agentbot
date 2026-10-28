@@ -66,3 +66,16 @@ class CatalogSourceLeaseTests(unittest.TestCase):
                 ):
                     self.fail("invalid source identity was leased")
         self.assertFalse((self.snapshot_dir.parent / "sources").exists())
+
+    def test_source_lease_rejects_tracked_edits_hidden_by_the_index(self):
+        root = self.sources["dotfiles"]
+        self.git(root, "update-index", "--assume-unchanged", "marker")
+        (root / "marker").write_text("unqualified owner code")
+        with self.assertRaises(ValueError):
+            with self.module().lease_catalog_sources(
+                self.snapshot,
+                self.sources["dotfiles-shared"],
+                CommandRunner(),
+                qualification_sources=self.sources,
+            ):
+                self.fail("source lease accepted hidden tracked edits")

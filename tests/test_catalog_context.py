@@ -40,6 +40,19 @@ class QualificationContextTests(unittest.TestCase):
             roots[name] = root
         return roots
 
+    def test_qualification_rejects_tracked_edits_hidden_by_the_index(self):
+        roots = self.sources()
+        root = roots["agentbot"]
+        subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "update-index", "--assume-unchanged", "source.txt"],
+            check=True,
+        )
+        (root / "source.txt").write_text("unqualified source")
+        self.write(approve=False)
+        digest = load_snapshot(self.directory, require_approved=False).digest
+        with self.assertRaises(CatalogError):
+            qualification_snapshot(self.directory, digest, roots)
+
     def test_candidate_requires_exact_digest_and_clean_frozen_sources_without_approval(
         self,
     ) -> None:
