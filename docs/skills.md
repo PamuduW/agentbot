@@ -215,6 +215,7 @@ and update removes Agentbot's own `agentbot_boost_graph` registration from any
 machine that still has it. `boost-graph-integration` stays pinned off, and
 Doctor reports any BoostGraph registration or `.codegraph/` index in a
 registered workspace. Graphify remains the code-graph tool, rebuilt on demand.
+A hook matcher that names BoostGraph tools is a filter, not a server registration.
 
 ### Feature-flag policy
 
