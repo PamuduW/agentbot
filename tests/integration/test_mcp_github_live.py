@@ -82,10 +82,15 @@ class GitHubRemoteSession:
             body = error.read(65_537)
             if len(body) > 65_536:
                 raise AssertionError("GitHub MCP error exceeded the contract limit") from error
-            decoded = _decode_mcp_body(body, error.headers.get_content_type())
-            if decoded:
+            try:
+                decoded = _decode_mcp_body(body, error.headers.get_content_type())
+            except (ValueError, AssertionError):
+                decoded = {}
+            if decoded.get("jsonrpc") == "2.0":
                 return decoded
-            raise AssertionError(f"GitHub MCP returned HTTP {error.code}") from error
+            raise AssertionError(
+                f"GitHub MCP returned HTTP {error.code} without a JSON-RPC response"
+            ) from None
 
 
 def _decode_mcp_body(body: bytes, content_type: str) -> dict[str, Any]:

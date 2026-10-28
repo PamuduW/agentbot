@@ -268,6 +268,7 @@ class VerifyTests(unittest.TestCase):
             result = store.verify(_TOKEN)
 
         self.assertIs(False, result.accepted)
+        self.assertTrue(error.closed)
 
     def test_being_unable_to_ask_is_not_a_rejection(self) -> None:
         with mock.patch.object(store, "_get", side_effect=urllib.error.URLError("offline")):
@@ -306,6 +307,7 @@ class VerifyTests(unittest.TestCase):
             result = store.verify(_TOKEN)
 
         self.assertTrue(result.accepted)
+        self.assertTrue(error.closed)
         self.assertEqual((), result.scopes)
         self.assertFalse(result.read_only)
 

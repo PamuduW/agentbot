@@ -1301,6 +1301,62 @@ class BoostRepositoryGraphIndexTests(BoostIntegrationTests):
         integration = self._integration_type()(self._paths())
         self.assertTrue(integration._forbidden_graph_evidence())
 
+    def test_boost_hook_matchers_do_not_register_graph_servers(self) -> None:
+        integration = self._integration_type()(self._paths())
+        matchers = {
+            "Claude": ("PreToolUse", "Bash|PowerShell|Read|mcp__boost-graph__.*"),
+            "Codex": (
+                "PreToolUse",
+                "^(Bash|exec_command|exec|code_mode_exec|Read|mcp__boost-graph__.*)$",
+            ),
+            "Cursor": ("preToolUse", "Shell|Read|MCP:.*boostgraph_.*"),
+        }
+        for host in integration._hosts():
+            with self.subTest(host=host.label):
+                event, matcher = matchers[host.label]
+                host.config.parent.mkdir(parents=True, exist_ok=True)
+                host.config.write_text(
+                    json.dumps(
+                        {
+                            "hooks": {
+                                event: [
+                                    {"matcher": matcher, "hooks": [{"command": "boost-hook.sh"}]}
+                                ]
+                            }
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                self.assertFalse(integration._forbidden_graph_evidence())
+
+    def test_graph_registration_is_detected_alongside_a_hook_matcher(self) -> None:
+        path = self._paths().claude_home / "settings.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "hooks": {"PreToolUse": [{"matcher": "mcp__boost-graph__.*"}]},
+                    "mcpServers": {"boost-graph": {"command": "boost"}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.assertTrue(self._integration_type()(self._paths())._forbidden_graph_evidence())
+
+    def test_graph_evidence_outside_hook_matchers_remains_forbidden(self) -> None:
+        path = self._paths().codex_home / "hooks.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        for content in (
+            '{"matcher":"boostgraph"}',
+            '{"hooks":{"PreToolUse":[{"matcher":{"server":"boostgraph"}}]}}',
+            '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"boostgraph serve"}]}]}}',
+            '{"server":"boostgraph","server":"ordinary"}',
+            '{"server":"boostgraph",',
+        ):
+            with self.subTest(content=content):
+                path.write_text(content, encoding="utf-8")
+                self.assertTrue(self._integration_type()(self._paths())._forbidden_graph_evidence())
+
     def test_a_codegraph_index_is_forbidden(self) -> None:
         # BoostGraph was adopted and rejected on 2026-10-08 (item 6A); its
         # <repo>/.codegraph/ index is evidence again.

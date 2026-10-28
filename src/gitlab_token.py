@@ -240,6 +240,7 @@ def verify(token: str, *, origin: str = DEFAULT_ORIGIN) -> VerifyResult:
     try:
         identity = _get(f"{base}/api/v4/user", token)
     except urllib.error.HTTPError as error:
+        error.close()
         # 401 and 403 are not the same answer, and treating them alike called a
         # good credential bad. 401 means GitLab does not accept this token at
         # all. 403 means it knows exactly who the token is and will not let it
@@ -265,7 +266,10 @@ def verify(token: str, *, origin: str = DEFAULT_ORIGIN) -> VerifyResult:
     # absence is not a failure and the scopes are simply unknown.
     try:
         record = _get(f"{base}/api/v4/personal_access_tokens/self", token)
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+    except urllib.error.HTTPError as error:
+        error.close()
+        return VerifyResult(True, detail)
+    except (urllib.error.URLError, TimeoutError, OSError):
         return VerifyResult(True, detail)
     scopes = tuple(record.get("scopes", ())) if isinstance(record, dict) else ()
     return VerifyResult(True, detail, scopes)
