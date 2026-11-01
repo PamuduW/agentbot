@@ -12,9 +12,7 @@ host and wrong for the WSL one.
 from __future__ import annotations
 
 import json
-import platform
 import re
-from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -89,27 +87,11 @@ class ExtensionPlan:
 def wsl_host(home: Path) -> VSCodeHost:
     """The WSL extension host, served from ~/.vscode-server."""
     server = home / ".vscode-server"
-    remote_cli = _newest_server_cli(server)
-    desktop = home / ".local/share/code/bin/code"
-    if (
-        remote_cli is None
-        and platform.system() == "Linux"
-        and "microsoft" not in platform.release().lower()
-        and desktop.is_file()
-        and (desktop.parent.parent / "resources/app/package.json").is_file()
-    ):
-        return VSCodeHost(
-            name="wsl",
-            settings_path=home / ".config/Code/User/settings.json",
-            extensions_dir=home / ".vscode/extensions",
-            cli=desktop,
-            detail="native Linux desktop",
-        )
     return VSCodeHost(
         name="wsl",
         settings_path=server / "data" / "Machine" / "settings.json",
         extensions_dir=server / "extensions",
-        cli=remote_cli,
+        cli=_newest_server_cli(server),
         detail=str(server),
     )
 
@@ -583,8 +565,6 @@ def _windows_install_command(
     host: VSCodeHost,
     identifiers: tuple[str, ...],
     runner: CommandRunner,
-    *,
-    frozen: bool = False,
 ) -> tuple[list[str], str]:
     if host.cli is None:
         return [], "no CLI for this host"
@@ -598,8 +578,6 @@ def _windows_install_command(
     for identifier in identifiers:
         arguments.extend(("--install-extension", identifier))
     arguments.append("--force")
-    if frozen:
-        arguments.extend(("--do-not-include-pack-dependencies", "--do-not-sync"))
     quoted = " ".join("'" + argument.replace("'", "''") + "'" for argument in arguments)
     script = (
         "$ErrorActionPreference = 'Stop'; "
@@ -639,9 +617,7 @@ def _install_extension_batches(
             log_line("WARN", f"VS Code {host.name}: {error}")
             break
         timeout = INSTALL_TIMEOUT_SECONDS * len(batch)
-        outcome = runner.run(
-            argv, timeout_seconds=timeout, cwd=host.cli.parent if host.cli else None
-        )
+        outcome = runner.run(argv, timeout_seconds=timeout, cwd=host.cli.parent if host.cli else None)
         present = {identifier.casefold() for identifier in installed_extensions(host)}
         for identifier in batch:
             if identifier.casefold() in present:
@@ -669,9 +645,7 @@ def _install_extension_batches(
                 dict.fromkeys(identifiers[start + len(batch) :], f"not attempted after {reason}")
             )
             if unverified:
-                log_line(
-                    "WARN", f"VS Code {host.name}: expected extensions in {host.extensions_dir}"
-                )
+                log_line("WARN", f"VS Code {host.name}: expected extensions in {host.extensions_dir}")
             log_line(
                 "WARN",
                 f"VS Code {host.name}: remaining batches stopped. "
@@ -736,25 +710,7 @@ def settings_source(root: Path, scope: str) -> Path:
     return root / SETTINGS_DIRECTORY / f"settings.{scope}.json"
 
 
-def _editor_version(host: VSCodeHost) -> tuple[int, int] | None:
-    if host.cli is None:
-        return None
-    root = host.cli.resolve().parent.parent
-    desktop = root / "resources/app/package.json"
-    package = desktop if desktop.is_file() else root / "package.json"
-    if not package.is_file() or package.is_symlink() or package.stat().st_size > 1_048_576:
-        return None
-    try:
-        version = json.loads(package.read_text()).get("version", "")
-        matched = re.match(r"^(\d+)\.(\d+)\.", version)
-    except (OSError, ValueError, TypeError):
-        return None
-    return (int(matched[1]), int(matched[2])) if matched else None
-
-
-def desired_settings(
-    root: Path, host: str, *, editor: VSCodeHost | None = None
-) -> tuple[dict[str, object], str | None]:
+def desired_settings(root: Path, host: str) -> tuple[dict[str, object], str | None]:
     """Universal keys with this host's overrides on top, plus any read error."""
     merged: dict[str, object] = {}
     for scope in (UNIVERSAL_SCOPE, host):
@@ -762,10 +718,6 @@ def desired_settings(
         if error:
             return {}, error
         merged.update(values)
-    if editor is not None and "extensions.autoUpdate" in merged:
-        version = _editor_version(editor)
-        if version is not None:
-            merged["extensions.autoUpdate"] = "off" if version >= (1, 125) else False
     return merged, None
 
 
@@ -782,7 +734,7 @@ def preview(home: Path, root: Path, mount_root: Path = WINDOWS_MOUNT_ROOT) -> VS
         report.extensions[name] = plan_extensions(host, list(manifest.extensions_for(name)))
 
     for name, host in report.hosts.items():
-        desired, source_error = desired_settings(root, name, editor=host)
+        desired, source_error = desired_settings(root, name)
         if source_error:
             report.settings[name] = SettingsPlan(path=host.settings_path, unreadable=source_error)
             continue
@@ -860,112 +812,22 @@ def apply(
     report = preview(home, root, mount_root)
     if report.manifest_error:
         return report
-    from .catalog_extensions import (
-        ExtensionCatalogError,
-        UnqualifiedExtensionHost,
-        preflight_installs,
-        staged_extensions,
-    )
+    for name, host in report.hosts.items():
+        settings_plan = report.settings.get(name)
+        if settings_plan is None or settings_plan.unreadable or settings_plan.skipped:
+            continue
+        if settings_plan.is_noop:
+            continue
+        desired, source_error = desired_settings(root, name)
+        if source_error:
+            continue
+        report.settings[name] = apply_settings(host.settings_path, desired)
 
-    manifest = load_manifest(manifest_path(root))
-    with ExitStack() as staging:
-        prepared = {}
-        for name, host in report.hosts.items():
-            desired = manifest.extensions_for(name)
-            if not host.available or not desired:
-                continue
-            if _editor_version(host) is None:
-                raise ExtensionCatalogError(
-                    "cannot verify VS Code version for its supported updater controls"
-                )
-            try:
-                files, entries = staging.enter_context(
-                    staged_extensions(
-                        root,
-                        desired,
-                        name,
-                        runner,
-                        extensions_directory=host.extensions_dir,
-                        editor_cli=host.cli,
-                    )
-                )
-            except UnqualifiedExtensionHost as error:
-                report.extensions[name] = ExtensionPlan(
-                    host=name, unmanaged=desired, skipped=str(error)
-                )
-                continue
-            checked = set(preflight_installs(host.extensions_dir, entries))
-            pending = tuple(identity for identity in files if identity in checked)
-            if set(pending) != checked:
-                raise ExtensionCatalogError(
-                    "extension host changed during staging; retry installation"
-                )
-            prepared[name] = (files, entries, pending)
-        for name, host in report.hosts.items():
-            settings_plan = report.settings.get(name)
-            if (
-                settings_plan is None
-                or settings_plan.unreadable
-                or settings_plan.skipped
-                or settings_plan.is_noop
-            ):
-                continue
-            desired_settings_values, source_error = desired_settings(root, name, editor=host)
-            if source_error:
-                continue
-            report.settings[name] = apply_settings(host.settings_path, desired_settings_values)
-        for name, (files, entries, pending) in prepared.items():
-            report.installed[name] = _install_catalog_extensions(
-                report.hosts[name], files, entries, pending, runner
-            )
+    for name, host in report.hosts.items():
+        extension_plan = report.extensions.get(name)
+        if extension_plan is None or extension_plan.is_noop:
+            continue
+        report.installed[name] = install_extensions(host, extension_plan.missing, runner)
 
     report.applied = True
     return report
-
-
-def _install_catalog_extensions(
-    host: VSCodeHost,
-    files: dict[str, Path],
-    entries: dict[str, dict],
-    pending: tuple[str, ...],
-    runner: CommandRunner,
-) -> dict[str, str]:
-    from .catalog_extensions import ExtensionCatalogError, installed_version, record_installs
-
-    if host.cli is None:
-        return dict.fromkeys(pending, "no CLI for this host")
-    results: dict[str, str] = {}
-    for identity in pending:
-        package = str(files[identity])
-        if host.name == "windows":
-            converted = runner.run(["wslpath", "-w", package], timeout_seconds=15)
-            if not converted.ok or not converted.stdout.strip():
-                raise ExtensionCatalogError("cannot translate approved VSIX path to Windows")
-            argv, error = _windows_install_command(
-                host, (converted.stdout.strip(),), runner, frozen=True
-            )
-            if error:
-                raise ExtensionCatalogError(error)
-        else:
-            argv = [
-                str(host.cli),
-                "--extensions-dir",
-                str(host.extensions_dir),
-                "--install-extension",
-                package,
-                "--force",
-                "--do-not-include-pack-dependencies",
-                "--do-not-sync",
-            ]
-        result = runner.run(argv, timeout_seconds=INSTALL_TIMEOUT_SECONDS)
-        if (
-            not result.ok
-            or installed_version(host.extensions_dir, identity) != entries[identity]["version"]
-        ):
-            results[identity] = result.detail() or "approved extension version was not installed"
-            break
-        record_installs(host.extensions_dir, entries, (identity,))
-        results[identity] = "installed"
-    for identity in pending:
-        results.setdefault(identity, "not attempted after an earlier extension failure")
-    return results

@@ -11,7 +11,7 @@ set -uo pipefail
 # took a whole install down from the diagnostics step.
 #
 # So the cases below are the ones that regression matters for: resolution
-# order, an override that cannot bypass the catalog, a fill that happens once,
+# order, an override that opts out of provisioning, a fill that happens once,
 # and a read-only command that reports rather than builds.
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -107,7 +107,7 @@ test_unusable_override_is_ignored() {
 	[[ "$resolved" == "$(command -v python3)" ]]
 }
 
-test_override_cannot_bypass_catalog() {
+test_override_skips_provisioning() {
 	local home override
 	home="$(make_home nobuild)"
 	override="$(make_fake_interpreter "$TEST_ROOT/nobuild-bin/python")"
@@ -116,9 +116,7 @@ test_override_cannot_bypass_catalog() {
 		export AGENTBOT_HOME AGENTBOT_PYTHON
 		# shellcheck source=/dev/null
 		source "$ROOT/scripts/lib/python_env.sh"
-		local rc=0
-		agentbot_python_ensure >"$home/error" 2>&1 || rc=$?
-		[[ "$rc" == 2 ]] && command grep -q 'Unset AGENTBOT_PYTHON' "$home/error"
+		agentbot_python_ensure
 	) || return 1
 	[[ ! -e "$home/.venv" ]]
 }
@@ -225,27 +223,13 @@ test_resolution_prefers_a_new_venv_over_an_exported_fallback() {
 	[[ "$resolved" == "$home/.venv/bin/python" ]]
 }
 
-test_unapproved_catalog_cannot_create_an_environment() {
-	local home
-	home="$(make_home unapproved)"
-	(
-		AGENTBOT_HOME="$home"
-		export AGENTBOT_HOME
-		unset AGENTBOT_PYTHON AGENTBOT_PYTHON_EXPLICIT
-		source "$ROOT/scripts/lib/python_env.sh"
-		agentbot_python_ensure
-	) >/dev/null 2>&1 && return 1
-	[[ ! -e "$home/.venv" ]]
-}
-check 'unapproved catalog stops before creating a venv' test_unapproved_catalog_cannot_create_an_environment
-
 check 'an inherited fallback is not treated as an override' test_inherited_fallback_is_not_an_override
 check 'resolution prefers a newly created venv over an exported fallback' test_resolution_prefers_a_new_venv_over_an_exported_fallback
 check 'resolution falls back to python3 on PATH' test_falls_back_to_path_python3
 check 'resolution prefers the checkout virtual environment' test_prefers_the_checkout_venv
 check 'an explicit interpreter outranks the virtual environment' test_override_outranks_the_venv
 check 'an unusable override is ignored rather than honoured' test_unusable_override_is_ignored
-check 'an explicit interpreter cannot bypass the catalog' test_override_cannot_bypass_catalog
+check 'an explicit interpreter provisions nothing' test_override_skips_provisioning
 check 'the fill stamp tracks the requirements digest' test_stamp_tracks_requirements
 check 'a read-only command reports instead of provisioning' test_readonly_command_reports_and_builds_nothing
 

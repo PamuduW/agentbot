@@ -9,29 +9,14 @@ Use `./install.sh` from a checkout or `agentbot` after installation. Run
 
 ## Requirements
 
-- Bash, Git, Python 3, curl, tar, and xz
+- Bash, Git, Python 3, and `python3-venv`
+- Node.js, npm, and `npx` for managed skill sources
 - optional `graphify` and `boost` CLIs installed by Dotfiles
 
-Agentbot provisions a private CPython 3.12 runtime and its Python packages from
-an approved, hash-pinned catalog lock. An install prepares a release under `.venv-releases`, checks its
-dependencies, then switches `.venv` to that release. An unchanged requirements
-file and lock reuse the existing release. Read-only commands do not provision
-packages. Until the first catalog has passed qualification, provisioning stops
-before creating an environment.
-
-The private interpreter lives under `~/.local/share/software-catalog/python-runtime`
-(or the selected `XDG_DATA_HOME`). Download-cache cleanup does not remove the
-interpreter referenced by installed environments.
-Its archive, runtime version and payload must match the selected catalog and
-ownership receipt. A runtime change rebuilds the package environment even when
-the package lock is unchanged. Reuse also checks the complete installed package
-set against the lock. The system Python and other Python environments are preserved.
-
-An existing environment with Agentbot's requirements stamp can migrate. The old
-environment remains under `.venv-releases/previous-*`; packages added manually
-remain there and are absent from the new managed environment. Failed preparation
-or publication restores the previous environment. Environments without a valid
-Agentbot stamp are preserved and require operator action before provisioning.
+Agentbot provisions its own Python packages. `./install.sh install` creates
+`.venv` in the checkout, fills it from `requirements.txt`, and every Agentbot
+command runs through that interpreter. The step is skipped when `requirements.txt`
+has not changed since the last fill, so a normal install does no network work.
 
 This is why the packages are not listed as prerequisites: a distribution
 interpreter marked `EXTERNALLY-MANAGED` refuses `pip install` under PEP 668,
@@ -39,19 +24,8 @@ and apt carries neither `mcp` nor a tomlkit new enough for `requirements.txt`.
 Read-only commands never create the environment; they report what is missing
 and name `./install.sh install` as the remedy.
 
-For read-only commands, `AGENTBOT_PYTHON` can select an interpreter you manage.
-Before an install or update, unset `AGENTBOT_PYTHON` and
-`AGENTBOT_PYTHON_EXPLICIT`. Provisioning requires Agentbot's managed environment
-so an external interpreter cannot bypass the approved dependency hashes.
-
-Managed skill installation provisions a private Node/npm dependency from the
-approved catalog. Agentbot runs the qualified Dotfiles installer from its exact
-catalog source commit, using a private home under the catalog cache. It verifies
-ownership receipts, physical versions and payload integrity before using that
-runtime for npm and the Skills CLI. Public Node/npm installations and NVM data
-are preserved; installing Dotfiles or having `npx` on `PATH` is unnecessary.
-Read-only commands and dry runs do not provision this dependency. Doctor reports
-a missing private runtime until the first managed skill installation.
+To use an interpreter you manage yourself, set `AGENTBOT_PYTHON` to it.
+Agentbot then resolves through it and provisions nothing.
 
 ## Quick start
 

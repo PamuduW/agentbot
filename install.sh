@@ -88,15 +88,17 @@ check_skills_deps() {
 		die "failed to provision the Agentbot Python environment"
 	fi
 	check_python_deps
+	if ! command -v node >/dev/null 2>&1; then
+		die "node is required (install Node.js for npx skills)"
+	fi
+	if ! command -v npx >/dev/null 2>&1; then
+		die "npx is required (install Node.js/npm for npx skills)"
+	fi
 }
 
 run_cli() {
 	agentbot_python_resolve || die "python3 is required"
-	local -a context_args=()
-	if [[ -n "${AGENTBOT_QUALIFICATION_CONTEXT:-}" ]]; then
-		context_args=(--qualification-context "$AGENTBOT_QUALIFICATION_CONTEXT")
-	fi
-	"$AGENTBOT_PYTHON" -m src.cli --root "$REPO_ROOT" "${context_args[@]}" "$@"
+	"$AGENTBOT_PYTHON" -m src.cli --root "$REPO_ROOT" "$@"
 }
 
 run_global_render() {
@@ -421,11 +423,7 @@ _agentbot_now_seconds() {
 # stops for. The restart count rides across the replacement so the budget
 # survives it.
 agentbot_restart_full() {
-	local -a context_args=()
-	if [[ -n "${AGENTBOT_QUALIFICATION_CONTEXT:-}" ]]; then
-		context_args=(--qualification-context "$AGENTBOT_QUALIFICATION_CONTEXT")
-	fi
-	AGENTBOT_FULL_RESTARTS="$1" exec bash "$REPO_ROOT/install.sh" "${context_args[@]}" full
+	AGENTBOT_FULL_RESTARTS="$1" exec bash "$REPO_ROOT/install.sh" full
 }
 
 # Installed means the skill lock and the launcher both exist; anything less is
@@ -519,16 +517,6 @@ EOF
 }
 
 main() {
-	local AGENTBOT_QUALIFICATION_CONTEXT=''
-	if [[ "${1:-}" == --qualification-context ]]; then
-		[[ $# -ge 3 ]] || die '--qualification-context requires a manifest and command'
-		AGENTBOT_QUALIFICATION_CONTEXT="$(realpath -- "$2")" || return 2
-		shift 2
-		# shellcheck source=/dev/null
-		source "$DOTFILES_SHARED_LIB/software_catalog.sh"
-		software_catalog_qualification_begin "$AGENTBOT_QUALIFICATION_CONTEXT" || return 2
-		[[ "$(realpath -- "$REPO_ROOT")" == "$(software_catalog_qualification_source agentbot)" ]] || return 2
-	fi
 	# Record where the operator actually invoked us from before leaving it.
 	# run_cli needs the checkout as its working directory, so without this the
 	# CLI resolves every relative workspace path against the checkout instead.
