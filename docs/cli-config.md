@@ -112,21 +112,20 @@ approval can grant. It is kept because Codex runs long unattended tasks here
 Set it to `"user"` to have Codex ask the operator again. Source: OpenAI's
 auto-review page, `learn.chatgpt.com/docs/sandboxing/auto-review`.
 
-Antigravity's desired state holds `agentMode: accept-edits`,
-`artifactReviewPolicy: agent-decides`, verbosity, notifications, the
-feedback survey, and `toolPermission: request-review` (keys from the official settings page,
+Antigravity's desired state holds `agentMode: auto`,
+`allowNonWorkspaceAccess: true`, `artifactReviewPolicy: agent-decides`,
+notifications, `runningLightSpeed: off`, the feedback survey,
+`toolPermission: always-proceed`, and verbosity (keys from the official settings page,
 `antigravity.google/docs/settings?tab=cli`; `agy` writes only values that
 differ from its defaults). These are existing operator choices. Current vendor schema describes `agent-decides`
 as behaving like `asks-for-review`; it does not guarantee automatic artifact
 approval. `toolPermission` affects prompting for write, shell, web and MCP
-tools; existing allow rules and execution mode also matter. Request-review
-is retained; it is not equivalent to another client's permission system. It was per machine until the 2026-10-13 setup review found
-`always-proceed` on the home PC, and the operator chose to declare the asking
-value everywhere (declaring it grants nothing). `trustedWorkspaces` stays
-per machine too, because it lists local paths. The checked Antigravity CLI
-settings documentation does not establish a native-memory disable switch.
-Treat that control as unverified; instruction policy alone does not enforce
-exclusive memory use. [Antigravity settings](https://www.antigravity.google/docs/settings).
+tools; existing allow rules and execution mode also matter. `always-proceed`
+is declared for tool permissions, and `auto` is declared for agent mode.
+`trustedWorkspaces` stays per machine, because it lists local paths.
+The checked Antigravity CLI settings documentation does not establish a
+native-memory disable switch. Treat that control as unverified; instruction
+policy alone does not enforce exclusive memory use. [Antigravity settings](https://www.antigravity.google/docs/settings).
 
 **Checked 2026-10-12** with `agentbot setup-review --scope cli-config`, then by
 hand. Two keys were dropped: Codex `service_tier = "default"` (no model

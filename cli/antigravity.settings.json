@@ -1,8 +1,10 @@
 {
-  "agentMode": "accept-edits",
+  "agentMode": "auto",
+  "allowNonWorkspaceAccess": true,
   "artifactReviewPolicy": "agent-decides",
-  "verbosity": "low",
   "notifications": true,
+  "runningLightSpeed": "off",
   "showFeedbackSurvey": false,
-  "toolPermission": "request-review"
+  "toolPermission": "always-proceed",
+  "verbosity": "low"
 }
