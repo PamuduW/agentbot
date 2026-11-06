@@ -82,7 +82,7 @@ MENUS: dict[str, Menu] = {
             "Apply actions require explicit confirmation.",
             "Choose this machine's memory vault, check it, or validate it.\n"
             "Setup previews first and asks before it writes anything.",
-            "Have Claude, Codex, Cursor or agy review the setup, read-only.\n"
+            "Have Claude, Codex or Cursor review the setup, read-only.\n"
             "The report is filed in Dotfiles' reviews/ on the development branch.",
             "Open the Agentbot and Graphify command reference libraries.\n"
             "Read-only command and safety information.",
@@ -147,13 +147,13 @@ MENUS: dict[str, Menu] = {
     "review_agent": Menu(
         title="Setup review",
         breadcrumb="Agentbot › Setup review › Agent",
-        labels=("Claude Code", "Codex", "Cursor CLI", "Antigravity CLI (agy)"),
+        labels=("Claude Code", "Codex", "Cursor CLI", "Antigravity CLI (agy, disabled)"),
         keys=("claude", "codex", "cursor", "agy"),
         descs=(
             "Review with Claude Code in plan mode.\nIts default model and effort apply.",
             "Review with Codex in its read-only sandbox.\nIts default model and effort apply.",
             "Review with Cursor CLI in plan mode.\nIts default model applies.",
-            "Review with the Antigravity CLI in plan mode.\nIts default model applies.",
+            "Disabled until Antigravity has an enforceable read-only boundary.\nChoose another review agent.",
         ),
     ),
     "review_scope": Menu(

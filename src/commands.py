@@ -508,7 +508,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         (
             option(
                 "--cli NAME",
-                "Agent CLI to run: claude, codex, cursor or agy. Remembered for the next run.",
+                "Agent CLI to run: claude, codex or cursor. agy is blocked pending read-only isolation.",
                 "last used, else ask",
             ),
             option(

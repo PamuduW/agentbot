@@ -17,20 +17,22 @@ one place. Run it every few weeks.
 ## What happens
 
 1. **Choose and confirm the agent.** Claude Code (`claude`), Codex (`codex`),
-   Cursor CLI (`cursor`) or the Antigravity CLI (`agy`). Each is looked for
-   only where Dotfiles installs it, under `~/.local/bin`, never on `PATH`:
+   or Cursor CLI (`cursor`). Antigravity (`agy`) is refused until it has an
+   enforceable read-only boundary: plan mode alone does not restrict its tool
+   permissions. Each supported CLI is looked for only where Dotfiles installs
+   it, under `~/.local/bin`, never on `PATH`:
    inside WSL, `cursor` on `PATH` is the Windows editor. A CLI that is not
    installed is reported, never swapped for another. The choice is remembered
    in `~/.config/agentbot/setup-review.json`, and confirmed before anything
    runs; without a terminal, `--yes` is required.
 2. **Check the sign-in.** `claude auth status`, `codex login status` or
-   `cursor-agent status`. `agy` has no such check; a quota or sign-in problem
-   shows when it runs and is reported as one (exit 3).
+   `cursor-agent status`. A quota or sign-in problem during a review is
+   reported as an access failure (exit 3).
 3. **Bring the installed checkouts up to date.** For `~/dotfiles`,
    `~/agentbot` and `~/dotfiles-shared`: `git fetch`, `git status`, and
-   `git pull --ff-only` when the clone is clean and only behind. A dirty,
-   ahead or diverged clone stops the review (exit 4) and is left alone, the
-   same rule `dotfiles fu` follows. The memory vault is read through
+   `git pull --ff-only` when the clone is clean and only behind. A failed
+   status check, dirty, ahead or diverged clone stops the review (exit 4)
+   and is left alone, the same rule `dotfiles fu` follows. The memory vault is read through
    `agentbot memory status` only; nothing runs Git in it.
 4. **Review, read-only, from `~/dotfiles`.** The agent runs without a terminal
    in its read-only mode, with its own default model and effort:
@@ -40,7 +42,7 @@ one place. Run it every few weeks.
    | Claude Code | `claude -p --permission-mode plan --add-dir … --allowedTools WebSearch WebFetch -- PROMPT` |
    | Codex | `codex --search exec --sandbox read-only --skip-git-repo-check -- PROMPT` |
    | Cursor CLI | `cursor-agent -p --mode plan --trust --output-format text --add-dir … -- PROMPT` |
-   | Antigravity | `agy --mode plan --print-timeout Ns --add-dir … -p PROMPT` |
+   | Antigravity | Disabled: no enforceable read-only boundary |
 
    Cursor's `--trust` answers its workspace-trust question for the Dotfiles
    checkout alone; it is not the `--force`/`--yolo` permission bypass. No CLI

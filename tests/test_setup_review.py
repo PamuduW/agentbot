@@ -236,9 +236,8 @@ class EveryCliTests(SetupReviewTestCase):
             "claude": ["-p", "--permission-mode", "plan"],
             "codex": ["exec", "--sandbox", "read-only"],
             "cursor": ["-p", "--mode", "plan"],
-            "agy": ["--mode", "plan"],
         }
-        for key in setup_review.CLIS:
+        for key in read_only:
             with self.subTest(cli=key):
                 self.log.unlink(missing_ok=True)
                 for folder in (self.paths.config_home / "setup-reviews").glob("*"):
@@ -272,6 +271,29 @@ class EveryCliTests(SetupReviewTestCase):
         log = filed["review_log.md"]
         for name in reviews:
             self.assertIn(f"- {name} - created", log)
+
+    def test_antigravity_is_refused_before_sync_or_child_launch(self) -> None:
+        self.install("agy")
+        setup_review.remember_cli(self.paths, "agy")
+        for scope in ("full", "cli-config"):
+            for requested in ("agy", None):
+                with self.subTest(scope=scope, requested=requested):
+                    with mock.patch.object(
+                        setup_review, "sync_clone", wraps=setup_review.sync_clone
+                    ) as sync:
+                        self.assertEqual(
+                            setup_review.EXIT_USAGE,
+                            self.run_review(cli=requested, scope=scope),
+                        )
+                    sync.assert_not_called()
+                    self.assertEqual([], self.calls())
+                    self.assertEqual({}, self.filed())
+        self.assertIn("read-only boundary", self.text)
+
+    def test_antigravity_command_cannot_be_built_directly(self) -> None:
+        cli = setup_review.ResolvedCli(setup_review.CLIS["agy"], self.install("agy"))
+        with self.assertRaisesRegex(ValueError, "read-only boundary"):
+            setup_review.review_argv(cli, "review", read_dirs=[], timeout_seconds=60)
 
     def test_codex_search_comes_before_exec(self) -> None:
         # `codex exec --search` exits 2 ("unexpected argument"); found in the
@@ -381,6 +403,25 @@ class CheckoutSyncTests(SetupReviewTestCase):
         self.assertTrue((self.home / "agentbot" / "NEW.md").is_file())
         self.assertIn("agentbot         pulled: pulled 1 commit(s)", self.text)
 
+    def test_failed_status_stops_before_pull_or_review(self) -> None:
+        self.install("claude")
+        self._push_upstream("agentbot")
+        clone = self.home / "agentbot"
+        before = git(clone, "rev-parse", "HEAD")
+        real_git = setup_review._git_run
+
+        def fail_status(path, *args, **kwargs):
+            if path == clone and args == ("status", "--porcelain"):
+                return 128, "", "status unavailable"
+            return real_git(path, *args, **kwargs)
+
+        with mock.patch.object(setup_review, "_git_run", side_effect=fail_status):
+            self.assertEqual(setup_review.EXIT_PREFLIGHT, self.run_review(cli="claude"))
+        self.assertEqual(before, git(clone, "rev-parse", "HEAD"))
+        self.assertFalse((clone / "NEW.md").exists())
+        self.assertEqual([], self.review_calls())
+        self.assertIn("status-failed", self.text)
+
     def test_a_dirty_clone_stops_the_review_and_is_left_alone(self) -> None:
         self.install("claude")
         (self.home / "dotfiles-shared" / "WIP.md").write_text("mine\n")
@@ -481,10 +522,10 @@ class FailureTests(SetupReviewTestCase):
         self.assertEqual([], self.review_calls())
 
     def test_usage_limit_is_surfaced_and_nothing_is_filed(self) -> None:
-        self.install("agy")
+        self.install("codex")
         os.environ["FAKE_MODE"] = "limit"
 
-        self.assertEqual(setup_review.EXIT_ACCESS, self.run_review(cli="agy"))
+        self.assertEqual(setup_review.EXIT_ACCESS, self.run_review(cli="codex"))
 
         self.assertIn("usage or plan limit", self.text)
         self.assertEqual({}, self.filed())

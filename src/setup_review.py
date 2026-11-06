@@ -104,6 +104,11 @@ CLIS: dict[str, CliSpec] = {
     ),
 }
 
+_ANTIGRAVITY_REVIEW_BLOCKED = (
+    "setup-review disabled until Antigravity has an enforceable read-only boundary; "
+    "choose claude, codex or cursor"
+)
+
 _BYPASS_VALUES = frozenset({"bypassPermissions", "danger-full-access", "never"})
 
 _ACCESS_PATTERNS = (
@@ -182,6 +187,8 @@ def resolve_cli(spec: CliSpec, home: Path) -> ResolvedCli:
         if not real.is_file() or not os.access(real, os.X_OK):
             reasons.append(f"{candidate} is not an executable file")
             continue
+        if spec.key == "agy":
+            return ResolvedCli(spec, None, _ANTIGRAVITY_REVIEW_BLOCKED)
         return ResolvedCli(spec, real)
     if not reasons:
         reasons.append(f"not installed at ~/{' or ~/'.join(spec.locations)}")
@@ -315,7 +322,13 @@ def sync_clone(name: str, path: Path) -> Checkout:
     rc, _, err = _git_run(path, "fetch", "--quiet", "origin")
     if rc != 0:
         return Checkout(name, path, state="fetch-failed", detail=(err.splitlines() or ["fetch failed"])[-1])
-    if _git(path, "status", "--porcelain"):
+    rc, status, err = _git_run(path, "status", "--porcelain")
+    if rc != 0:
+        return Checkout(
+            name, path, state="status-failed",
+            detail=(err.splitlines() or ["status failed"])[-1],
+        )
+    if status:
         return Checkout(name, path, state="dirty", detail="uncommitted changes")
     counts = _git(path, "rev-list", "--left-right", "--count", "HEAD...@{u}").split()
     if len(counts) != 2:
@@ -342,7 +355,9 @@ def sync_clone(name: str, path: Path) -> Checkout:
     )
 
 
-_STOPPING_STATES = frozenset({"fetch-failed", "dirty", "ahead", "diverged", "pull-failed", "no-upstream"})
+_STOPPING_STATES = frozenset({
+    "fetch-failed", "status-failed", "dirty", "ahead", "diverged", "pull-failed", "no-upstream",
+})
 
 
 def _agentbot(paths: AgentbotPaths) -> list[str]:
@@ -689,10 +704,7 @@ def review_argv(
             argv += ["--add-dir", directory]
         argv += ["--", prompt]
     elif key == "agy":
-        argv = [exe, "--mode", "plan", "--print-timeout", f"{timeout_seconds}s"]
-        for directory in dirs:
-            argv += ["--add-dir", directory]
-        argv += ["-p", prompt]
+        raise ValueError(_ANTIGRAVITY_REVIEW_BLOCKED)
     else:  # pragma: no cover - CLIS is closed
         raise ValueError(key)
     assert_no_bypass(cli.spec, argv)
