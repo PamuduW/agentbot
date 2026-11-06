@@ -38,6 +38,14 @@ class ConsistentReadTests(unittest.TestCase):
         self.assertEqual([], called)
         self.assertEqual("interrupted fixture", journal.read_text())
 
+    def test_interrupted_checkout_is_unavailable_without_recovery(self) -> None:
+        self.state.mkdir()
+        journal = self.state / "checkout.json"
+        journal.write_text("interrupted checkout")
+        with self.assertRaises(memory_read.MemoryReadUnavailable):
+            memory_read.consistent(self.root, lambda: "must not be published")
+        self.assertEqual("interrupted checkout", journal.read_text())
+
     def test_concurrent_manual_change_retries_instead_of_returning_mixed_data(self) -> None:
         calls = []
 

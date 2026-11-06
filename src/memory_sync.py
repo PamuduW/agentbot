@@ -13,8 +13,9 @@ file, or a digest of the project subtree for ``forget``. It is committed
 locally at once, so offline work is never lost, and queued in the clone's
 private ``.git/agentbot-memory/`` state.
 
-``sync`` fetches, resets the branch to the remote tip, and replays each queued
-operation on top of it. An operation whose expectation no longer holds is not
+``sync`` fetches and replays queued operations on the remote tip in a private
+worktree. A guarded checkout then updates the live clone without overwriting
+concurrent manual edits. An operation whose expectation no longer holds is not
 applied: it becomes a conflict, its original commit is kept on a recovery ref,
 and nothing is silently chosen. Core conflicts are never resolved
 automatically. Pushes are never forced; a rejected push re-fetches and
@@ -238,6 +239,7 @@ def _recover(root: Path) -> None:
     entry stays queued either way, so the next sync applies it: a write that
     was queued is never lost.
     """
+    _recover_checkout(root)
     for item in _load(root, WRITING):
         _restore(root, Op(**item))
     _unjournal(root)
@@ -1071,17 +1073,8 @@ def _sync(root: Path, remote: str) -> SyncResult:
     started = time.monotonic()
     result = SyncResult(state="synced")
     _require_clean(root)
-    # The reset below would put back the remote's copy of a tracked layout
-    # file, or of trash that older history still tracks; each machine keeps
-    # its own. Read just before each reset, so an edit during the fetch is kept.
-    device_state: dict[str, bytes] = {}
-    branch = _branch(root)
-    upstream = f"{remote}/{branch}"
-    reset_to: list[str] = []
-    try:
-        _replay_and_push(root, remote, branch, upstream, result, reset_to, device_state)
-    finally:
-        _keep_device_state(root, device_state, ["HEAD", *reset_to])
+    with _replay_worktree(root) as replay:
+        _replay_and_push(root, remote, branch=_branch(root), result=result, replay=replay)
     result.seconds = time.monotonic() - started
     return result
 
@@ -1089,12 +1082,12 @@ def _sync(root: Path, remote: str) -> SyncResult:
 def _replay_and_push(
     root: Path,
     remote: str,
+    *,
     branch: str,
-    upstream: str,
     result: SyncResult,
-    reset_to: list[str],
-    device_state: dict[str, bytes],
+    replay: Path,
 ) -> None:
+    upstream = f"{remote}/{branch}"
     for attempt in range(1, PUSH_ATTEMPTS + 1):
         result.attempts = attempt
         if _git(root, "fetch", "-q", remote, check=False).returncode != 0:
@@ -1108,15 +1101,12 @@ def _replay_and_push(
             raise MemoryVaultError(
                 "the vault has local commits Agentbot did not make; push them by hand first"
             )
-        if has_upstream:
-            tip = _git(root, "rev-parse", upstream).stdout.strip()
-            # The first reading of a file is this machine's: a later attempt
-            # would read what the previous reset wrote.
-            for path, data in _device_files(root, tip).items():
-                device_state.setdefault(path, data)
-            reset_to.append(tip)
-            _git(root, "reset", "-q", "--hard", tip)
-        before = _snapshot(root)
+        _require_clean(root)
+        tip = _git(root, "rev-parse", upstream if has_upstream else "HEAD").stdout.strip()
+        _device_files(root, tip)
+        _git(replay, "reset", "-q", "--hard", tip)
+        before = _snapshot(replay)
+        conflicts_to_preserve: list[tuple[Op, str]] = []
         remaining: list[dict[str, Any]] = []
         for item in pending:
             op = Op(**item)
@@ -1125,32 +1115,36 @@ def _replay_and_push(
             if has_upstream and _in_history(root, op.id, upstream):
                 result.noops.append(op.id)
                 continue
-            _journal(root, op)
+            _journal(replay, op)
             try:
-                outcome = _apply(root, op)
+                outcome = _apply(replay, op)
             except SyncConflict as error:
-                _restore(root, op)
-                _preserve(root, op, str(error), result)
-                _unjournal(root)
+                _restore(replay, op)
+                conflicts_to_preserve.append((op, str(error)))
+                _unjournal(replay)
                 continue
             if outcome == "applied":
-                index = _stage(root, op)
+                index = _stage(replay, op)
                 try:
-                    problems = _new_errors(root, before, index, op)
+                    problems = _new_errors(replay, before, index, op)
                     if problems:
-                        _restore(root, op)
+                        _restore(replay, op)
                         reason = "it would make the vault invalid (" + "; ".join(problems) + ")"
-                        _preserve(root, op, reason, result)
-                        _unjournal(root)
+                        conflicts_to_preserve.append((op, reason))
+                        _unjournal(replay)
                         continue
-                    _commit(root, op, index)
+                    _commit(replay, op, index)
                 finally:
                     index.unlink(missing_ok=True)
                 result.applied.append(op.id)
             else:
                 result.noops.append(op.id)
-            _unjournal(root)
+            _unjournal(replay)
             remaining.append(item)
+        _require_clean(root)
+        _checkout_replay(root, _git(replay, "rev-parse", "HEAD").stdout.strip())
+        for op, reason in conflicts_to_preserve:
+            _preserve(root, op, reason, result)
         push = _git(root, "push", "-q", remote, f"HEAD:{branch}", check=False)
         if push.returncode == 0:
             for op_id in result.applied:
@@ -1168,18 +1162,93 @@ def _replay_and_push(
     result.state = "retry-exhausted"
 
 
+@contextlib.contextmanager
+def _replay_worktree(root: Path) -> Iterator[Path]:
+    # A fixed private path lets the next lock holder remove an interrupted replay.
+    replay = _state(root) / "replay"
+    if replay.exists():
+        _git(root, "worktree", "remove", "--force", str(replay))
+    _git(
+        root,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "worktree",
+        "add",
+        "-q",
+        "--detach",
+        str(replay),
+        "HEAD",
+    )
+    try:
+        yield replay
+    finally:
+        _git(root, "worktree", "remove", "--force", str(replay), check=False)
+
+
+def _checkout_replay(root: Path, target: str) -> None:
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    # Keep device paths unchanged in the checkout tree. Updating the real index
+    # afterwards can untrack them without ever replacing this machine's files.
+    saved = _device_files(root, target)
+    tracked = _git(
+        root, "ls-tree", "-r", "-z", "--name-only", head, "--", *DEVICE_STATE_DIRS
+    ).stdout
+    index = _state(root) / "checkout.index"
+    _git(root, "read-tree", target, index=index)
+    for path in sorted(set(saved) | {path for path in tracked.split("\0") if path}):
+        _git(root, "reset", "-q", head, "--", path, index=index)
+    tree = _git(root, "write-tree", index=index).stdout.strip()
+    _git(root, "read-tree", head, index=index)
+    _git(root, "update-index", "--refresh", index=index, check=False)
+    journal = _state(root) / "checkout.json"
+    write_text_atomic(journal, json.dumps({"head": head, "target": target, "tree": tree}))
+    try:
+        _recover_checkout(root)
+    except MemoryVaultError as error:
+        # A refused checkout has not advanced HEAD. Retrying it later must not
+        # turn a refused sync into an implicit approval to publish the replay.
+        if (
+            any(message in str(error) for message in ("not uptodate", "would be overwritten"))
+            and _git(root, "rev-parse", "HEAD").stdout.strip() == head
+        ):
+            journal.unlink(missing_ok=True)
+            index.unlink(missing_ok=True)
+        raise
+
+
+def _recover_checkout(root: Path) -> None:
+    state = _state(root)
+    journal = state / "checkout.json"
+    if not journal.exists():
+        return
+    checkout = json.loads(journal.read_text(encoding="utf-8"))
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    if head == checkout["head"]:
+        # Unlike reset --hard, the two-tree merge refuses to overwrite edits,
+        # including a save after the caller's last cleanliness check.
+        _git(
+            root,
+            "read-tree",
+            "-m",
+            "-u",
+            checkout["head"],
+            checkout["tree"],
+            index=state / "checkout.index",
+        )
+        _git(root, "update-ref", "HEAD", checkout["target"], checkout["head"])
+    elif head != checkout["target"]:
+        raise MemoryVaultError("memory HEAD changed during checkout; preserve state for recovery")
+    _git(root, "read-tree", checkout["target"])
+    journal.unlink()
+    (state / "checkout.index").unlink(missing_ok=True)
+
+
 DEVICE_FILE_LIMIT = 500
 DEVICE_BYTES_LIMIT = 16 * 1024 * 1024
 
 
 def _device_files(root: Path, tip: str) -> dict[str, bytes]:
-    """This machine's copy of every per-device file a reset to ``tip`` can touch.
-
-    Only paths Git tracks, here or at the tip: a reset leaves untracked files
-    alone, so plugin folders and the rest never count against the limits. All
-    of them or none: past the limits the sync stops before the reset, rather
-    than keep some and lose the rest.
-    """
+    """Bound the tracked device files whose local copies checkout must preserve."""
     tracked: set[str] = set()
     for rev in ("HEAD", tip):
         listed = _git(
@@ -1200,32 +1269,6 @@ def _device_files(root: Path, tip: str) -> dict[str, bytes]:
             "than sync can keep safely; untrack .obsidian/, views/ and .trash/ by hand first"
         )
     return found
-
-
-def _keep_device_state(root: Path, saved: dict[str, bytes], revs: list[str]) -> None:
-    """Put back a per-device file only where Git changed it, never over a newer edit."""
-    for path, data in saved.items():
-        target = root / path
-        if target.is_symlink():
-            continue
-        now = target.read_bytes() if target.is_file() else None
-        if now == data:
-            continue
-        if now is not None:
-            # Changed since sync started. Git did it only if the file is now
-            # exactly what one of the checked-out revisions tracks; otherwise
-            # it is an edit made meanwhile, and it stays.
-            written = _git(root, "hash-object", "--", path, check=False).stdout.strip()
-            blobs = {
-                _git(
-                    root, "rev-parse", "-q", "--verify", f"{rev}:{path}", check=False
-                ).stdout.strip()
-                for rev in revs
-            }
-            if written not in blobs - {""}:
-                continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
 
 
 def _preserve(root: Path, op: Op, reason: str, result: SyncResult) -> None:

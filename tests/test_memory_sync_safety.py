@@ -103,6 +103,87 @@ class LockTests(SafetyTestCase):
             self.assertTrue(self.remote_has(f"projects/hot/lessons/{name}.md"))
 
 
+class ManualEditRaceTests(SafetyTestCase):
+    def test_private_replay_does_not_run_checkout_hooks(self) -> None:
+        marker = self.a / "checkout-hook-ran"
+        hook = self.a / ".git/hooks/post-checkout"
+        hook.write_text(f"#!/bin/sh\nprintf ran > '{marker}'\n")
+        hook.chmod(0o755)
+        try:
+            sync.sync(self.a)
+        except MemoryVaultError:
+            pass
+        self.assertFalse(marker.exists())
+
+    def test_manual_edit_during_fetch_survives(self) -> None:
+        rel = "projects/hot/lessons/l0.md"
+        self.put(self.b, "hot", "lessons/l0.md", "remote edit")
+        sync.sync(self.b)
+        edited = record(rel, "manual edit during fetch")
+        real_git = sync._git
+
+        def edit(root, *args, **kwargs):
+            done = real_git(root, *args, **kwargs)
+            if root == self.a and args[:1] == ("fetch",):
+                (self.a / rel).write_bytes(edited)
+            return done
+
+        with patch.object(sync, "_git", side_effect=edit):
+            with self.assertRaises(MemoryVaultError):
+                sync.sync(self.a)
+        self.assertEqual(edited, (self.a / rel).read_bytes())
+
+    def test_manual_edit_immediately_before_checkout_survives(self) -> None:
+        rel = "projects/hot/lessons/l0.md"
+        self.put(self.b, "hot", "lessons/l0.md", "remote edit")
+        sync.sync(self.b)
+        edited = record(rel, "manual edit at checkout")
+        before = self.fleet.head(self.a)
+        real_git = sync._git
+        injected = False
+
+        def edit(root, *args, **kwargs):
+            nonlocal injected
+            if root == self.a and args[:1] in {("reset",), ("read-tree",)}:
+                if "--hard" in args or "--keep" in args or "-u" in args:
+                    injected = True
+                    (self.a / rel).write_bytes(edited)
+            return real_git(root, *args, **kwargs)
+
+        with patch.object(sync, "_git", side_effect=edit):
+            with self.assertRaises(MemoryVaultError):
+                sync.sync(self.a)
+        self.assertTrue(injected)
+        self.assertEqual(edited, (self.a / rel).read_bytes())
+        self.assertEqual(before, self.fleet.head(self.a))
+
+    def test_manual_edit_during_replay_is_not_restored_or_published(self) -> None:
+        rel = "projects/hot/lessons/l0.md"
+        queued = self.put(self.a, "hot", "lessons/l0.md", "queued edit")
+        edited = record(rel, "manual edit during replay")
+        before = self.fleet.head(self.a)
+        remote_before = self.fleet.tip()
+        real_apply = sync._apply
+
+        def edit(root, op):
+            (self.a / rel).write_bytes(edited)
+            return real_apply(root, op)
+
+        with patch.object(sync, "_apply", side_effect=edit):
+            with self.assertRaises(MemoryVaultError):
+                sync.sync(self.a)
+        self.assertEqual(edited, (self.a / rel).read_bytes())
+        self.assertEqual(before, self.fleet.head(self.a))
+        self.assertEqual(remote_before, self.fleet.tip())
+        self.assertEqual([queued.id], [op["id"] for op in sync.pending(self.a)])
+        (self.a / rel).write_bytes(record(rel, "queued edit"))
+        self.assertEqual("synced", sync.sync(self.a).state)
+        self.assertEqual([], sync.pending(self.a))
+        self.assertEqual(
+            record(rel, "queued edit").decode(), git(self.fleet.origin, "show", f"main:{rel}")
+        )
+
+
 class CrashRecoveryTests(SafetyTestCase):
     def test_a_write_queued_but_not_committed_is_replayed_not_lost(self) -> None:
         with (
@@ -165,12 +246,34 @@ class CrashRecoveryTests(SafetyTestCase):
     def test_a_process_killed_mid_replay_is_replayed_again(self) -> None:
         self.put(self.a, "hot", "lessons/replayed.md", "replayed")
         self.die_during("_stage", "sync.sync(root)")
-        self.assertNotEqual("", git(self.a, "status", "--porcelain"))
+        # Replay is private: a killed replay no longer dirties the live clone.
+        self.assertEqual("", git(self.a, "status", "--porcelain"))
         result = sync.sync(self.a)
         self.assertEqual("synced", result.state)
         self.assertTrue(self.remote_has("projects/hot/lessons/replayed.md"))
         self.assertEqual([], sync.pending(self.a))
         self.assertEqual("", git(self.a, "status", "--porcelain"))
+
+    def test_interrupted_checkout_finishes_without_overwriting_a_new_edit(self) -> None:
+        rel = "projects/hot/lessons/l0.md"
+        self.put(self.b, "hot", "lessons/l0.md", "remote edit")
+        sync.sync(self.b)
+        real_git = sync._git
+
+        def interrupt(root, *args, **kwargs):
+            if root == self.a and args[:2] == ("update-ref", "HEAD"):
+                raise KeyboardInterrupt
+            return real_git(root, *args, **kwargs)
+
+        with patch.object(sync, "_git", side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                sync.sync(self.a)
+        edited = record(rel, "saved after interrupted checkout")
+        (self.a / rel).write_bytes(edited)
+        with self.assertRaises(MemoryVaultError):
+            sync.sync(self.a)
+        self.assertEqual(edited, (self.a / rel).read_bytes())
+        self.assertEqual(self.fleet.tip(), self.fleet.head(self.a))
 
     def test_operations_already_on_the_remote_are_not_replayed_again(self) -> None:
         # A run that pushed but stopped before clearing its queue: two edits

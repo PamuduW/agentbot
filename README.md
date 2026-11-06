@@ -314,9 +314,14 @@ Bases dashboards, and `.trash/`) are per machine and not manual edits:
 Obsidian rewrites them itself (on open, as you zoom the graph, as you resize a
 table), so they never pause sync, and the first sync adds them to a managed block in the vault's
 `.gitignore` and stops tracking them, keeping each machine's copy. While
-history still tracks some, sync reads them just before each reset and puts
-this machine's copy back; if there are more than it can hold (500 files or
-16 MiB), it stops before the reset instead of keeping only some.
+history still tracks some, sync leaves this machine's existing copies untouched;
+if there are more than it can preserve safely (500 files or 16 MiB), it stops.
+Replay runs in a private worktree. The final Git checkout refuses to overwrite
+conflicting manual edits, including saves after the last cleanliness check.
+An interrupted checkout is recovered under the writer lock; recall stays
+unavailable until recovery finishes. Keep other Git commands out of the vault
+during sync. An editor writing after Git has checked a path can still race that
+path's filesystem update; the writer lock coordinates Agentbot processes only.
 `agentbot memory sync` syncs now;
 `--status` shows the mode, pending operations, open conflicts, and last sync;
 `--mode manual` stops automatic pushing and fetching (writes are still

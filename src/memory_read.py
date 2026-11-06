@@ -63,7 +63,7 @@ def _reader_lock(state: Path) -> Iterator[bool]:
 
 
 def _fingerprint(root: Path, state: Path) -> tuple:
-    if _identity(state / memory_sync.WRITING) is not None:
+    if any(_identity(state / name) is not None for name in (memory_sync.WRITING, "checkout.json")):
         raise MemoryReadUnavailable(
             "an interrupted memory write needs writer recovery before recall"
         )
