@@ -179,6 +179,7 @@ class SetupReviewTestCase(unittest.TestCase):
         git(seed, "remote", "add", "origin", str(bare))
         git(seed, "push", "--quiet", "origin", "main", "main:development")
         git(self.home, "clone", "--quiet", "-b", "main", str(bare), name)
+        git(self.home, "config", "--global", f"url.{bare}.insteadOf", f"https://github.com/PamuduW/{name}")
 
     def install(self, key: str) -> Path:
         return _install(self.home, LOCATIONS[key])
@@ -421,6 +422,32 @@ class CheckoutSyncTests(SetupReviewTestCase):
         self.assertFalse((clone / "NEW.md").exists())
         self.assertEqual([], self.review_calls())
         self.assertIn("status-failed", self.text)
+
+    def test_untrusted_origin_or_upstream_stops_before_fetch(self) -> None:
+        clone = self.home / "dotfiles"
+        real_git = setup_review._git_run
+        fetched = []
+
+        def track_fetch(path, *args, **kwargs):
+            if args[:1] == ("fetch",):
+                fetched.append(path)
+                return 0, "", ""
+            return real_git(path, *args, **kwargs)
+
+        git(clone, "remote", "set-url", "origin", "https://github.com/other/dotfiles.git")
+        with mock.patch.object(setup_review, "_git_run", side_effect=track_fetch):
+            result = setup_review.sync_clone("dotfiles", clone)
+        self.assertEqual("wrong-origin", result.state)
+        self.assertEqual([], fetched)
+
+        git(clone, "remote", "set-url", "origin", str(self.remotes / "dotfiles.git"))
+        git(clone, "remote", "add", "other", str(self.remotes / "dotfiles.git"))
+        git(clone, "fetch", "--quiet", "other")
+        git(clone, "config", "branch.main.remote", "other")
+        with mock.patch.object(setup_review, "_git_run", side_effect=track_fetch):
+            result = setup_review.sync_clone("dotfiles", clone)
+        self.assertEqual("non-origin-upstream", result.state)
+        self.assertEqual([], fetched)
 
     def test_a_dirty_clone_stops_the_review_and_is_left_alone(self) -> None:
         self.install("claude")

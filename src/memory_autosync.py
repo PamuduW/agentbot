@@ -191,7 +191,9 @@ def _find(vault: Path, op_id: str) -> dict[str, Any]:
     raise MemoryVaultError(f"no open conflict for operation {op_id}")
 
 
-def _at_ref(vault: Path, ref: str, path: str) -> str | None:
+def _at_ref(vault: Path, ref: str | None, path: str) -> str | None:
+    if ref is None:
+        return None
     shown = subprocess.run(
         ["git", "-C", str(vault), "show", f"{ref}:{path}"],
         capture_output=True,
@@ -217,6 +219,18 @@ def _paths(conflict: dict[str, Any]) -> list[str]:
     return [conflict["path"]]
 
 
+def _proposed_text(vault: Path, conflict: dict[str, Any], path: str) -> str | None:
+    text = _at_ref(vault, conflict.get("recovery_ref"), path)
+    if text is not None:
+        return text
+    data = conflict.get("op_data") or {}
+    content = data.get("content") if conflict["kind"] in {"put", "approve"} else None
+    if conflict["kind"] == "multi":
+        content = next((item["content"] for item in json.loads(data.get("content") or "[]")
+                        if item["path"] == path), None)
+    return None if content is None else base64.b64decode(content)[:SHOW_LIMIT].decode("utf-8", "replace")
+
+
 def show(vault: Path, op_id: str) -> dict[str, Any]:
     from .memory_retrieve import DATA_NOTICE
 
@@ -233,7 +247,7 @@ def show(vault: Path, op_id: str) -> dict[str, Any]:
             {
                 "path": path,
                 "current": _current_text(vault, path),
-                "mine": _at_ref(vault, conflict["recovery_ref"], path),
+                "mine": _proposed_text(vault, conflict, path),
             }
             for path in _paths(conflict)
         ],

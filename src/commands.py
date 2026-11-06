@@ -240,7 +240,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Inspect or explicitly manage validated MCP servers for Claude, Codex, Cursor, and Antigravity.",
         (
             option("catalog", "List validated candidates without contacting them.", "read-only"),
-            option("status [--live]", "Inspect ownership and configuration state.", "offline"),
+            option("status [--live]", "Inspect ownership and configuration; live checks are unavailable.", "offline"),
             option("plan", "Preview exact changes.", "explicit"),
             option("--select ID...", "Choose one or more catalog IDs.", "required"),
             option(

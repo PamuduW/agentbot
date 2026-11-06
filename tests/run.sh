@@ -30,6 +30,13 @@ mapfile -t SHELL_SUITES < <(
 		! -path "$ROOT/tests/lib/*" -print | sort
 )
 
+bash_syntax() {
+	local file
+	for file in "$@"; do
+		bash -n "$file" || return $?
+	done
+}
+
 if [[ "${AGENTBOT_TEST_RUNNER_SOURCE_ONLY:-0}" == 1 ]]; then
 	return 0
 fi
@@ -122,7 +129,7 @@ fi
 for suite in "${SHELL_SUITES[@]}"; do
 	run_check "$(basename "$suite")" bash "$suite"
 done
-run_check "Bash syntax" bash -n "${shell_files[@]}"
+run_check "Bash syntax" bash_syntax "${shell_files[@]}"
 if require_tool shellcheck "ShellCheck"; then
 	run_check "ShellCheck" shellcheck "${production_shell_files[@]}"
 fi

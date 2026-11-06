@@ -163,6 +163,41 @@ class RegistrationTests(IdentityTestCase):
         with self.assertRaises(MemoryVaultError):
             projects.register(self.vault, r, self.config)
 
+    def test_interrupted_registration_resumes_without_duplicate_projects(self) -> None:
+        for local in (False, True):
+            with self.subTest(local=local):
+                r = repo(self.tmp / ("local-new" if local else "remote-new"),
+                         None if local else "https://github.com/me/remote-new")
+                before = len(sync._registry(self.vault)["projects"])
+                target = "bind" if local else "put_project"
+                owner = memory_setup if local else projects
+                with patch.object(owner, target, side_effect=KeyboardInterrupt):
+                    with self.assertRaises(KeyboardInterrupt):
+                        projects.register(self.vault, r, self.config)
+                with self.assertRaisesRegex(MemoryVaultError, "registration"):
+                    sync.sync(self.vault)
+                entry = projects.register(self.vault, r, self.config)
+                self.assertEqual(before + 1, len(sync._registry(self.vault)["projects"]))
+                self.assertEqual("resolved", projects.resolve(self.vault, r, self.config).state)
+                self.assertTrue((self.vault / "projects" / entry["folder"] / "project.md").is_file())
+
+    def test_resume_preserves_an_identity_record_written_before_interruption(self) -> None:
+        r = repo(self.tmp / "resumable", "https://github.com/me/resumable")
+        real_put = projects.put_project
+        saved = []
+
+        def interrupt(*args, **kwargs):
+            result = real_put(*args, **kwargs)
+            saved.append(self.vault / result.path)
+            raise KeyboardInterrupt
+
+        with patch.object(projects, "put_project", side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                projects.register(self.vault, r, self.config)
+        before = saved[0].read_bytes()
+        projects.register(self.vault, r, self.config)
+        self.assertEqual(before, saved[0].read_bytes())
+
     def test_a_folder_name_clash_gets_a_suffix(self) -> None:
         other = repo(self.tmp / "hot", "https://gitlab.com/elsewhere/hot")
         entry = projects.register(self.vault, other, self.config)

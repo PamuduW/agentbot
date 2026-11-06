@@ -27,17 +27,27 @@ merge-safe operation, committed and queued for sync.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from . import memory_setup
-from .memory import MemoryVaultError, registry_problems
-from .memory_sync import _registry, normalize_origin, put_project, register_origin
+from .atomic_io import write_text_atomic
+from .memory import (
+    MAX_FILE_BYTES,
+    MemoryVaultError,
+    _front_matter,
+    _Unsafe,
+    read_bounded,
+    registry_problems,
+)
+from .memory_sync import _locked, _registry, _state, normalize_origin, put_project, register_origin
 
 LOCAL_PREFIX = "local/"
 
@@ -135,27 +145,49 @@ def folder_name(name: str, registry: dict[str, Any]) -> str:
 def register(
     vault: Path, cwd: Path, config_home: Path, *, client: str = "agentbot"
 ) -> dict[str, Any]:
-    """Give the current repository project memory. Refuses if it already has some."""
-    current = resolve(vault, cwd, config_home)
-    if current.state == "resolved" and current.entry is not None:
-        raise MemoryVaultError(f"this repository is already project {current.entry['folder']}")
-    identity = current.identity
-    if current.state != "unregistered" or identity is None:
-        require_project(vault, cwd, config_home)  # raises with the specific reason
-        raise MemoryVaultError("this repository cannot be registered")
-    registry = _registry(vault)
-    project_id = str(uuid.uuid4())
-    if identity.canonical is not None:
-        folder = folder_name(identity.canonical.rsplit("/", 1)[-1], registry)
-        origin = identity.canonical
-        register_origin(vault, identity.origin_url or "", folder, project_id, client=client)
-    else:
-        folder = folder_name(identity.toplevel.name, registry)
-        origin = f"{LOCAL_PREFIX}{project_id[:8]}-{folder}"
-        register_origin(vault, origin, folder, project_id, client=client)
-        memory_setup.bind(config_home, identity.toplevel, project_id)
-    put_project(vault, folder, "project.md", project_md(project_id, folder, origin), client=client)
-    return {"id": project_id, "folder": folder}
+    """Register project memory, resuming an interrupted registration on retry."""
+    with _locked(vault):
+        current = resolve(vault, cwd, config_home)
+        identity = current.identity
+        if identity is None or current.state not in {"resolved", "unregistered"}:
+            require_project(vault, cwd, config_home)
+            raise MemoryVaultError("this repository cannot be registered")
+        key = sha256(str(identity.toplevel).encode()).hexdigest()
+        intent_path = _state(vault) / f"registration-{key}.json"
+        if intent_path.exists():
+            intent = json.loads(intent_path.read_text(encoding="utf-8"))
+            if intent["canonical"] != identity.canonical:
+                raise MemoryVaultError("repository identity changed during registration; preserve the pending intent")
+        else:
+            if current.state == "resolved" and current.entry is not None:
+                raise MemoryVaultError(f"this repository is already project {current.entry['folder']}")
+            registry = _registry(vault)
+            project_id = str(uuid.uuid4())
+            name = identity.canonical.rsplit("/", 1)[-1] if identity.canonical else identity.toplevel.name
+            folder = folder_name(name, registry)
+            origin = identity.canonical or f"{LOCAL_PREFIX}{project_id[:8]}-{folder}"
+            intent = {"id": project_id, "folder": folder, "origin": origin, "canonical": identity.canonical}
+            write_text_atomic(intent_path, json.dumps(intent) + "\n")
+        project_id, folder, origin = intent["id"], intent["folder"], intent["origin"]
+        entry = next((entry for entry in _registry(vault)["projects"] if entry["id"] == project_id), None)
+        if entry is None:
+            register_origin(vault, identity.origin_url or origin, folder, project_id, client=client)
+        elif entry["folder"] != folder or entry["origin"] != origin:
+            raise MemoryVaultError("project registration changed; preserve the pending intent")
+        if identity.canonical is None:
+            memory_setup.bind(config_home, identity.toplevel, project_id)
+        relative = f"projects/{folder}/project.md"
+        if not (vault / relative).exists():
+            put_project(vault, folder, "project.md", project_md(project_id, folder, origin), client=client)
+        else:
+            try:
+                metadata = _front_matter(read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8"))
+            except (_Unsafe, UnicodeDecodeError) as error:
+                raise MemoryVaultError("existing project identity is invalid; preserve it for review") from error
+            if metadata.get("id") != project_id or metadata.get("projects") != [folder]:
+                raise MemoryVaultError("existing project identity differs; preserve it for review")
+        intent_path.unlink()
+        return {"id": project_id, "folder": folder}
 
 
 def project_md(project_id: str, folder: str, origin: str) -> bytes:

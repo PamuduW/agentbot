@@ -29,8 +29,10 @@ one place. Run it every few weeks.
    `cursor-agent status`. A quota or sign-in problem during a review is
    reported as an access failure (exit 3).
 3. **Bring the installed checkouts up to date.** For `~/dotfiles`,
-   `~/agentbot` and `~/dotfiles-shared`: `git fetch`, `git status`, and
-   `git pull --ff-only` when the clone is clean and only behind. A failed
+   `~/agentbot` and `~/dotfiles-shared`: verify the expected origin and an
+   origin-tracking upstream, check local cleanliness, then fetch and check
+   cleanliness again before `git pull --ff-only` when only behind. Origin
+   validation uses the shared gate's URL and configured alias rules. A failed
    status check, dirty, ahead or diverged clone stops the review (exit 4)
    and is left alone, the same rule `dotfiles fu` follows. The memory vault is read through
    `agentbot memory status` only; nothing runs Git in it.

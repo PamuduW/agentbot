@@ -1072,6 +1072,8 @@ def sync(root: Path, *, remote: str = "origin") -> SyncResult:
 def _sync(root: Path, remote: str) -> SyncResult:
     started = time.monotonic()
     result = SyncResult(state="synced")
+    if any(_state(root).glob("registration-*.json")):
+        raise MemoryVaultError("interrupted project registration needs a registration retry before sync")
     _require_clean(root)
     with _replay_worktree(root) as replay:
         _replay_and_push(root, remote, branch=_branch(root), result=result, replay=replay)
@@ -1282,7 +1284,7 @@ def _preserve(root: Path, op: Op, reason: str, result: SyncResult) -> None:
         "path": op.path,
         "project": op.project,
         "reason": reason,
-        "recovery_ref": ref,
+        "recovery_ref": ref if op.commit else None,
         "resolver": "human" if op.tier == "core" else "agent",
         # The whole operation, so "keep mine" can re-apply it later.
         "op_data": op.serialized(),

@@ -122,6 +122,22 @@ class ConflictTests(AutosyncTestCase):
         (conflict,) = autosync.open_conflicts(self.b)
         return conflict
 
+    def test_interrupted_uncommitted_conflict_shows_proposed_content(self) -> None:
+        path = "projects/alpha/lessons/2026-09-27-l.md"
+        with patch.object(sync, "_commit", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                writes.edit(self.a, self.code, self.config, "lessons/2026-09-27-l.md", body="interrupted proposal")
+        writes.edit(self.b, self.code, self.config_b, "lessons/2026-09-27-l.md", body="remote edit")
+        sync.sync(self.b)
+        sync.sync(self.a)
+        (conflict,) = autosync.open_conflicts(self.a)
+        (shown,) = autosync.show(self.a, conflict["op"])["files"]
+        self.assertEqual(path, shown["path"])
+        self.assertIn("interrupted proposal", shown["mine"])
+        self.assertIsNone(conflict["recovery_ref"])
+        autosync.resolve(self.a, self.config, conflict["op"], "mine")
+        self.assertIn("interrupted proposal", (self.a / path).read_text())
+
     def test_conflicts_are_listed_and_show_both_versions(self) -> None:
         conflict = self.conflict()
         self.assertNotIn("op_data", conflict)

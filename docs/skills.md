@@ -95,8 +95,12 @@ lock's `skillFolderHash`, recorded at install, is the receipt:
 
 Agentbot also prepares a few selected upstream skills in temporary copies
 before installation. `writing-skills` receives its Codex and Gemini support
-references; `github-actions`, `k8s` and `owasp` each receive their report-format
-reference. Their links point inside the installed skill. The excluded sibling
+references and preserves existing user work when tests were missed.
+`using-git-worktrees` uses external storage or local exclusions unless a commit
+was explicitly authorized. The GitLab verification helper propagates failed
+lint status, and Claudex Codex review commands disable native hooks.
+Known safety-script changes upstream stop preparation for review.
+`github-actions`, `k8s` and `owasp` each receive their report-format reference. Their links point inside the installed skill. The excluded sibling
 policy entrypoints remain unselected.
 
 The selected `verify-citations` keeps its verification scripts but runs
@@ -109,8 +113,9 @@ repository, source revision, packaging version and input-file SHA-256 hashes.
 The install receipt covers the prepared content. The original checkout stays
 unchanged, and exact-revision restore applies the same preparation rules.
 The rules live in `src/skill_packaging.py`; review them when those upstream
-files change. The first-party source selects its four skills by name, so new
-upstream skills require a manifest decision.
+files change. Root-level and nested skill layouts are supported, and supporting
+script hashes are included in the packaging provenance. The first-party source
+selects its four skills by name, so new upstream skills require a manifest decision.
 
 A source may publish adaptations of another source's skills, listed in an
 `adaptations.yaml` at its root with the upstream repository, the skill's path

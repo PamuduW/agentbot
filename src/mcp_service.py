@@ -55,6 +55,12 @@ class McpService:
         return load_mcp_catalog(self.paths.mcp_catalog_file)
 
     def status(self, *, live: bool = False) -> McpStatusReport:
+        if live:
+            raise ValueError("live MCP status checks are unavailable; omit --live for static status")
+        return self._static_status()
+
+    def _static_status(self) -> McpStatusReport:
+        live = False
         catalog = self.catalog()
         state = self.state_store.load()
         records = {record.key: record for record in state.managed}

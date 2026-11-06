@@ -2239,7 +2239,7 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_catalog.add_argument("--json", action="store_true", dest="mcp_json")
     mcp_status = mcp_sub.add_parser("status", help="Inspect managed MCP configuration")
     mcp_status.add_argument("--json", action="store_true", dest="mcp_json")
-    mcp_status.add_argument("--live", action="store_true", help="Run admitted live checks")
+    mcp_status.add_argument("--live", action="store_true", help="Unavailable; static status does not perform live checks")
     for action in ("plan", "setup", "off"):
         action_parser = mcp_sub.add_parser(action, help=f"{action.capitalize()} MCP configuration")
         action_parser.add_argument("--select", nargs="+", required=True, dest="mcp_select")

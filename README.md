@@ -316,6 +316,10 @@ table), so they never pause sync, and the first sync adds them to a managed bloc
 `.gitignore` and stops tracking them, keeping each machine's copy. While
 history still tracks some, sync leaves this machine's existing copies untouched;
 if there are more than it can preserve safely (500 files or 16 MiB), it stops.
+Interrupted project registration retains a private intent so a retry can finish
+without creating a second project or replacing its existing identity record.
+Conflict inspection also shows proposed bytes from queued operations that were
+interrupted before a commit existed.
 Replay runs in a private worktree. The final Git checkout refuses to overwrite
 conflicting manual edits, including saves after the last cleanliness check.
 An interrupted checkout is recovered under the writer lock; recall stays
@@ -722,6 +726,9 @@ The menu and direct CLI share the same command model and lifecycle code. Token
 input is masked, and normal output shows only a fingerprint.
 
 ## MCP management
+
+`agentbot mcp status` reports configuration state. `--live` is refused until
+real live admission checks are implemented; static status is not live acceptance.
 
 Agentbot provides a provider-neutral MCP control plane for Claude Code, Codex
 CLI, and Cursor CLI, with Antigravity CLI (`~/.gemini/config/mcp_config.json`)

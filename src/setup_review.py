@@ -34,6 +34,7 @@ from .atomic_io import write_text_atomic
 from .cli_config import _CREDENTIAL_KEYS, _SECRET_NAME
 from .memory import SECRET_RULES
 from .paths import AgentbotPaths
+from .shared_paths import SharedCheckoutError, shared_root
 from .skills_sources import load_skills_sources, source_clone_url
 
 PROMPT_VERSION = "setup-review/2"
@@ -311,6 +312,26 @@ def live_clones(home: Path) -> list[tuple[str, Path]]:
     ]
 
 
+def _origin_allowed(name: str, path: Path) -> bool:
+    if name not in {"dotfiles", "agentbot", "dotfiles-shared"}:
+        return False
+    rc, origin, _ = _git_run(path, "remote", "get-url", "origin")
+    if rc != 0:
+        return False
+    _, rules, _ = _git_run(path, "config", "--global", "--get-regexp", r"^url\..*\.insteadof$")
+    try:
+        helper = shared_root(Path(__file__).resolve().parents[1]) / "scripts/lib/shared/repo_update.sh"
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; repo_update_origin_allowed "$2" "$3" "$4"',
+             "_", str(helper), origin, f"PamuduW/{name}", rules],
+            capture_output=True, text=True, timeout=20, check=False,
+            env={**os.environ, "REPO_UPDATE_URL_ALLOW_ANY": "0", "DOTFILES_REPO_URL_ALLOW_ANY": "0"},
+        )
+    except (OSError, subprocess.TimeoutExpired, SharedCheckoutError):
+        return False
+    return result.returncode == 0
+
+
 def sync_clone(name: str, path: Path) -> Checkout:
     """Fetch, then fast-forward a clean clone that is only behind.
 
@@ -319,6 +340,18 @@ def sync_clone(name: str, path: Path) -> Checkout:
     """
     if not (path / ".git").exists():
         return Checkout(name, path, state="missing", detail="not a Git checkout")
+    if not _origin_allowed(name, path):
+        return Checkout(name, path, state="wrong-origin", detail="origin is not the expected repository")
+    upstream = _git(path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    if not upstream:
+        return Checkout(name, path, state="no-upstream", detail="branch has no upstream")
+    if not upstream.startswith("origin/"):
+        return Checkout(name, path, state="non-origin-upstream", detail="upstream must use origin")
+    rc, status, _ = _git_run(path, "status", "--porcelain")
+    if rc != 0:
+        return Checkout(name, path, state="status-failed", detail="could not inspect local changes")
+    if status:
+        return Checkout(name, path, state="dirty", detail="uncommitted changes")
     rc, _, err = _git_run(path, "fetch", "--quiet", "origin")
     if rc != 0:
         return Checkout(name, path, state="fetch-failed", detail=(err.splitlines() or ["fetch failed"])[-1])
@@ -333,6 +366,8 @@ def sync_clone(name: str, path: Path) -> Checkout:
     counts = _git(path, "rev-list", "--left-right", "--count", "HEAD...@{u}").split()
     if len(counts) != 2:
         return Checkout(name, path, state="no-upstream", detail="branch has no upstream")
+    if not all(value.isdecimal() for value in counts):
+        return Checkout(name, path, state="invalid-counts", detail="could not classify branch history")
     ahead, behind = int(counts[0]), int(counts[1])
     state = "current"
     if ahead and behind:
@@ -357,6 +392,7 @@ def sync_clone(name: str, path: Path) -> Checkout:
 
 _STOPPING_STATES = frozenset({
     "fetch-failed", "status-failed", "dirty", "ahead", "diverged", "pull-failed", "no-upstream",
+    "wrong-origin", "non-origin-upstream", "invalid-counts",
 })
 
 

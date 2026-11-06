@@ -81,6 +81,11 @@ class McpServiceTests(unittest.TestCase):
         self.assertFalse(report.live)
         self.assertEqual(before, tuple(self.paths.root.parent.rglob("*")))
 
+    def test_live_status_refuses_to_mislabel_static_checks(self) -> None:
+        self.write_catalog()
+        with self.assertRaisesRegex(ValueError, "live MCP status.*unavailable"):
+            self.service.status(live=True)
+
     def test_enabled_antigravity_contract_writes_the_gemini_config(self) -> None:
         self.write_catalog(antigravity=True)
         self.service.setup(("docs",), ("antigravity",), confirmed=True)

@@ -46,6 +46,14 @@ class ConsistentReadTests(unittest.TestCase):
             memory_read.consistent(self.root, lambda: "must not be published")
         self.assertEqual("interrupted checkout", journal.read_text())
 
+    def test_interrupted_registration_is_unavailable_until_retry(self) -> None:
+        self.state.mkdir()
+        journal = self.state / "registration-fixture.json"
+        journal.write_text("interrupted registration")
+        with self.assertRaises(memory_read.MemoryReadUnavailable):
+            memory_read.consistent(self.root, lambda: "must not be published")
+        self.assertEqual("interrupted registration", journal.read_text())
+
     def test_concurrent_manual_change_retries_instead_of_returning_mixed_data(self) -> None:
         calls = []
 

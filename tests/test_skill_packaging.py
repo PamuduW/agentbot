@@ -1,12 +1,29 @@
 import json
+import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src.skill_packaging import prepared_checkout
 from src.skills_installer import InstallResult, _skill_folder_hash, install_source
 from src.skills_sources import SkillSourceEntry
+
+WRITING_RULE = """This applies to NEW skills AND EDITS to existing skills.
+
+Write skill before testing? Delete it. Start over.
+Edit skill without testing? Same violation.
+
+**No exceptions:**
+- Not for "simple additions"
+- Not for "just adding a section"
+- Not for "documentation updates"
+- Don't keep untested changes as "reference"
+- Don't "adapt" while running tests
+- Delete means delete
+"""
 
 
 class SkillPackagingTests(unittest.TestCase):
@@ -63,6 +80,60 @@ class SkillPackagingTests(unittest.TestCase):
         provenance = json.loads((skill / ".agentbot-packaging.json").read_text())
         self.assertEqual("obra/superpowers", provenance["upstream"])
         self.assertEqual("a" * 40, provenance["revision"])
+
+    def test_packaged_skill_safety_preserves_source_and_provenance(self):
+        originals = {
+            "writing-skills": WRITING_RULE + "\n- [ ] Commit skill to git and push to your fork (if configured)\n",
+            "using-git-worktrees": (
+                "**If NOT ignored:** Add to .gitignore, commit the change, then proceed.\n"
+                "| Directory not ignored | Add to .gitignore + commit |\n"
+            ),
+        }
+        for name, original in originals.items():
+            self.write(f"skills/{name}/SKILL.md", original)
+        installed = self.install("obra/superpowers", list(originals))
+        for name, original in originals.items():
+            skill = installed / name
+            self.assertEqual(original, (self.checkout / "skills" / name / "SKILL.md").read_text())
+            text = (skill / "SKILL.md").read_text()
+            self.assertIn("authorization", text)
+            self.assertNotIn("Delete means delete", text)
+            self.assertNotIn("Add to .gitignore + commit", text)
+            provenance = json.loads((skill / ".agentbot-packaging.json").read_text())
+            self.assertEqual("a" * 40, provenance["revision"])
+            self.assertIn(f"skills/{name}/SKILL.md", provenance["inputs"])
+
+    def test_changed_unsafe_skill_rule_stops_before_install(self):
+        self.write("skills/writing-skills/SKILL.md", WRITING_RULE.replace("Start over.", "Restart now."))
+        with self.assertRaisesRegex(ValueError, "safety instructions changed"):
+            self.install("obra/superpowers", ["writing-skills"])
+        self.assertFalse(self.lock.exists())
+
+    def test_gitlab_root_skill_preserves_failed_verification_exit(self):
+        self.write("SKILL.md", "---\nname: gitlab-ci-skill\n---\n# Verify\n")
+        self.write("scripts/verify.sh", '#!/bin/bash\nif ! glci show -f "$FILE"; then\n      exit $?\n    fi\necho should-not-run\n')
+        fake = self.root / "bin"
+        fake.mkdir()
+        (fake / "glci").write_text("#!/bin/sh\nexit 37\n")
+        (fake / "glci").chmod(0o755)
+        source = SkillSourceEntry(id="gitlab", repo="gitlab.com/gitlab-org/ci-cd/gitlab-ci-skill", skills=["gitlab-ci-skill"])
+        with prepared_checkout(source, self.checkout, "a" * 40) as prepared:
+            run = subprocess.run(["bash", str(prepared / "scripts/verify.sh")], capture_output=True,
+                                 env={**os.environ, "PATH": f"{fake}:/usr/bin:/bin"})
+            self.assertEqual(37, run.returncode)
+            self.assertEqual(b"", run.stdout)
+            provenance = json.loads((prepared / ".agentbot-packaging.json").read_text())
+            self.assertIn("scripts/verify.sh", provenance["inputs"])
+
+    def test_claudex_review_commands_disable_native_hooks(self):
+        self.write("skills/claudex-loop/SKILL.md", "---\nname: claudex-loop\n---\n# Review\n")
+        self.write("skills/claudex-loop/scripts/runner.py", 'def command(review=True, mcp_off=()):\n    args = []\n    if True:\n        if review:\n            for name in mcp_off:\n                args.append(name)\n    return args\n')
+        source = SkillSourceEntry(id="claudex", repo="chaseai-yt/claudex-loop", skills=["claudex-loop"])
+        with prepared_checkout(source, self.checkout, "a" * 40) as prepared:
+            namespace = {}
+            exec((prepared / "skills/claudex-loop/scripts/runner.py").read_text(), namespace)
+            self.assertIn("features.hooks=false", namespace["command"]())
+            self.assertEqual([], namespace["command"](review=False))
 
     def test_each_devops_skill_has_its_own_report_format(self):
         names = ["github-actions", "k8s", "owasp"]

@@ -63,6 +63,8 @@ def _reader_lock(state: Path) -> Iterator[bool]:
 
 
 def _fingerprint(root: Path, state: Path) -> tuple:
+    if any(state.glob("registration-*.json")):
+        raise MemoryReadUnavailable("an interrupted project registration needs a registration retry before recall")
     if any(_identity(state / name) is not None for name in (memory_sync.WRITING, "checkout.json")):
         raise MemoryReadUnavailable(
             "an interrupted memory write needs writer recovery before recall"
