@@ -8,9 +8,9 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+from src import memory, memory_setup
 from src import memory_autosync as autosync
 from src import memory_project_writes as writes
-from src import memory_setup
 from src import memory_sync as sync
 from src.memory import MemoryVaultError
 from tests.support import run_cli_main
@@ -121,6 +121,28 @@ class ConflictTests(AutosyncTestCase):
         self.assertEqual(1, outcome["conflicts"])
         (conflict,) = autosync.open_conflicts(self.b)
         return conflict
+
+    def test_conflict_show_refuses_a_symlinked_parent(self) -> None:
+        conflict = self.conflict()
+        target = self.b / LESSON
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (outside / target.name).write_text("outside-boundary fixture")
+        target.parent.rename(self.tmp / "original-lessons")
+        target.parent.symlink_to(outside, target_is_directory=True)
+        (shown,) = autosync.show(self.b, conflict["op"])["files"]
+        self.assertIsNone(shown["current"])
+        self.assertIn("B's version", shown["mine"])
+
+    def test_conflict_show_truncates_bounded_records_and_refuses_oversized_files(self) -> None:
+        conflict = self.conflict()
+        target = self.b / LESSON
+        target.write_bytes(b"x" * (autosync.SHOW_LIMIT + 10))
+        (shown,) = autosync.show(self.b, conflict["op"])["files"]
+        self.assertEqual(autosync.SHOW_LIMIT, len(shown["current"]))
+        target.write_bytes(b"x" * (memory.MAX_FILE_BYTES + 1))
+        (shown,) = autosync.show(self.b, conflict["op"])["files"]
+        self.assertTrue(shown["current"] is None, "oversized conflict file was read")
 
     def test_interrupted_uncommitted_conflict_shows_proposed_content(self) -> None:
         path = "projects/alpha/lessons/2026-09-27-l.md"

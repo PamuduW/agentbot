@@ -97,9 +97,23 @@ Agentbot also prepares a few selected upstream skills in temporary copies
 before installation. `writing-skills` receives its Codex and Gemini support
 references and preserves existing user work when tests were missed.
 `using-git-worktrees` uses external storage or local exclusions unless a commit
-was explicitly authorized. The GitLab verification helper propagates failed
+was explicitly authorized. Its ignore check requires the selected directory;
+an ignored directory that was not selected cannot satisfy that check.
+The GitLab verification helper propagates failed
 lint status, and Claudex Codex review commands disable native hooks.
 Known safety-script changes upstream stop preparation for review.
+The selected VibeWise `reset` bundles the pinned source's state-directory
+helper inside its own references and imports that local copy, so preview and
+confirmed reset work without installing the upstream Claude plugin.
+Superpowers plan workspaces reject linked storage and leave existing unmarked
+directories unclaimed. Their completion guidance retains scratch work unless
+cleanup was explicitly authorized; existing user content is never recursively
+deleted as part of finishing a plan.
+The DevOps golden-path example stops after failed clone or directory changes,
+preserves existing configuration, and prepares local files without creating a
+remote repository, staging changes, committing, or pushing. Those actions need
+separate task authorization. Archify preference guidance edits the canonical
+rules source through its renderer instead of a generated instruction adapter.
 `github-actions`, `k8s` and `owasp` each receive their report-format reference. Their links point inside the installed skill. The excluded sibling
 policy entrypoints remain unselected.
 

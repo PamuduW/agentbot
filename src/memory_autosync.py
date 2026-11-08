@@ -31,7 +31,7 @@ from typing import Any
 
 from . import memory_setup, memory_sync
 from .atomic_io import write_text_atomic
-from .memory import MemoryVaultError, read_marker
+from .memory import MAX_FILE_BYTES, MemoryVaultError, _Unsafe, read_bounded, read_marker
 
 MODES = ("auto", "manual")
 # Explicitly off for this process (the vault hooks set it), or already inside
@@ -206,10 +206,11 @@ def _at_ref(vault: Path, ref: str | None, path: str) -> str | None:
 
 
 def _current_text(vault: Path, path: str) -> str | None:
-    target = vault / path
-    if not target.is_file() or target.is_symlink():
+    try:
+        data = read_bounded(vault, path, MAX_FILE_BYTES)
+    except (OSError, _Unsafe):
         return None
-    return target.read_bytes()[:SHOW_LIMIT].decode("utf-8", "replace")
+    return data[:SHOW_LIMIT].decode("utf-8", "replace")
 
 
 def _paths(conflict: dict[str, Any]) -> list[str]:

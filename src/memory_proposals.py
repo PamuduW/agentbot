@@ -144,65 +144,66 @@ def propose(
     capture: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     _require_v3(vault)
-    if kind not in KIND_DIRS:
-        raise MemoryVaultError(f"a core proposal is one of {', '.join(sorted(KIND_DIRS))}")
-    open_items = queue(vault)
-    if len(open_items) >= HARD_CAP:
-        raise MemoryVaultError(
-            f"{len(open_items)} proposals are waiting; review them before proposing more"
+    with memory_sync._locked(vault):
+        if kind not in KIND_DIRS:
+            raise MemoryVaultError(f"a core proposal is one of {', '.join(sorted(KIND_DIRS))}")
+        open_items = queue(vault)
+        if len(open_items) >= HARD_CAP:
+            raise MemoryVaultError(
+                f"{len(open_items)} proposals are waiting; review them before proposing more"
+            )
+        wanted = title.strip().casefold()
+        duplicate = next(
+            (item for item in open_items if item["title"].strip().casefold() == wanted), None
         )
-    wanted = title.strip().casefold()
-    duplicate = next(
-        (item for item in open_items if item["title"].strip().casefold() == wanted), None
-    )
-    if duplicate:
-        raise MemoryVaultError(f"an open proposal already has this title: {duplicate['path']}")
-    record_id = str(uuid.uuid4())
-    today = datetime.now(timezone.utc).date().isoformat()
-    relative = f"proposals/core/{KIND_DIRS[kind]}/{today}-{_slug(title)}-{record_id[:8]}.md"
-    lines = [
-        "---",
-        "schema: 3",
-        f"id: {record_id}",
-        f"type: {kind}",
-        f"title: {json.dumps(title, ensure_ascii=False)}",
-        f"date: {today}",
-        "status: draft",
-        f"scope: {scope}",
-        f"projects: [{', '.join(projects or [])}]",
-        f"tags: [{', '.join(tags or [])}]",
-    ]
-    if supersedes:
-        lines.append(f"supersedes: [{', '.join(supersedes)}]")
-    for key, value in (("review_after", review_after), ("valid_until", valid_until)):
-        if value is not None:
-            lines.append(f"{key}: {json.dumps(value)}")
-    data = ("\n".join([*lines, "---", ""]) + (body if body.endswith("\n") else body + "\n")).encode(
-        "utf-8"
-    )
-    _require_valid(relative, data)
-    receipt = None if capture is None else {**capture, "id": record_id, "path": relative}
-    op = memory_sync.change_core(
-        vault, [(relative, data)], tier="proposal", client=client, capture=receipt
-    )
-    waiting = len(open_items) + 1
-    result: dict[str, Any] = {
-        "state": "proposed",
-        "path": relative,
-        "id": record_id,
-        "op": op.id,
-        "open": waiting,
-    }
-    if waiting >= SOFT_CAP:
-        result["warning"] = f"{waiting} proposals are waiting for review"
-    size = (len(body) + 3) // 4
-    if size > RECORD_SOFT_TOKENS:
-        advice = (
-            f"this proposal is about {size} tokens; split it into one per idea "
-            f"(under {RECORD_SOFT_TOKENS}) so each stays cheap to read"
+        if duplicate:
+            raise MemoryVaultError(f"an open proposal already has this title: {duplicate['path']}")
+        record_id = str(uuid.uuid4())
+        today = datetime.now(timezone.utc).date().isoformat()
+        relative = f"proposals/core/{KIND_DIRS[kind]}/{today}-{_slug(title)}-{record_id[:8]}.md"
+        lines = [
+            "---",
+            "schema: 3",
+            f"id: {record_id}",
+            f"type: {kind}",
+            f"title: {json.dumps(title, ensure_ascii=False)}",
+            f"date: {today}",
+            "status: draft",
+            f"scope: {scope}",
+            f"projects: [{', '.join(projects or [])}]",
+            f"tags: [{', '.join(tags or [])}]",
+        ]
+        if supersedes:
+            lines.append(f"supersedes: [{', '.join(supersedes)}]")
+        for key, value in (("review_after", review_after), ("valid_until", valid_until)):
+            if value is not None:
+                lines.append(f"{key}: {json.dumps(value)}")
+        data = ("\n".join([*lines, "---", ""]) + (body if body.endswith("\n") else body + "\n")).encode(
+            "utf-8"
         )
-        result["warning"] = "; ".join(filter(None, [result.get("warning"), advice]))
-    return result
+        _require_valid(relative, data)
+        receipt = None if capture is None else {**capture, "id": record_id, "path": relative}
+        op = memory_sync.change_core(
+            vault, [(relative, data)], tier="proposal", client=client, capture=receipt
+        )
+        waiting = len(open_items) + 1
+        result: dict[str, Any] = {
+            "state": "proposed",
+            "path": relative,
+            "id": record_id,
+            "op": op.id,
+            "open": waiting,
+        }
+        if waiting >= SOFT_CAP:
+            result["warning"] = f"{waiting} proposals are waiting for review"
+        size = (len(body) + 3) // 4
+        if size > RECORD_SOFT_TOKENS:
+            advice = (
+                f"this proposal is about {size} tokens; split it into one per idea "
+                f"(under {RECORD_SOFT_TOKENS}) so each stays cheap to read"
+            )
+            result["warning"] = "; ".join(filter(None, [result.get("warning"), advice]))
+        return result
 
 
 def _proposal(vault: Path, relative: str) -> tuple[bytes, dict[str, Any]]:
@@ -249,50 +250,52 @@ def _with_field(text: str, key: str, value: str) -> str:
 def approve(vault: Path, relative: str, *, client: str = "human") -> dict[str, Any]:
     """Human-only: install the proposal in core, all or nothing."""
     _require_v3(vault)
-    data, fields = _proposal(vault, relative)
-    findings = [item for item in validate(vault).findings if item.path == relative]
-    if findings:
-        raise MemoryVaultError(f"{relative} has {len(findings)} finding(s); fix or reject it first")
-    kind = fields["type"]
-    values = {"status": "accepted"}
-    if kind in USER_FILES:
-        destination = USER_FILES[kind]
-        existing = next((r for r in validate(vault).records if r.path == destination), None)
-        if existing is not None and existing.id:
-            values["id"] = existing.id
-    else:
-        destination = f"core/{KIND_DIRS[kind]}/{relative.rsplit('/', 1)[-1]}"
-        if (vault / destination).exists():
-            raise MemoryVaultError(f"{destination} already exists")
-    accepted_text = _set(data.decode("utf-8"), values)
-    changes: list[tuple[str, bytes | None]] = [(relative, None)]
-    replaced: list[str] = []
-    records = {
-        record.id: record for record in validate(vault).records if record.id and not record.draft
-    }
-    for target_id in fields.get("supersedes") or []:
-        target = records.get(target_id)
-        if target is None or not target.path.startswith("core/"):
-            raise MemoryVaultError(f"{target_id} is not a core record; supersession stays in core")
-        if target.status != "accepted":
-            raise MemoryVaultError(f"{target.path} is {target.status}, not accepted")
-        original = read_bounded(vault, target.path, MAX_FILE_BYTES).decode("utf-8")
-        marked = _set(original, {"status": "superseded"}).encode("utf-8")
-        _require_valid(target.path, marked)
-        changes.append((target.path, marked))
-        replaced.append(json.dumps(record_link(target.path)))
-    if replaced:
-        accepted_text = _with_field(accepted_text, "replaces", f"[{', '.join(replaced)}]")
-    accepted = accepted_text.encode("utf-8")
-    _require_valid(destination, accepted)
-    changes.insert(0, (destination, accepted))
-    op = memory_sync.change_core(vault, changes, tier="core", client=client)
-    return {"state": "approved", "path": destination, "removed": relative, "op": op.id}
+    with memory_sync._locked(vault):
+        data, fields = _proposal(vault, relative)
+        findings = [item for item in validate(vault).findings if item.path == relative]
+        if findings:
+            raise MemoryVaultError(f"{relative} has {len(findings)} finding(s); fix or reject it first")
+        kind = fields["type"]
+        values = {"status": "accepted"}
+        if kind in USER_FILES:
+            destination = USER_FILES[kind]
+            existing = next((r for r in validate(vault).records if r.path == destination), None)
+            if existing is not None and existing.id:
+                values["id"] = existing.id
+        else:
+            destination = f"core/{KIND_DIRS[kind]}/{relative.rsplit('/', 1)[-1]}"
+            if (vault / destination).exists():
+                raise MemoryVaultError(f"{destination} already exists")
+        accepted_text = _set(data.decode("utf-8"), values)
+        changes: list[tuple[str, bytes | None]] = [(relative, None)]
+        replaced: list[str] = []
+        records = {
+            record.id: record for record in validate(vault).records if record.id and not record.draft
+        }
+        for target_id in fields.get("supersedes") or []:
+            target = records.get(target_id)
+            if target is None or not target.path.startswith("core/"):
+                raise MemoryVaultError(f"{target_id} is not a core record; supersession stays in core")
+            if target.status != "accepted":
+                raise MemoryVaultError(f"{target.path} is {target.status}, not accepted")
+            original = read_bounded(vault, target.path, MAX_FILE_BYTES).decode("utf-8")
+            marked = _set(original, {"status": "superseded"}).encode("utf-8")
+            _require_valid(target.path, marked)
+            changes.append((target.path, marked))
+            replaced.append(json.dumps(record_link(target.path)))
+        if replaced:
+            accepted_text = _with_field(accepted_text, "replaces", f"[{', '.join(replaced)}]")
+        accepted = accepted_text.encode("utf-8")
+        _require_valid(destination, accepted)
+        changes.insert(0, (destination, accepted))
+        op = memory_sync.change_core(vault, changes, tier="core", client=client)
+        return {"state": "approved", "path": destination, "removed": relative, "op": op.id}
 
 
 def reject(vault: Path, relative: str, *, client: str = "human") -> dict[str, Any]:
     """Human-only: remove a proposal without installing it."""
     _require_v3(vault)
-    _proposal(vault, relative)
-    op = memory_sync.change_core(vault, [(relative, None)], tier="proposal", client=client)
-    return {"state": "rejected", "removed": relative, "op": op.id}
+    with memory_sync._locked(vault):
+        _proposal(vault, relative)
+        op = memory_sync.change_core(vault, [(relative, None)], tier="proposal", client=client)
+        return {"state": "rejected", "removed": relative, "op": op.id}

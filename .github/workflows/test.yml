@@ -1,19 +1,21 @@
 name: test
 
+# Automatic triggers paused on 2026-11-08 while GitHub Actions billing is locked.
+# To resume, uncomment the triggers below and re-enable the hosted workflow.
 on:
   # Every push to the two working branches, so a commit that breaks the gate is
   # caught when it lands rather than on the next daily run. The operator also
   # commits outside an agent's local gate, and public repositories run CI free.
-  push:
-    branches: [main, development]
+  # push:
+  #   branches: [main, development]
   workflow_dispatch:
   # Daily as well, at 10:00 Asia/Colombo (04:30 UTC, which is what cron takes),
   # for what breaks this suite without a commit: the runner image, apt and tool
   # versions drift underneath it, and GitHub's own MCP tool descriptors -- which
   # the contract pins by fingerprint -- have already changed all eighteen at
   # once. The daily run also adds Python 3.12 and the slow tests.
-  schedule:
-    - cron: "30 4 * * *"
+  # schedule:
+  #   - cron: "30 4 * * *"
 
 permissions:
   contents: read

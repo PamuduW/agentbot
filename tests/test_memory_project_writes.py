@@ -8,7 +8,9 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,6 +55,46 @@ class WritesTestCase(unittest.TestCase):
 
 
 class AddAndEditTests(WritesTestCase):
+    def test_concurrent_title_and_body_edits_preserve_both_changes(self) -> None:
+        writes.edit(self.a, self.code, self.config, LESSON, body="Unique initial body.")
+        prepared = threading.Event()
+        release = threading.Event()
+        second_done = threading.Event()
+        real_pressure = writes._pressure
+
+        def pause_title_edit(*args, **kwargs):
+            if threading.current_thread().name == "title-edit":
+                prepared.set()
+                if not release.wait(10):
+                    raise RuntimeError("title edit was not released")
+            return real_pressure(*args, **kwargs)
+
+        def edit_title():
+            threading.current_thread().name = "title-edit"
+            return writes.edit(self.a, self.code, self.config, LESSON, title="Concurrent title")
+
+        def edit_body():
+            try:
+                return writes.edit(self.a, self.code, self.config, LESSON, body="Concurrent body.")
+            finally:
+                second_done.set()
+
+        with patch.object(writes, "_pressure", side_effect=pause_title_edit):
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                first = workers.submit(edit_title)
+                try:
+                    self.assertTrue(prepared.wait(10))
+                    second = workers.submit(edit_body)
+                    second_done.wait(3)
+                finally:
+                    release.set()
+                self.assertEqual("committed-locally", first.result(timeout=10)["state"])
+                self.assertEqual("committed-locally", second.result(timeout=10)["state"])
+        text = (self.a / LESSON).read_text()
+        self.assertIn("Concurrent title", text)
+        self.assertIn("Concurrent body.", text)
+        self.valid(self.a)
+
     def test_add_writes_a_valid_record_committed_locally(self) -> None:
         result = writes.add(
             self.a,
@@ -239,6 +281,7 @@ class ContainmentTests(WritesTestCase):
             with self.assertRaises(memory.MemoryVaultError) as raised:
                 writes.add(self.a, self.code, self.config, kind="lesson", title="x", body="x")
             self.assertIn("turned off", str(raised.exception))
+            self.assertFalse((self.a / ".git/agentbot-memory").exists())
             hits = retrieve.search(
                 self.a, "lesson", retrieve.Request(project="alpha"), limit=50
             ).hits

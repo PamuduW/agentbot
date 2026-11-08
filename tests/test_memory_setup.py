@@ -136,6 +136,50 @@ class PathSetupTests(SetupTestCase):
 
 
 class CloneAndNewTests(SetupTestCase):
+    def test_clone_preserves_data_arriving_after_destination_check(self) -> None:
+        bare = self.bare_from_vault()
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                dest = self.tmp / ("existing-race" if existing else "new-race")
+                if existing:
+                    dest.mkdir()
+                real_git = setup._git
+
+                def occupy(*args, destination=dest, execute=real_git, **kwargs):
+                    if args[:1] == ("clone",):
+                        destination.mkdir(exist_ok=True)
+                        (destination / "keep").write_text("other writer")
+                    return execute(*args, **kwargs)
+
+                with patch.object(setup, "_git", side_effect=occupy):
+                    with self.assertRaises((memory.MemoryVaultError, OSError)):
+                        setup.setup_clone(str(bare), dest, self.config, apply=True)
+                self.assertTrue((dest / "keep").is_file(), "concurrent data was deleted")
+                self.assertEqual("other writer", (dest / "keep").read_text())
+                self.assertEqual(["keep"], [path.name for path in dest.iterdir()])
+                self.assertFalse(setup.config_path(self.config).exists())
+
+    def test_failed_new_setup_preserves_data_arriving_after_destination_check(self) -> None:
+        dest = self.tmp / "new-race"
+        real_git = setup._git
+
+        def occupy(*args, **kwargs):
+            if args[:1] == ("init",):
+                dest.mkdir(exist_ok=True)
+                (dest / "keep").write_text("other writer")
+            return real_git(*args, **kwargs)
+
+        with (
+            patch.object(setup, "_git", side_effect=occupy),
+            patch.object(setup, "_initial_commit", side_effect=OSError("disk full")),
+            self.assertRaises(OSError),
+        ):
+            setup.setup_new(dest, self.config, apply=True)
+        self.assertTrue((dest / "keep").is_file(), "concurrent data was deleted")
+        self.assertEqual("other writer", (dest / "keep").read_text())
+        self.assertEqual(["keep"], [path.name for path in dest.iterdir()])
+        self.assertFalse(setup.config_path(self.config).exists())
+
     def bare_from_vault(self) -> Path:
         bare = self.tmp / "remote.git"
         subprocess.run(

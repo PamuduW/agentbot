@@ -24,6 +24,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 import urllib.parse
 import uuid
 from dataclasses import dataclass, field
@@ -371,7 +372,8 @@ def setup_clone(
             "has no refs or working files; nothing is pushed."
         )
         return result
-    created = not target.exists()
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}.agentbot-", dir=target.parent))
     try:
         clone = _git(
             "clone",
@@ -379,44 +381,43 @@ def setup_clone(
             "--no-recurse-submodules",
             *clone_options,
             source,
-            str(target),
+            str(staging),
             ssh_command=ssh_command,
         )
         if clone.returncode != 0:
             raise MemoryVaultError(f"git clone failed: {clone.stderr.strip()[:200]}")
-        os.chmod(target, 0o700)
-        refs = _git("-C", str(target), "for-each-ref", "--format=%(refname)")
+        os.chmod(staging, 0o700)
+        refs = _git("-C", str(staging), "for-each-ref", "--format=%(refname)")
         if refs.returncode != 0:
             raise MemoryVaultError("could not inspect the cloned repository's refs")
-        head = _git("-C", str(target), "rev-parse", "--verify", "HEAD")
+        head = _git("-C", str(staging), "rev-parse", "--verify", "HEAD")
         if (
             not refs.stdout.strip()
             and head.returncode != 0
-            and not any(p.name != ".git" for p in target.iterdir())
+            and not any(p.name != ".git" for p in staging.iterdir())
         ):
-            remote_refs = _git("-C", str(target), "ls-remote", "origin", ssh_command=ssh_command)
+            remote_refs = _git("-C", str(staging), "ls-remote", "origin", ssh_command=ssh_command)
             if remote_refs.returncode != 0:
                 raise MemoryVaultError("could not verify that the remote repository is empty")
             if not remote_refs.stdout.strip():
                 if (
-                    _git("-C", str(target), "symbolic-ref", "HEAD", "refs/heads/main").returncode
+                    _git("-C", str(staging), "symbolic-ref", "HEAD", "refs/heads/main").returncode
                     != 0
                 ):
                     raise MemoryVaultError("could not set the new vault's branch")
-                _initialize_vault(target)
+                _initialize_vault(staging)
                 result.notes.append("Initialized the empty repository as a new memory vault.")
                 result.notes.append(
                     "Push the first commit when ready: git -C VAULT push -u origin main"
                 )
         try:
-            read_marker(target)
+            read_marker(staging)
         except MemoryVaultError as error:
             raise MemoryVaultError(f"{source} is not an Agentbot memory vault: {error}") from error
+        os.rename(staging, target)
         result.vault = _describe(target)
-    except BaseException:
-        if created:
-            shutil.rmtree(target, ignore_errors=True)
-        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     result.config = str(_write_config(config_home, result.vault))
     result.state = "configured"
     result.notes.extend(NEXT_STEPS)
@@ -435,20 +436,19 @@ def setup_new(
             + (f" with origin {origin}; nothing is pushed." if origin else ".")
         )
         return result
-    created = not target.exists()
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}.agentbot-", dir=target.parent))
     try:
-        target.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(target, 0o700)
-        if _git("init", "--quiet", "--initial-branch=main", str(target)).returncode != 0:
+        os.chmod(staging, 0o700)
+        if _git("init", "--quiet", "--initial-branch=main", str(staging)).returncode != 0:
             raise MemoryVaultError("git init failed")
-        _initialize_vault(target)
+        _initialize_vault(staging)
         if origin:
-            _git("-C", str(target), "remote", "add", "origin", origin)
+            _git("-C", str(staging), "remote", "add", "origin", origin)
+        os.rename(staging, target)
         result.vault = _describe(target)
-    except BaseException:
-        if created:
-            shutil.rmtree(target, ignore_errors=True)
-        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     result.config = str(_write_config(config_home, result.vault))
     result.state = "configured"
     if origin:

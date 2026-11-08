@@ -697,9 +697,15 @@ the validator, writes its manifest, and only then switches the destination's
 before that switch leaves the previous generation intact. A destination inside
 the vault, containing it, symlinked, or holding another vault's backup (other
 history or vault ID) is refused. A dirty tree is reported, not blocking.
+Backup operations take an exclusive lock on the destination directory through
+publication and retirement. Restore holds a shared lock on that same directory,
+including when its source names a generation or an alias. A busy backup is
+reported for retry. Read-only backups need no writable sidecar files.
 `agentbot memory restore --source BACKUP --destination PATH` clones into a new
-or empty directory, removes the backup `origin`, validates the result, and
-never touches the active checkout, Agentbot's configuration, or a remote.
+or empty directory. It clones and validates in private sibling staging, retains
+secondary branches and recovery refs, removes the backup `origin`, then publishes
+with a rename that refuses newly occupied destinations. Failure removes only
+staging files. It never touches the active checkout, Agentbot's configuration, or a remote.
 Git snapshots hold committed history only: uncommitted edits and exports are
 never included. Remote snapshots are not implemented. A completed backup
 records its destination (and assurance) in this machine's `memory.json`;

@@ -63,10 +63,14 @@ def _enabled() -> bool:
     return os.environ.get(FLAG, "on").strip().lower() not in {"off", "0", "false", "no"}
 
 
-def _project(vault: Path, cwd: Path, config_home: Path, *, project_id: str | None = None) -> str:
+def _require_writable(vault: Path) -> None:
     read_marker(vault)
     if not _enabled():
         raise MemoryVaultError(f"project writes are turned off ({FLAG}); reads still work")
+
+
+def _project(vault: Path, cwd: Path, config_home: Path, *, project_id: str | None = None) -> str:
+    _require_writable(vault)
     project = memory_projects.require_project(vault, cwd, config_home)
     if project_id is not None and project["id"] != project_id:
         raise MemoryVaultError("capture project identity changed")
@@ -233,41 +237,43 @@ def add(
     capture: dict[str, str] | None = None,
     project_id: str | None = None,
 ) -> dict[str, Any]:
-    folder = _project(vault, cwd, config_home, project_id=project_id)
-    if kind not in KIND_DIRS:
-        raise MemoryVaultError(f"kind must be one of {', '.join(sorted(KIND_DIRS))}")
-    record_id = str(uuid.uuid4())
-    today = datetime.now(timezone.utc).date().isoformat()
-    relative = f"projects/{folder}/{KIND_DIRS[kind]}/{today}-{_slug(title)}.md"
-    if (vault / relative).exists():
-        relative = relative[:-3] + f"-{record_id[:8]}.md"
-    target = _supersede_target(vault, folder, supersedes) if supersedes else None
-    if target:
-        previous = _front_matter(target[1].decode("utf-8"))
-        if review_after is None and previous.get("review_after"):
-            review_after = max(previous["review_after"], today)
-        valid_until = previous.get("valid_until") if valid_until is None else valid_until
-    data = render(
-        record_id=record_id,
-        kind=KIND_TYPES[kind],
-        title=title,
-        folder=folder,
-        body=body,
-        tags=list(tags or []),
-        created=today,
-        supersedes=[supersedes] if supersedes else None,
-        replaces=[record_link(target[0])] if target else None,
-        review_after=review_after,
-        valid_until=valid_until,
-    )
-    _require_valid(relative, data)
-    warnings = _pressure(vault, folder, relative, data, adding=not supersedes)
-    changes: list[tuple[str, bytes | None]] = [(relative, data)]
-    if target:
-        changes.append(target)
-    receipt = None if capture is None else {**capture, "id": record_id, "path": relative}
-    op = memory_sync.change_project(vault, folder, changes, client=client, capture=receipt)
-    return _result(op, path=relative, id=record_id, kind=kind, warnings=warnings)
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        folder = _project(vault, cwd, config_home, project_id=project_id)
+        if kind not in KIND_DIRS:
+            raise MemoryVaultError(f"kind must be one of {', '.join(sorted(KIND_DIRS))}")
+        record_id = str(uuid.uuid4())
+        today = datetime.now(timezone.utc).date().isoformat()
+        relative = f"projects/{folder}/{KIND_DIRS[kind]}/{today}-{_slug(title)}.md"
+        if (vault / relative).exists():
+            relative = relative[:-3] + f"-{record_id[:8]}.md"
+        target = _supersede_target(vault, folder, supersedes) if supersedes else None
+        if target:
+            previous = _front_matter(target[1].decode("utf-8"))
+            if review_after is None and previous.get("review_after"):
+                review_after = max(previous["review_after"], today)
+            valid_until = previous.get("valid_until") if valid_until is None else valid_until
+        data = render(
+            record_id=record_id,
+            kind=KIND_TYPES[kind],
+            title=title,
+            folder=folder,
+            body=body,
+            tags=list(tags or []),
+            created=today,
+            supersedes=[supersedes] if supersedes else None,
+            replaces=[record_link(target[0])] if target else None,
+            review_after=review_after,
+            valid_until=valid_until,
+        )
+        _require_valid(relative, data)
+        warnings = _pressure(vault, folder, relative, data, adding=not supersedes)
+        changes: list[tuple[str, bytes | None]] = [(relative, data)]
+        if target:
+            changes.append(target)
+        receipt = None if capture is None else {**capture, "id": record_id, "path": relative}
+        op = memory_sync.change_project(vault, folder, changes, client=client, capture=receipt)
+        return _result(op, path=relative, id=record_id, kind=kind, warnings=warnings)
 
 
 def _supersede_target(vault: Path, folder: str, target_id: str) -> tuple[str, bytes]:
@@ -346,121 +352,133 @@ def edit(
     tags: list[str] | None = None,
     client: str = "agent",
 ) -> dict[str, Any]:
-    folder = _project(vault, cwd, config_home)
-    relative = _inside(folder, path)
-    try:
-        text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
-    except FileNotFoundError as error:
-        raise MemoryVaultError(f"{relative} does not exist") from error
-    head, old_body = _split(text)
-    if title is not None or tags is not None:
-        replacements = {}
-        if title is not None:
-            replacements["title"] = json.dumps(title, ensure_ascii=False)
-        if tags is not None:
-            replacements["tags"] = _yaml_list(tags)
-        head = "\n".join(
-            f"{key}: {replacements[key]}"
-            if (key := line.split(":", 1)[0].strip()) in replacements
-            else line
-            for line in head.split("\n")
-        )
-    head = _with_up(head, folder, relative)
-    new_body = old_body if body is None else "\n" + (body if body.endswith("\n") else body + "\n")
-    data = (head + "\n" + new_body).encode("utf-8")
-    _require_valid(relative, data)
-    warnings = _pressure(vault, folder, relative, data, adding=False)
-    op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
-    return _result(op, path=relative, warnings=warnings)
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        folder = _project(vault, cwd, config_home)
+        relative = _inside(folder, path)
+        try:
+            text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
+        except FileNotFoundError as error:
+            raise MemoryVaultError(f"{relative} does not exist") from error
+        head, old_body = _split(text)
+        if title is not None or tags is not None:
+            replacements = {}
+            if title is not None:
+                replacements["title"] = json.dumps(title, ensure_ascii=False)
+            if tags is not None:
+                replacements["tags"] = _yaml_list(tags)
+            head = "\n".join(
+                f"{key}: {replacements[key]}"
+                if (key := line.split(":", 1)[0].strip()) in replacements
+                else line
+                for line in head.split("\n")
+            )
+        head = _with_up(head, folder, relative)
+        new_body = old_body if body is None else "\n" + (body if body.endswith("\n") else body + "\n")
+        data = (head + "\n" + new_body).encode("utf-8")
+        _require_valid(relative, data)
+        warnings = _pressure(vault, folder, relative, data, adding=False)
+        op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
+        return _result(op, path=relative, warnings=warnings)
 
 
 def set_context(
     vault: Path, cwd: Path, config_home: Path, body: str, *, client: str = "agent"
 ) -> dict[str, Any]:
     """Create or replace the project's bounded active context."""
-    folder = _project(vault, cwd, config_home)
-    relative = f"projects/{folder}/active-context.md"
-    existing = next((r for r in validate(vault).records if r.path == relative), None)
-    data = render(
-        record_id=existing.id if existing and existing.id else str(uuid.uuid4()),
-        kind="context",
-        title="Active context",
-        folder=folder,
-        body=body,
-        tags=list(existing.tags) if existing else [],
-        created=existing.date if existing else None,
-    )
-    _require_valid(relative, data)
-    # A new active context is a new live record, so it counts against the pool.
-    warnings = _pressure(vault, folder, relative, data, adding=existing is None)
-    op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
-    return _result(op, path=relative, warnings=warnings)
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        folder = _project(vault, cwd, config_home)
+        relative = f"projects/{folder}/active-context.md"
+        existing = next((r for r in validate(vault).records if r.path == relative), None)
+        data = render(
+            record_id=existing.id if existing and existing.id else str(uuid.uuid4()),
+            kind="context",
+            title="Active context",
+            folder=folder,
+            body=body,
+            tags=list(existing.tags) if existing else [],
+            created=existing.date if existing else None,
+        )
+        _require_valid(relative, data)
+        # A new active context is a new live record, so it counts against the pool.
+        warnings = _pressure(vault, folder, relative, data, adding=existing is None)
+        op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
+        return _result(op, path=relative, warnings=warnings)
 
 
 def move(
     vault: Path, cwd: Path, config_home: Path, path: str, new_path: str, *, client: str = "agent"
 ) -> dict[str, Any]:
-    folder = _project(vault, cwd, config_home)
-    source = _inside(folder, path)
-    target = _inside(folder, new_path)
-    if source.endswith("/project.md"):
-        raise MemoryVaultError("project.md is the project's identity and does not move")
-    if (vault / target).exists():
-        raise MemoryVaultError(f"{target} already exists")
-    try:
-        data = read_bounded(vault, source, MAX_FILE_BYTES)
-    except FileNotFoundError as error:
-        raise MemoryVaultError(f"{source} does not exist") from error
-    head, rest = _split(data.decode("utf-8"))
-    data = (_with_up(head, folder, target) + "\n" + rest).encode("utf-8")
-    _require_valid(target, data)
-    # The record itself is leaving `source`, so its own text is no duplicate.
-    warnings = _pressure(vault, folder, target, data, adding=False, moving_from=source)
-    changes = [(target, data), (source, None), *_relink(vault, folder, source, target)]
-    op = memory_sync.change_project(vault, folder, changes, client=client)
-    return _result(op, path=target, moved_from=source, warnings=warnings)
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        folder = _project(vault, cwd, config_home)
+        source = _inside(folder, path)
+        target = _inside(folder, new_path)
+        if source.endswith("/project.md"):
+            raise MemoryVaultError("project.md is the project's identity and does not move")
+        if (vault / target).exists():
+            raise MemoryVaultError(f"{target} already exists")
+        try:
+            data = read_bounded(vault, source, MAX_FILE_BYTES)
+        except FileNotFoundError as error:
+            raise MemoryVaultError(f"{source} does not exist") from error
+        head, rest = _split(data.decode("utf-8"))
+        data = (_with_up(head, folder, target) + "\n" + rest).encode("utf-8")
+        _require_valid(target, data)
+        # The record itself is leaving `source`, so its own text is no duplicate.
+        warnings = _pressure(vault, folder, target, data, adding=False, moving_from=source)
+        changes = [(target, data), (source, None), *_relink(vault, folder, source, target)]
+        op = memory_sync.change_project(vault, folder, changes, client=client)
+        return _result(op, path=target, moved_from=source, warnings=warnings)
 
 
 def delete(
     vault: Path, cwd: Path, config_home: Path, path: str, *, client: str = "agent"
 ) -> dict[str, Any]:
-    folder = _project(vault, cwd, config_home)
-    relative = _inside(folder, path)
-    if relative.endswith("/project.md"):
-        raise MemoryVaultError("project.md is the project's identity; forget the project instead")
-    op = memory_sync.change_project(vault, folder, [(relative, None)], client=client)
-    return _result(op, path=relative)
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        folder = _project(vault, cwd, config_home)
+        relative = _inside(folder, path)
+        if relative.endswith("/project.md"):
+            raise MemoryVaultError("project.md is the project's identity; forget the project instead")
+        op = memory_sync.change_project(vault, folder, [(relative, None)], client=client)
+        return _result(op, path=relative)
 
 
 def forget(vault: Path, cwd: Path, config_home: Path, *, client: str = "agent") -> dict[str, Any]:
     """Remove the current project's memory folder. Its registry identity stays."""
-    folder = _project(vault, cwd, config_home)
-    op = memory_sync.forget_project(vault, folder, client=client)
-    # The local SHA changes when sync replays the operation onto the remote
-    # tip, so recovery names the operation, which every copy carries.
-    recover = (
-        f"find the commit with `git log -F --grep 'Agentbot-Op: {op.id}'` in the vault, "
-        "then `git revert` it"
-    )
-    return _result(op, path=f"projects/{folder}", recover=recover)
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        folder = _project(vault, cwd, config_home)
+        op = memory_sync.forget_project(vault, folder, client=client)
+        # The local SHA changes when sync replays the operation onto the remote
+        # tip, so recovery names the operation, which every copy carries.
+        recover = (
+            f"find the commit with `git log -F --grep 'Agentbot-Op: {op.id}'` in the vault, "
+            "then `git revert` it"
+        )
+        return _result(op, path=f"projects/{folder}", recover=recover)
 
 
 def retire(
     vault: Path, cwd: Path, config_home: Path, path: str, *, client: str = "agent"
 ) -> dict[str, Any]:
     """Take a record out of retrieval without deleting it; it stays readable in the vault."""
-    folder = _project(vault, cwd, config_home)
-    relative = _inside(folder, path)
-    if relative.endswith("/project.md"):
-        raise MemoryVaultError("project.md is the project's identity and cannot be retired")
-    try:
-        text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
-    except FileNotFoundError as error:
-        raise MemoryVaultError(f"{relative} does not exist") from error
-    data = _set_status(text, "retired")
-    _require_valid(relative, data)
-    op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
-    return _result(op, path=relative)
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        folder = _project(vault, cwd, config_home)
+        relative = _inside(folder, path)
+        if relative.endswith("/project.md"):
+            raise MemoryVaultError("project.md is the project's identity and cannot be retired")
+        try:
+            text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
+        except FileNotFoundError as error:
+            raise MemoryVaultError(f"{relative} does not exist") from error
+        data = _set_status(text, "retired")
+        _require_valid(relative, data)
+        op = memory_sync.change_project(vault, folder, [(relative, data)], client=client)
+        return _result(op, path=relative)
 
 
 def promote(
@@ -473,28 +491,30 @@ def promote(
     client: str = "agent",
 ) -> dict[str, Any]:
     """Propose a project lesson or decision for core memory. The source stays in the project."""
-    from . import memory_proposals
+    _require_writable(vault)
+    with memory_sync._locked(vault):
+        from . import memory_proposals
 
-    folder = _project(vault, cwd, config_home)
-    relative = _inside(folder, path)
-    try:
-        text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
-    except FileNotFoundError as error:
-        raise MemoryVaultError(f"{relative} does not exist") from error
-    fields = _front_matter(text)
-    if fields["type"] not in {"lesson", "decision"}:
-        raise MemoryVaultError("only lessons and decisions are promoted to core")
-    body = _split(text)[1].strip() + f"\n\nPromoted from {relative}.\n"
-    return memory_proposals.propose(
-        vault,
-        kind=fields["type"],
-        title=fields["title"],
-        body=body,
-        scope=scope,
-        projects=[folder] if scope == "shared" else [],
-        tags=list(fields["tags"]),
-        client=client,
-    )
+        folder = _project(vault, cwd, config_home)
+        relative = _inside(folder, path)
+        try:
+            text = read_bounded(vault, relative, MAX_FILE_BYTES).decode("utf-8")
+        except FileNotFoundError as error:
+            raise MemoryVaultError(f"{relative} does not exist") from error
+        fields = _front_matter(text)
+        if fields["type"] not in {"lesson", "decision"}:
+            raise MemoryVaultError("only lessons and decisions are promoted to core")
+        body = _split(text)[1].strip() + f"\n\nPromoted from {relative}.\n"
+        return memory_proposals.propose(
+            vault,
+            kind=fields["type"],
+            title=fields["title"],
+            body=body,
+            scope=scope,
+            projects=[folder] if scope == "shared" else [],
+            tags=list(fields["tags"]),
+            client=client,
+        )
 
 
 def maintain(vault: Path, cwd: Path, config_home: Path) -> dict[str, Any]:

@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,6 +35,46 @@ class BackupTestCase(unittest.TestCase):
 
 
 class BackupTests(BackupTestCase):
+    def test_overlapping_backups_refuse_the_same_destination(self) -> None:
+        retire = backups._retire
+        outcomes = []
+
+        def overlap(destination, *, keep):
+            if not outcomes:
+                outcomes.append("started")
+                try:
+                    backups.backup(self.vault.root, destination, apply=True)
+                except memory.MemoryVaultError:
+                    outcomes.append("busy")
+                else:
+                    outcomes.append("completed")
+            return retire(destination, keep=keep)
+
+        with patch.object(backups, "_retire", side_effect=overlap):
+            result = backups.backup(self.vault.root, self.dest, apply=True)
+        self.assertEqual(["started", "busy"], outcomes)
+        self.assertEqual(result.head, backups.read_manifest(self.dest)["head"])
+        self.assertEqual("restored", backups.restore(self.dest, self.tmp / "r", apply=True).state)
+
+    def test_another_process_cannot_refresh_a_locked_backup(self) -> None:
+        code = """import sys
+from pathlib import Path
+from src import memory_backup, memory
+try:
+    memory_backup.backup(Path(sys.argv[1]), Path(sys.argv[2]), apply=True)
+except memory.MemoryVaultError as error:
+    print(error)
+    sys.exit(3)
+"""
+        with backups._backup_lock(self.dest):
+            child = subprocess.run(
+                [sys.executable, "-c", code, str(self.vault.root), str(self.dest)],
+                capture_output=True, text=True, timeout=15,
+            )
+        self.assertEqual(3, child.returncode, child.stderr)
+        self.assertIn("in use", child.stdout)
+        self.assertEqual("completed", backups.backup(self.vault.root, self.dest, apply=True).state)
+
     def test_preview_writes_nothing(self) -> None:
         before = _tree_digest(self.vault.root)
         result = backups.backup(self.vault.root, self.dest)
@@ -227,6 +268,121 @@ class RestoreTests(BackupTestCase):
     def setUp(self) -> None:
         super().setUp()
         backups.backup(self.vault.root, self.dest, apply=True)
+
+    def test_restore_preserves_files_created_after_preflight(self) -> None:
+        run = backups._run
+        for existing in (False, True):
+            target = self.tmp / f"occupied-later-{existing}"
+            if existing:
+                target.mkdir()
+
+            def concurrent_writer(*args, target=target, **kwargs):
+                if args[0] == "clone":
+                    target.mkdir(exist_ok=True)
+                    (target / "manual.txt").write_text("keep this edit")
+                return run(*args, **kwargs)
+
+            with self.subTest(existing=existing), patch.object(backups, "_run", side_effect=concurrent_writer):
+                with self.assertRaises((memory.MemoryVaultError, OSError)):
+                    backups.restore(self.dest, target, apply=True)
+                self.assertEqual("keep this edit", (target / "manual.txt").read_text())
+
+    def test_restore_holds_its_generation_against_refresh_through_aliases(self) -> None:
+        alias = self.tmp / "alias"
+        alias.symlink_to(self.dest.parent, target_is_directory=True)
+        generation_alias = self.tmp / "generation-alias"
+        generation_alias.symlink_to(backups.current_generation(self.dest), target_is_directory=True)
+        run = backups._run
+        for label, source in (("parent", alias / self.dest.name), ("current", self.dest / "current"),
+                              ("generation", generation_alias)):
+            outcomes = []
+
+            def refresh_during_clone(*args, outcomes=outcomes, **kwargs):
+                if args[0] == "clone" and not outcomes:
+                    outcomes.append("started")
+                    try:
+                        backups.backup(self.vault.root, self.dest, apply=True)
+                    except memory.MemoryVaultError:
+                        outcomes.append("busy")
+                    else:
+                        outcomes.append("completed")
+                return run(*args, **kwargs)
+
+            target = self.tmp / f"restored-{label}"
+            with self.subTest(source=label), patch.object(backups, "_run", side_effect=refresh_during_clone):
+                result = backups.restore(source, target, apply=True)
+                self.assertEqual(["started", "busy"], outcomes)
+                self.assertEqual("restored", result.state)
+                self.assertEqual(result.head, self.git(target, "rev-parse", "HEAD"))
+
+    def test_restore_preserves_secondary_branches_and_recovery_refs(self) -> None:
+        head = self.git(self.vault.root, "rev-parse", "HEAD")
+        self.git(self.vault.root, "update-ref", "refs/heads/secondary", head)
+        self.git(self.vault.root, "update-ref", "refs/agentbot-memory/recovery/example", head)
+        backups.backup(self.vault.root, self.dest, apply=True)
+        target = self.tmp / "all-refs"
+        backups.restore(self.dest, target, apply=True)
+        for ref in ("refs/heads/secondary", "refs/agentbot-memory/recovery/example"):
+            with self.subTest(ref=ref):
+                self.assertEqual(head, self.git(target, "rev-parse", ref))
+        self.assertEqual("", self.git(target, "remote"))
+
+    @unittest.skipIf(os.geteuid() == 0, "root bypasses read-only directory permissions")
+    def test_restore_accepts_a_read_only_backup_without_creating_sidecars(self) -> None:
+        before = {p.name for p in self.dest.parent.iterdir()}
+        self.dest.parent.chmod(0o555)
+        self.dest.chmod(0o555)
+        try:
+            restored = backups.restore(self.dest, self.tmp / "readonly-restore", apply=True)
+            self.assertEqual("restored", restored.state)
+            self.assertEqual(before, {p.name for p in self.dest.parent.iterdir()})
+        finally:
+            self.dest.parent.chmod(0o700)
+            self.dest.chmod(0o700)
+
+    def test_a_backup_named_like_a_generation_owns_its_lock(self) -> None:
+        named = self.tmp / ("gen-" + "a" * 32)
+        backups.backup(self.vault.root, named, apply=True)
+        run = backups._run
+        outcomes = []
+
+        def overlap(*args, **kwargs):
+            if args[0] == "clone" and not outcomes:
+                outcomes.append("started")
+                try:
+                    backups.backup(self.vault.root, named, apply=True)
+                except memory.MemoryVaultError:
+                    outcomes.append("busy")
+                else:
+                    outcomes.append("completed")
+            return run(*args, **kwargs)
+
+        with patch.object(backups, "_run", side_effect=overlap):
+            result = backups.restore(named, self.tmp / "named-restore", apply=True)
+        self.assertEqual(["started", "busy"], outcomes)
+        self.assertEqual("restored", result.state)
+
+    def test_restore_pins_an_orphan_generation_from_an_interrupted_first_backup(self) -> None:
+        generation = backups.current_generation(self.dest)
+        (self.dest / "current").unlink()
+        run = backups._run
+        outcomes = []
+
+        def overlap(*args, **kwargs):
+            if args[0] == "clone" and not outcomes:
+                outcomes.append("started")
+                try:
+                    backups.backup(self.vault.root, self.dest, apply=True)
+                except memory.MemoryVaultError:
+                    outcomes.append("busy")
+                else:
+                    outcomes.append("completed")
+            return run(*args, **kwargs)
+
+        with patch.object(backups, "_run", side_effect=overlap):
+            result = backups.restore(generation, self.tmp / "orphan-restore", apply=True)
+        self.assertEqual(["started", "busy"], outcomes)
+        self.assertEqual("restored", result.state)
 
     def test_missing_or_broken_backups_are_refused(self) -> None:
         for source in (self.tmp / "nowhere", self.vault.root):

@@ -7,11 +7,13 @@ must never appear in a report.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -222,6 +224,72 @@ class ResolutionTests(MemoryTestCase):
 
 
 class ValidationTests(MemoryTestCase):
+    def test_collection_values_in_scalar_metadata_report_findings_without_echoing_values(self) -> None:
+        vault = v3_vault(self.tmp / "v")
+        relative = "core/lessons/scalar.md"
+        expected_rules = {
+            "schema": "MEMORY_SCHEMA",
+            "type": "MEMORY_TYPE",
+            "title": "MEMORY_TITLE",
+            "date": "MEMORY_DATE",
+            "status": "MEMORY_STATUS",
+            "scope": "MEMORY_SCOPE",
+            "id": "MEMORY_ID",
+            "review_after": "MEMORY_DATE",
+            "valid_until": "MEMORY_DATE",
+        }
+        for field, expected in expected_rules.items():
+            for value in ([SENTINEL], {"fixture": SENTINEL}):
+                with self.subTest(field=field, kind=type(value).__name__):
+                    fields = v3("lesson", ID_A, "global")
+                    fields[field] = value
+                    vault.write(relative, note(fields))
+                    report = memory.validate(vault.root)
+                    self.assertIn(expected, rules(report)[relative])
+                    self.assertFalse(
+                        SENTINEL in json.dumps(memory.report_json(report)),
+                        "validation output exposed the malformed field value",
+                    )
+        vault.write(relative, note(v3("lesson", ID_A, "global")))
+        for value in ([SENTINEL], {"fixture": SENTINEL}):
+            with self.subTest(draft_type=type(value).__name__):
+                path = "proposals/core/lessons/scalar.md"
+                fields = v3("lesson", ID_B, "global", status="draft")
+                fields["type"] = value
+                vault.write(path, note(fields))
+                report = memory.validate(vault.root)
+                self.assertIn("MEMORY_TYPE", rules(report)[path])
+                self.assertFalse(
+                    SENTINEL in json.dumps(memory.report_json(report)),
+                    "validation output exposed the malformed draft type",
+                )
+
+    def test_secret_yaml_keys_are_not_echoed_in_json_or_rendered_findings(self) -> None:
+        from src.ui.reports import print_memory_validation
+
+        vault = v3_vault(self.tmp / "v")
+        relative = "core/lessons/key.md"
+        original = note(v3("lesson", ID_A, "global"))
+        for count, expected in ((1, "MEMORY_FIELD"), (2, "MEMORY_YAML")):
+            with self.subTest(occurrences=count):
+                fields = (f"{FAKE_GITHUB_TOKEN}: fixture\n") * count
+                vault.write(relative, original.replace("schema: 3\n", "schema: 3\n" + fields))
+                report = memory.validate(vault.root)
+                found = [item for item in report.findings if item.path == relative]
+                self.assertIn(expected, {item.rule for item in found})
+                self.assertEqual(
+                    list(range(3, 3 + count)),
+                    [item.line for item in found if item.rule == "SECRET_GITHUB_CLASSIC_TOKEN"],
+                )
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    print_memory_validation(report)
+                for serialized in (json.dumps(memory.report_json(report)), output.getvalue()):
+                    self.assertFalse(
+                        FAKE_GITHUB_TOKEN in serialized,
+                        "validation output exposed the synthetic credential",
+                    )
+
     def test_a_sanitized_tree_is_valid(self) -> None:
         vault = v3_vault(self.tmp / "v")
         vault.write("exports/generated.md", "no front matter, never validated\n")

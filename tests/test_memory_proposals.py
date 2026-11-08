@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from src import memory
@@ -82,6 +84,55 @@ class ProposeTests(ProposalCase):
 
 
 class ApproveRejectTests(ProposalCase):
+    def test_approval_and_concurrent_target_edit_preserve_both_changes(self) -> None:
+        proposed = proposals.propose(
+            self.a, kind="lesson", title="New core lesson", body="New lesson.", supersedes=[uid(3)]
+        )
+        target = "core/lessons/2026-09-27-core.md"
+        prepared = threading.Event()
+        release = threading.Event()
+        second_done = threading.Event()
+        real_valid = proposals._require_valid
+
+        def pause_approval(path, data):
+            real_valid(path, data)
+            if path == target and threading.current_thread().name == "approval":
+                prepared.set()
+                if not release.wait(10):
+                    raise RuntimeError("approval was not released")
+
+        def approve():
+            threading.current_thread().name = "approval"
+            return proposals.approve(self.a, proposed["path"])
+
+        def edit_target():
+            try:
+                with sync._locked(self.a):
+                    text = (self.a / target).read_text()
+                    head = text[:text.index("\n---", 4) + 4]
+                    return sync.change_core(
+                        self.a, [(target, (head + "\n\nConcurrent target body.\n").encode())],
+                        tier="core", client="human",
+                    )
+            finally:
+                second_done.set()
+
+        with patch.object(proposals, "_require_valid", side_effect=pause_approval):
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                first = workers.submit(approve)
+                try:
+                    self.assertTrue(prepared.wait(10))
+                    second = workers.submit(edit_target)
+                    second_done.wait(3)
+                finally:
+                    release.set()
+                self.assertEqual("approved", first.result(timeout=10)["state"])
+                second.result(timeout=10)
+        self.assertIn("Concurrent target body.", (self.a / target).read_text())
+        self.assertIn("status: superseded", (self.a / target).read_text())
+        self.assertIn("New lesson.", (self.a / proposed["path"].replace("proposals/", "")).read_text())
+        self.assertEqual([], memory.validate(self.a).findings)
+
     def test_approve_installs_in_core_and_removes_the_proposal_in_one_commit(self) -> None:
         proposed = proposals.propose(
             self.a, kind="decision", title="Adopt two tiers", body="Why: R7."

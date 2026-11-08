@@ -26,13 +26,16 @@ retrieval reads the restored files directly.
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -75,8 +78,8 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _refs(repo: Path) -> dict[str, str]:
-    """Branches and tags only: what a restore can check out."""
-    out = _git(repo, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags")
+    """Committed refs, including recovery history needed after a restore."""
+    out = _git(repo, "for-each-ref", "--format=%(refname) %(objectname)")
     refs: dict[str, str] = {}
     for line in out.splitlines():
         name, _, sha = line.partition(" ")
@@ -128,6 +131,22 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, path)
+
+
+@contextlib.contextmanager
+def _backup_lock(destination: Path, *, shared: bool = False) -> Iterator[None]:
+    destination = destination.parent.resolve() / destination.name
+    if not shared:
+        destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        try:
+            fcntl.flock(fd, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise MemoryVaultError("the backup is in use by another operation; retry later") from None
+        yield
+    finally:
+        os.close(fd)
 
 
 def current_generation(backup: Path) -> Path:
@@ -183,6 +202,13 @@ def backup(
         )
     read_marker(vault)
     _check_destination(vault, destination)
+    if not apply:
+        return _backup(vault, destination, apply=False, assurance=assurance)
+    with _backup_lock(destination):
+        return _backup(vault, destination, apply=True, assurance=assurance)
+
+
+def _backup(vault: Path, destination: Path, *, apply: bool, assurance: str) -> BackupResult:
     identity = source_identity(vault)
     # A first backup interrupted before its switch leaves only its own
     # generation behind: that is still an empty destination.
@@ -313,6 +339,25 @@ class RestoreResult:
 def restore(
     source: Path, destination: Path, *, active: Path | None = None, apply: bool = False
 ) -> RestoreResult:
+    if not apply:
+        return _restore(source, destination, active=active, apply=False)
+    # Resolve aliases before identifying the directory that owns retirement.
+    source = source.resolve()
+    try:
+        with contextlib.ExitStack() as locks:
+            if GENERATION.fullmatch(source.name) and not (source / CURRENT).is_symlink():
+                # An orphan generation has no current link yet. Lock both
+                # possible owners so copied legacy roots remain readable too.
+                locks.enter_context(_backup_lock(source.parent, shared=True))
+            locks.enter_context(_backup_lock(source, shared=True))
+            return _restore(source, destination, active=active, apply=True)
+    except FileNotFoundError as error:
+        raise MemoryVaultError("the backup generation is unavailable; retry the restore") from error
+
+
+def _restore(
+    source: Path, destination: Path, *, active: Path | None, apply: bool
+) -> RestoreResult:
     manifest = read_manifest(source)
     if destination.is_symlink():
         raise MemoryVaultError("the destination is a symlink")
@@ -335,36 +380,26 @@ def restore(
     result.notes.extend(LIMITATIONS[:1])
     if not apply:
         return result
-    created = not destination.exists()
-    try:
-        clone = _run("clone", "--quiet", "--no-hardlinks", str(mirror), str(destination))
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{destination.name}.restore-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "vault"
+        clone = _run("clone", "--quiet", "--no-hardlinks", str(mirror), str(staged))
         if clone.returncode != 0:
             raise MemoryVaultError("git clone from the backup failed")
-        os.chmod(destination, 0o700)
-        _git(destination, "remote", "remove", "origin")
-        if _git(destination, "rev-parse", "HEAD") != manifest.get("head"):
+        os.chmod(staged, 0o700)
+        _git(staged, "remote", "remove", "origin")
+        _git(staged, "fetch", "--quiet", "--update-head-ok", "--no-write-fetch-head",
+             str(mirror.resolve()), "+refs/*:refs/*")
+        if _git(staged, "rev-parse", "HEAD") != manifest.get("head"):
             result.notes.append("the restored HEAD differs from the manifest's recorded HEAD")
-        read_marker(destination)
-        result.findings = len(validate(destination).findings)
-    except BaseException:
-        # Remove only what this restore created.
-        _discard(destination, keep_directory=not created)
-        raise
+        read_marker(staged)
+        result.findings = len(validate(staged).findings)
+        try:
+            os.rename(staged, destination)
+        except OSError as error:
+            raise MemoryVaultError("restore destination changed or could not be published; existing files are preserved") from error
     result.state = "restored-with-findings" if result.findings else "restored"
     return result
-
-
-def _discard(destination: Path, *, keep_directory: bool) -> None:
-    """Remove a failed restore's output: only what the restore created."""
-    if not keep_directory:
-        shutil.rmtree(destination, ignore_errors=True)
-        return
-    for child in list(destination.iterdir()):
-        with contextlib.suppress(OSError):
-            if child.is_dir() and not child.is_symlink():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
 
 
 def backup_json(result: BackupResult) -> dict[str, Any]:

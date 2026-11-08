@@ -436,9 +436,8 @@ def _load_strict(block: str) -> dict[str, Any]:
     if not all(isinstance(key, yaml.ScalarNode) for key, _ in node.value):
         raise _Unsafe("MEMORY_YAML", "every key must be a string")
     keys = [key.value for key, _ in node.value]
-    duplicates = sorted({key for key in keys if keys.count(key) > 1})
-    if duplicates:
-        raise _Unsafe("MEMORY_YAML", f"duplicate key: {', '.join(map(str, duplicates))}")
+    if len(keys) != len(set(keys)):
+        raise _Unsafe("MEMORY_YAML", "duplicate front-matter key")
     data = yaml.load(block, Loader=_StrictLoader)
     if not all(isinstance(key, str) for key in data):
         raise _Unsafe("MEMORY_YAML", "every key must be a string")
@@ -545,8 +544,8 @@ class _RecordCheck:
     def run(self, fields: dict[str, Any]) -> Record | None:
         required = REQUIRED_FIELDS
         allowed = required | OPTIONAL_FIELDS | V3_LINKS
-        for key in sorted(set(fields) - allowed):
-            self.fail("MEMORY_FIELD", f"unknown key: {key}")
+        for _key in sorted(set(fields) - allowed):
+            self.fail("MEMORY_FIELD", "unknown front-matter key")
         for key in sorted(required - set(fields)):
             self.fail("MEMORY_FIELD", f"missing key: {key}")
         if self.findings:
@@ -578,12 +577,12 @@ class _RecordCheck:
             self.fail("MEMORY_SCHEMA", f"schema must be {self.schema}, as the vault marker says")
         kind = fields["type"]
         if self.destination.draft:
-            if kind not in PROPOSAL_TYPES:
+            if not isinstance(kind, str) or kind not in PROPOSAL_TYPES:
                 self.fail(
                     "MEMORY_TYPE", f"a draft must be one of {', '.join(sorted(PROPOSAL_TYPES))}"
                 )
                 kind = None
-        elif kind != self.destination.type:
+        elif not isinstance(kind, str) or kind != self.destination.type:
             self.fail("MEMORY_TYPE", f"type must be {self.destination.type} at this path")
             kind = None
         title = fields["title"]
@@ -594,7 +593,9 @@ class _RecordCheck:
         status = fields["status"]
         if self.destination.draft and status != "draft":
             self.fail("MEMORY_STATUS", "a draft must have status draft")
-        elif not self.destination.draft and status not in CANONICAL_STATUSES:
+        elif not self.destination.draft and (
+            not isinstance(status, str) or status not in CANONICAL_STATUSES
+        ):
             self.fail("MEMORY_STATUS", "status must be accepted, superseded, or retired")
         self._lists(fields, kind)
         return kind
@@ -643,7 +644,7 @@ class _RecordCheck:
 
     def _scope(self, fields: dict[str, Any], kind: str) -> None:
         scope = fields["scope"]
-        if scope not in SCOPES:
+        if not isinstance(scope, str) or scope not in SCOPES:
             self.fail("MEMORY_SCOPE", "scope must be global, shared, or project")
             return
         self._scope_v3(fields, kind, scope)
