@@ -20,6 +20,11 @@ notification preferences, plus its supported automatic-memory switch. Hooks,
 permission rules, plugins and client state remain outside this declaration.
 Codex owns only the declared keys, including `features.memories`.
 
+Cursor's declared `approvalMode` is `unrestricted`, so commands run without
+approval prompts. `agentbot update` reapplies this setting, including when called
+through `dotfiles fu`. Personal models and permission lists remain undeclared
+and are preserved. [Cursor configuration](https://cursor.com/docs/cli/reference/configuration).
+
 ## Verified paths
 
 Reconfirmed against this machine at implementation time rather than taken from
