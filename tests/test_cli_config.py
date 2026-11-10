@@ -52,6 +52,21 @@ class CliConfigTests(unittest.TestCase):
         # JSONC: these files may carry the operator's comments.
         return tomllib.loads(text) if cli.fmt == "toml" else json.loads(strip_jsonc(text))
 
+    def test_declared_cursor_config_replaces_approval_prompts_and_preserves_personal_settings(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().parents[1] / "cli" / "cursor.cli-config.json"
+        self._declare("cursor", source.read_text(encoding="utf-8"))
+        personal = {"model": {"modelId": "auto"}, "permissions": {"allow": [], "deny": []}}
+        self._write_config("cursor", json.dumps({"approvalMode": "allowlist", **personal}))
+
+        self.assertFalse(apply(self.paths).failures)
+        result = self._read_config("cursor")
+        self.assertEqual("unrestricted", result["approvalMode"])
+        for key, value in personal.items():
+            self.assertEqual(value, result[key])
+        self.assertTrue(plan_cli(self.paths.root, self.clis["cursor"]).is_noop)
+
     def test_declared_memory_controls_preserve_existing_memory_history_and_hooks(self) -> None:
         source_root = Path(__file__).resolve().parents[1]
         for name in ("claude", "codex"):

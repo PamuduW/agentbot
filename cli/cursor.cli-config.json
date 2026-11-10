@@ -1,5 +1,5 @@
 {
-  "approvalMode": "allowlist",
+  "approvalMode": "unrestricted",
   "hints": true,
   "notifications": true,
   "modelSlashCommands": true,
