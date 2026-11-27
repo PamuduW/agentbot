@@ -87,6 +87,18 @@ _SAFE_SDD_OWNS = '''owns() {
     printf '%s\\n' "$plan_id" > "$1/plan-path" || exit 2
   fi
 }'''
+_ARCHIFY_LEGACY_RULE = (
+    "to the global rules file of the current agent (such as `~/.claude/CLAUDE.md`, "
+    "`~/.codex/AGENTS.md` or `~/.config/devin/AGENTS.md`) and name the file; "
+    "deleting the line turns it off.",
+    "to the canonical user-authored rules source for the current agent and name "
+    "that source. Inspect ownership first: never edit a generated instruction "
+    "adapter directly. In an Agentbot-managed setup, edit the canonical source "
+    "and use its documented renderer. If the canonical source or write "
+    "authorization is unavailable, report the pending preference without changing "
+    "instructions. Removing the preference from its canonical source turns it off.",
+)
+
 _FILE_EDITS = {
     ("obra/superpowers", "subagent-driven-development"): (
         ("scripts/sdd-workspace", _SDD_LEGACY,
@@ -143,15 +155,19 @@ cat > .github/workflows/ci.yml'''),
     ),
     ("tt-a1i/archify", "archify"): (
         ("SKILL.md",
-         "to the global rules file of the current agent (such as `~/.claude/CLAUDE.md`, "
-         "`~/.codex/AGENTS.md` or `~/.config/devin/AGENTS.md`) and name the file; "
-         "deleting the line turns it off.",
-         "to the canonical user-authored rules source for the current agent and name "
-         "that source. Inspect ownership first: never edit a generated instruction "
-         "adapter directly. In an Agentbot-managed setup, edit the canonical source "
-         "and use its documented renderer. If the canonical source or write "
-         "authorization is unavailable, report the pending preference without changing "
-         "instructions. Removing the preference from its canonical source turns it off."),
+         "- To change the mode, only when the user asks (“只在我要求时做页面”, “always make a page”), write or replace "
+         "one `[archify explainer: <mode>]` line in the current agent's global rules file (such as "
+         "`~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` or `~/.config/devin/AGENTS.md`) and name the file, for "
+         "example `[archify explainer: on-demand] Make Archify explainer pages only when I ask for one.`; "
+         "deleting the line restores `proactive`. Never switch to `always-on` unasked.",
+         "- To change the mode, only when the user asks (“只在我要求时做页面”, “always make a page”), write or replace "
+         "one `[archify explainer: <mode>]` line in the canonical user-authored rules source for the current "
+         "agent and name that source. Inspect ownership first: never edit a generated instruction adapter "
+         "directly. In an Agentbot-managed setup, edit the canonical source and use its documented renderer. "
+         "If the canonical source or write authorization is unavailable, report the pending preference without "
+         "changing instructions. For example, use `[archify explainer: on-demand] Make Archify explainer pages "
+         "only when I ask for one.`; deleting the line restores `proactive`. Never switch to `always-on` "
+         "unasked."),
     ),
 }
 
@@ -271,6 +287,10 @@ def _prepare_skill(
                 raise ValueError(f"missing or unsafe skill support: {relative}")
             contents[relative] = text if relative == "SKILL.md" else support.read_text(encoding="utf-8")
             inputs[str(support.relative_to(checkout))] = sha256(support.read_bytes()).hexdigest()
+        if name == "archify" and _ARCHIFY_LEGACY_RULE[0] in contents[relative]:
+            if old in contents[relative]:
+                raise ValueError(f"{name} safety support changed: {relative}; review its packaging")
+            old, new = _ARCHIFY_LEGACY_RULE
         if contents[relative].count(old) != 1:
             raise ValueError(f"{name} safety support changed: {relative}; review its packaging")
         contents[relative] = contents[relative].replace(old, new)

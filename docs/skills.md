@@ -117,6 +117,9 @@ preserves existing configuration, and prepares local files without creating a
 remote repository, staging changes, committing, or pushing. Those actions need
 separate task authorization. Archify preference guidance edits the canonical
 rules source through its renderer instead of a generated instruction adapter.
+Its adaptation accepts both the previously reviewed instructions and Archify
+3.3's mode-setting instructions, preserving each version's mode behavior.
+Unknown, duplicate or mixed instruction targets stop preparation for review.
 `github-actions`, `k8s` and `owasp` each receive their report-format reference. Their links point inside the installed skill. The excluded sibling
 policy entrypoints remain unselected.
 

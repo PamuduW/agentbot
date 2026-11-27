@@ -441,6 +441,53 @@ git() {
             self.install("jeffallan/claude-skills", ["devops-engineer"])
         self.assertFalse(self.lock.exists())
 
+    def test_archify_previous_reviewed_pin_remains_packageable(self):
+        instruction = (
+            "to the global rules file of the current agent (such as `~/.claude/CLAUDE.md`, "
+            "`~/.codex/AGENTS.md` or `~/.config/devin/AGENTS.md`) and name the file; "
+            "deleting the line turns it off."
+        )
+        self.write("SKILL.md", "---\nname: archify\n---\n" + instruction + "\n")
+        source = SkillSourceEntry(id="archify", repo="tt-a1i/archify", skills=["archify"])
+        with prepared_checkout(source, self.checkout, "a" * 40) as prepared:
+            text = (prepared / "SKILL.md").read_text()
+            self.assertIn("canonical user-authored rules source", text)
+            self.assertIn("without changing instructions", text)
+        self.write("SKILL.md", (self.checkout / "SKILL.md").read_text() + instruction)
+        with self.assertRaisesRegex(ValueError, "safety support changed"), prepared_checkout(
+            source, self.checkout, "a" * 40,
+        ):
+            self.fail("duplicate legacy instructions must not reach installation")
+
+    def test_archify_mode_changes_use_canonical_rules_and_preserve_upstream(self):
+        instruction = "- To change the mode, only when the user asks (“只在我要求时做页面”, “always make a page”), write or replace one `[archify explainer: <mode>]` line in the current agent's global rules file (such as `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` or `~/.config/devin/AGENTS.md`) and name the file, for example `[archify explainer: on-demand] Make Archify explainer pages only when I ask for one.`; deleting the line restores `proactive`. Never switch to `always-on` unasked."
+        original = "---\nname: archify\n---\n# Modes\n" + instruction + "\n"
+        self.write("SKILL.md", original)
+        source = SkillSourceEntry(id="archify", repo="tt-a1i/archify", skills=["archify"])
+        with prepared_checkout(source, self.checkout, "a" * 40) as prepared:
+            text = (prepared / "SKILL.md").read_text()
+            self.assertIn("canonical user-authored rules source", text)
+            self.assertIn("never edit a generated instruction adapter directly", text)
+            self.assertIn("use its documented renderer", text)
+            self.assertIn("without changing instructions", text)
+            self.assertIn("deleting the line restores `proactive`", text)
+            self.assertIn("Never switch to `always-on` unasked", text)
+            provenance = json.loads((prepared / ".agentbot-packaging.json").read_text())
+            self.assertIn("SKILL.md", provenance["inputs"])
+        self.assertEqual(original, (self.checkout / "SKILL.md").read_text())
+        legacy = (
+            "to the global rules file of the current agent (such as `~/.claude/CLAUDE.md`, "
+            "`~/.codex/AGENTS.md` or `~/.config/devin/AGENTS.md`) and name the file; "
+            "deleting the line turns it off."
+        )
+        for extra in (instruction, legacy):
+            with self.subTest(extra=extra):
+                self.write("SKILL.md", original + extra + "\n")
+                with self.assertRaisesRegex(ValueError, "safety support changed"), prepared_checkout(
+                    source, self.checkout, "a" * 40,
+                ):
+                    self.fail("duplicate or mixed instructions must not reach installation")
+
     def test_changed_archify_instruction_target_stops_before_install(self):
         self.write("SKILL.md", "---\nname: archify\n---\nIf accepted, edit global instruction files.\n")
         source = SkillSourceEntry(id="archify", repo="tt-a1i/archify", skills=["archify"])
