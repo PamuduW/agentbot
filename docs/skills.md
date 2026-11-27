@@ -244,7 +244,15 @@ A hook matcher that names BoostGraph tools is a filter, not a server registratio
 
 ### Feature-flag policy
 
-`BOOST_FEATURE_POLICY` pins the 17 reviewed flags supported by Boost v0.16.6.
+`BOOST_FEATURE_POLICY` keeps 17 reviewed pins, including three compatibility
+pins for features retired by newer Boost releases. Boost v0.17.7 retired
+English abbreviation and shared CLI outputs; v0.17.10 retired agent-facing
+Secret Reduction. Their absence is expected from those stable versions onward.
+The pins remain enforced for older releases and whenever the runtime advertises
+them. Unknown versions and prereleases do not establish a retirement.
+Storage scrubbing remains in v0.17.10; it does not establish agent-facing
+redaction. See the [v0.17.7 release notes](https://github.com/jfrog/boost/releases/tag/v0.17.7)
+and [v0.17.10 release notes](https://github.com/jfrog/boost/releases/tag/v0.17.10).
 Status inspects `boost feature-flags` with remote fetching disabled. Doctor
 reports unknown runtime flags even before they appear in saved configuration,
 unsupported policy flags, and saved or effective values that differ from policy.
@@ -255,11 +263,11 @@ for that retired entry is preserved. No replacement format is enabled.
 
 | Flag | Policy | Why |
 |---|---|---|
-| `boost-agent-facing-redaction` | on | Scrubs secrets from what the agent sees; deliberately not retrievable |
+| `boost-agent-facing-redaction` | on (legacy) | Agent-facing Secret Reduction; retired in v0.17.10 |
 | `boost-auto-update` | off (fixed) | Dotfiles owns the binary and its version stamp |
 | `boost-claude-status-line` | off (fixed) | Agentbot owns the Claude status line |
 | `boost-cli-filtering` | off | Rewrites return allow decisions. Claude can bypass ordinary asks; current Codex approval behavior is separate. Raw shell output is not redacted |
-| `boost-english-abbreviation` | off | Lossy prose abbreviation, no gain here |
+| `boost-english-abbreviation` | off (legacy) | Lossy prose abbreviation; retired in v0.17.7 |
 | `boost-files-optimization` | on | Document and image reads, source untouched |
 | `boost-graph-integration` | off | BoostGraph rewrites files Agentbot owns |
 | `boost-html-article` | off | Discards markup the agent is reading |
@@ -270,7 +278,7 @@ for that retired entry is preserved. No replacement format is enabled.
 | `boost-mcp-filtering` | on | Host-specific replacement; Codex capture alone does not prove compression |
 | `boost-path-ignore` | off | Enables `[ignore] optimize` exclusion globs; none are needed yet |
 | `boost-pr-usage-comments` | off (fixed) | Outward-facing writes to GitHub PRs |
-| `boost-share-cli-outputs` | off (fixed) | Sends command output to JFrog |
+| `boost-share-cli-outputs` | off (fixed, legacy) | CLI-output sharing; retired in v0.17.7 |
 | `boost-target-version` | off (fixed) | Remote-chosen update target |
 
 Boost would otherwise refresh the remote defaults from JFrog whenever its flag

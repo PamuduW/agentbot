@@ -1661,6 +1661,53 @@ class BoostReviewPolicyTests(BoostIntegrationTests):
 
 
 class BoostReviewEvidenceTests(BoostIntegrationTests):
+    def test_known_flag_retirements_follow_the_installed_release(self):
+        integration = self._integration_type()(self._paths())
+        integration.ensure_safe_config()
+        active = (
+            ("boost-auto-update", False),
+            ("boost-claude-status-line", False),
+            ("boost-cli-filtering", False),
+            ("boost-files-optimization", True),
+            ("boost-graph-integration", False),
+            ("boost-html-article", False),
+            ("boost-html-article-cursor-nudge", False),
+            ("boost-html-article-preserve-agent-html", True),
+            ("boost-mcp-browser-budget", False),
+            ("boost-measurement-mode", False),
+            ("boost-mcp-filtering", True),
+            ("boost-path-ignore", False),
+            ("boost-pr-usage-comments", False),
+            ("boost-target-version", False),
+        )
+        legacy = (
+            "boost-agent-facing-redaction",
+            "boost-english-abbreviation",
+            "boost-share-cli-outputs",
+        )
+        for version, expected in (
+            ("boost v0.17.6", legacy),
+            ("boost v0.17.7", ("boost-agent-facing-redaction",)),
+            ("boost v0.17.9", ("boost-agent-facing-redaction",)),
+            ("boost v0.17.10", ()),
+            ("boost v0.18.0", ()),
+            ("boost v0.17.10-rc.1", legacy),
+            (None, legacy),
+        ):
+            with (
+                self.subTest(version=version),
+                mock.patch.object(integration, "_cli_version", return_value=version),
+                mock.patch.object(integration, "_runtime_feature_flags", return_value=active),
+            ):
+                status = integration.status()
+                self.assertEqual(expected, status.unsupported_flags)
+                self.assertEqual((), status.diverged_flags)
+        with (
+            mock.patch.object(integration, "_cli_version", return_value="boost v0.17.10"),
+            mock.patch.object(integration, "_runtime_feature_flags", return_value=active[1:]),
+        ):
+            self.assertEqual(("boost-auto-update",), integration.status().unsupported_flags)
+
     def test_runtime_only_unknown_flags_are_reported_without_remote_fetch(self):
         from src.command_runner import CommandResult
 

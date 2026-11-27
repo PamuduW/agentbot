@@ -106,12 +106,8 @@ _RELEASE_TAG_RE = re.compile(r"v?([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)")
 # boost-pr-usage-comments and boost-claude-status-line. They are not up for
 # review, and a test fails if any of them is turned on.
 BOOST_FEATURE_POLICY: dict[str, bool] = {
-    # Scrubs secrets and abbreviates paths in what the agent sees, not just in
-    # the local database. Enforces the global "never expose secrets in command
-    # output" rule where the supported hook actually transforms output. Unlike every
-    # other lossy transform kept on here, this one is deliberately not
-    # recoverable through `boost retrieve`: secrets and credentials are exempt
-    # from the retrievable-original rule (user decision, 2026-10-08).
+    # Legacy agent-facing secret reduction, retired in v0.17.10. Keep the pin
+    # for older releases; it does not establish redaction on newer runtimes.
     "boost-agent-facing-redaction": True,
     # Boost's background self-updater. Dotfiles owns this binary: it installs a
     # digest-verified release asset and records the tag in
@@ -359,7 +355,7 @@ class BoostIntegration:
             diverged,
             tuple(sorted(unruled)),
             telemetry_disabled,
-            tuple(sorted(BOOST_FEATURE_POLICY.keys() - runtime_names))
+            tuple(sorted(BOOST_FEATURE_POLICY.keys() - runtime_names - self._retired_policy_flags(cli_version)))
             if runtime_names is not None
             else (),
             runtime_flags,
@@ -1000,6 +996,19 @@ class BoostIntegration:
             if host.awareness.is_file():
                 artifacts.append(host.awareness)
         return tuple(artifacts)
+
+    @staticmethod
+    def _retired_policy_flags(version: str | None) -> frozenset[str]:
+        tag = BoostIntegration._release_tag(version)
+        if tag is None or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+            return frozenset()
+        release = tuple(int(part) for part in tag[1:].split("."))
+        retired: set[str] = set()
+        if release >= (0, 17, 7):
+            retired.update({"boost-english-abbreviation", "boost-share-cli-outputs"})
+        if release >= (0, 17, 10):
+            retired.add("boost-agent-facing-redaction")
+        return frozenset(retired)
 
     @staticmethod
     def _release_tag(value: str | None) -> str | None:
