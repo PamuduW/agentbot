@@ -100,7 +100,10 @@ references and preserves existing user work when tests were missed.
 was explicitly authorized. Its ignore check requires the selected directory;
 an ignored directory that was not selected cannot satisfy that check.
 The GitLab verification helper propagates failed
-lint status, and Claudex Codex review commands disable native hooks.
+lint status. Packaging accepts the known original helper with that fix applied
+or the reviewed upstream form that already preserves the failure status;
+missing or duplicate patch targets still stop preparation.
+Claudex Codex review commands disable native hooks.
 Known safety-script changes upstream stop preparation for review.
 The selected VibeWise `reset` bundles the pinned source's state-directory
 helper inside its own references and imports that local copy, so preview and

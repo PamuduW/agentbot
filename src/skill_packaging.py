@@ -256,7 +256,10 @@ def _prepare_skill(
         if not support.is_file() or support.is_symlink():
             raise ValueError(f"missing or unsafe skill script: {relative}")
         script = support.read_text(encoding="utf-8")
-        if script.count(old) != 1:
+        already_fixed = name == "gitlab-ci-skill" and script.count(old) == 0 and script.count(new) == 1
+        if not already_fixed and (
+            script.count(old) != 1 or (name == "gitlab-ci-skill" and script.count(new) != 0)
+        ):
             raise ValueError(f"{name} safety script changed; review its packaging")
         write_text_atomic(target / relative, script.replace(old, new))
         inputs[str(support.relative_to(checkout))] = sha256(support.read_bytes()).hexdigest()

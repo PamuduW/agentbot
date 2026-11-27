@@ -203,19 +203,38 @@ class SkillPackagingTests(unittest.TestCase):
 
     def test_gitlab_root_skill_preserves_failed_verification_exit(self):
         self.write("SKILL.md", "---\nname: gitlab-ci-skill\n---\n# Verify\n")
-        self.write("scripts/verify.sh", '#!/bin/bash\nif ! glci show -f "$FILE"; then\n      exit $?\n    fi\necho should-not-run\n')
         fake = self.root / "bin"
         fake.mkdir()
         (fake / "glci").write_text("#!/bin/sh\nexit 37\n")
         (fake / "glci").chmod(0o755)
         source = SkillSourceEntry(id="gitlab", repo="gitlab.com/gitlab-org/ci-cd/gitlab-ci-skill", skills=["gitlab-ci-skill"])
-        with prepared_checkout(source, self.checkout, "a" * 40) as prepared:
-            run = subprocess.run(["bash", str(prepared / "scripts/verify.sh")], capture_output=True,
-                                 env={**os.environ, "PATH": f"{fake}:/usr/bin:/bin"})
-            self.assertEqual(37, run.returncode)
-            self.assertEqual(b"", run.stdout)
-            provenance = json.loads((prepared / ".agentbot-packaging.json").read_text())
-            self.assertIn("scripts/verify.sh", provenance["inputs"])
+        for command in (
+            'if ! glci show -f "$FILE"; then\n      exit $?\n    fi',
+            'glci show -f "$FILE" || exit $?',
+        ):
+            with self.subTest(command=command):
+                script = "#!/bin/bash\n" + command + "\necho should-not-run\n"
+                self.write("scripts/verify.sh", script)
+                with prepared_checkout(source, self.checkout, "a" * 40) as prepared:
+                    run = subprocess.run(["bash", str(prepared / "scripts/verify.sh")], capture_output=True,
+                                         env={**os.environ, "PATH": f"{fake}:/usr/bin:/bin"})
+                    self.assertEqual(37, run.returncode)
+                    self.assertEqual(b"", run.stdout)
+                    provenance = json.loads((prepared / ".agentbot-packaging.json").read_text())
+                    self.assertIn("scripts/verify.sh", provenance["inputs"])
+                self.assertEqual(script, (self.checkout / "scripts/verify.sh").read_text())
+
+    def test_gitlab_unknown_or_ambiguous_verification_stops_before_install(self):
+        self.write("SKILL.md", "---\nname: gitlab-ci-skill\n---\n# Verify\n")
+        source = SkillSourceEntry(id="gitlab", repo="gitlab.com/gitlab-org/ci-cd/gitlab-ci-skill", skills=["gitlab-ci-skill"])
+        old = 'if ! glci show -f "$FILE"; then\n      exit $?\n    fi'
+        new = 'glci show -f "$FILE" || exit $?'
+        for script in ('glci show -f "$FILE"', new + "\n" + new, old + "\n" + new):
+            with self.subTest(script=script):
+                self.write("scripts/verify.sh", script)
+                with self.assertRaisesRegex(ValueError, "safety script changed"):
+                    with prepared_checkout(source, self.checkout, "a" * 40):
+                        self.fail("Unsafe verification was accepted")
 
     def test_claudex_review_commands_disable_native_hooks(self):
         self.write("skills/claudex-loop/SKILL.md", "---\nname: claudex-loop\n---\n# Review\n")
